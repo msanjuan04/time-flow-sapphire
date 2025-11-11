@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      absences: {
+        Row: {
+          absence_type: Database["public"]["Enums"]["absence_type"]
+          approved_at: string | null
+          approved_by: string | null
+          company_id: string
+          created_at: string
+          created_by: string
+          end_date: string
+          id: string
+          reason: string | null
+          start_date: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          absence_type: Database["public"]["Enums"]["absence_type"]
+          approved_at?: string | null
+          approved_by?: string | null
+          company_id: string
+          created_at?: string
+          created_by: string
+          end_date: string
+          id?: string
+          reason?: string | null
+          start_date: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          absence_type?: Database["public"]["Enums"]["absence_type"]
+          approved_at?: string | null
+          approved_by?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          end_date?: string
+          id?: string
+          reason?: string | null
+          start_date?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       alerts: {
         Row: {
           company_id: string
@@ -627,6 +675,42 @@ export type Database = {
           },
         ]
       }
+      scheduled_hours: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string
+          date: string
+          expected_hours: number
+          id: string
+          notes: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by: string
+          date: string
+          expected_hours?: number
+          id?: string
+          notes?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          date?: string
+          expected_hours?: number
+          id?: string
+          notes?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       superadmins: {
         Row: {
           created_at: string | null
@@ -903,6 +987,7 @@ export type Database = {
       }
     }
     Enums: {
+      absence_type: "vacation" | "sick_leave" | "personal" | "other"
       event_type: "clock_in" | "clock_out" | "pause_start" | "pause_end"
       incident_status: "pending" | "resolved" | "dismissed"
       incident_type:
@@ -1039,6 +1124,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      absence_type: ["vacation", "sick_leave", "personal", "other"],
       event_type: ["clock_in", "clock_out", "pause_start", "pause_end"],
       incident_status: ["pending", "resolved", "dismissed"],
       incident_type: [

@@ -331,6 +331,15 @@ const ManagerView = () => {
             <Button
               variant="outline"
               size="icon"
+              onClick={() => navigate("/manager-calendar")}
+              className="hover-scale"
+              title="Calendario"
+            >
+              <Calendar className="w-5 h-5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
               onClick={() => navigate("/reports")}
               className="hover-scale"
               title="Reportes"

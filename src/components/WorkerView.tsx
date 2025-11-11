@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Clock, LogIn, LogOut, Coffee, User, MapPin, AlertCircle, Calendar } from "lucide-react";
+import { Clock, LogIn, LogOut, Coffee, User, MapPin, AlertCircle, Calendar, BarChart3 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -233,15 +233,23 @@ const WorkerView = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="grid grid-cols-3 gap-4"
+          className="grid grid-cols-2 md:grid-cols-4 gap-4"
         >
           <Button
             variant="outline"
             className="h-20 flex-col hover-scale"
             onClick={() => navigate("/worker-reports")}
           >
-            <Calendar className="w-6 h-6 mb-2" />
+            <BarChart3 className="w-6 h-6 mb-2" />
             <span className="text-sm font-medium">Informes</span>
+          </Button>
+          <Button
+            variant="outline"
+            className="h-20 flex-col hover-scale"
+            onClick={() => navigate("/calendar")}
+          >
+            <Calendar className="w-6 h-6 mb-2" />
+            <span className="text-sm font-medium">Calendario</span>
           </Button>
           <Button
             variant="outline"
