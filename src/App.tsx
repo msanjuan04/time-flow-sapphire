@@ -12,6 +12,8 @@ import Employees from "./pages/Employees";
 import People from "./pages/People";
 import AcceptInvite from "./pages/AcceptInvite";
 import Reports from "./pages/Reports";
+import WorkerReports from "./pages/WorkerReports";
+import Absences from "./pages/Absences";
 import CorrectionRequests from "./pages/CorrectionRequests";
 import Devices from "./pages/Devices";
 import Kiosk from "./pages/Kiosk";
@@ -39,6 +41,8 @@ const App = () => (
           <Route path="/people" element={<People />} />
           <Route path="/accept-invite" element={<AcceptInvite />} />
           <Route path="/reports" element={<Reports />} />
+          <Route path="/worker-reports" element={<WorkerReports />} />
+          <Route path="/absences" element={<Absences />} />
           <Route path="/correction-requests" element={<CorrectionRequests />} />
           <Route path="/devices" element={<Devices />} />
           <Route path="/kiosk" element={<Kiosk />} />

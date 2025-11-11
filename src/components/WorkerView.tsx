@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Clock, LogIn, LogOut, Coffee, User, MapPin, AlertCircle } from "lucide-react";
+import { Clock, LogIn, LogOut, Coffee, User, MapPin, AlertCircle, Calendar } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -221,19 +221,43 @@ const WorkerView = () => {
           </div>
           <div className="flex items-center gap-2">
             <NotificationBell />
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate("/correction-requests")}
-              className="hover-scale"
-              title="Solicitudes de corrección"
-            >
-              <AlertCircle className="w-5 h-5" />
-            </Button>
             <Button variant="ghost" size="icon" onClick={signOut} className="hover-scale">
               <LogOut className="w-5 h-5" />
             </Button>
           </div>
+        </motion.div>
+
+        {/* Navigation Buttons */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="grid grid-cols-3 gap-4"
+        >
+          <Button
+            variant="outline"
+            className="h-20 flex-col hover-scale"
+            onClick={() => navigate("/worker-reports")}
+          >
+            <Calendar className="w-6 h-6 mb-2" />
+            <span className="text-sm font-medium">Informes</span>
+          </Button>
+          <Button
+            variant="outline"
+            className="h-20 flex-col hover-scale"
+            onClick={() => navigate("/absences")}
+          >
+            <MapPin className="w-6 h-6 mb-2" />
+            <span className="text-sm font-medium">Ausencias</span>
+          </Button>
+          <Button
+            variant="outline"
+            className="h-20 flex-col hover-scale"
+            onClick={() => navigate("/correction-requests")}
+          >
+            <AlertCircle className="w-6 h-6 mb-2" />
+            <span className="text-sm font-medium">Correcciones</span>
+          </Button>
         </motion.div>
 
         {/* Main Clock Card */}
