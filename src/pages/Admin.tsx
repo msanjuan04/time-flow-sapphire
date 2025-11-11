@@ -2,36 +2,27 @@ import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, Shield, Users, Building2, Activity } from "lucide-react";
+import { AdminLayout } from "@/components/AdminLayout";
 
 const Admin = () => {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
-      <div className="max-w-7xl mx-auto space-y-6 pt-8 animate-fade-in">
+    <AdminLayout>
+      <div className="space-y-6 animate-fade-in">
         {/* Header */}
-        <div className="flex items-center gap-3">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/")}
-            className="hover-scale"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </Button>
-          <div>
-            <div className="flex items-center gap-2">
-              <Shield className="w-6 h-6 text-primary" />
-              <h1 className="text-2xl font-bold">Panel de Superadmin</h1>
-            </div>
-            <p className="text-sm text-muted-foreground">
-              Gestión avanzada del sistema
-            </p>
+        <div>
+          <div className="flex items-center gap-2">
+            <Shield className="w-6 h-6 text-primary" />
+            <h1 className="text-2xl font-bold">Panel de Superadmin</h1>
           </div>
+          <p className="text-sm text-muted-foreground mt-1">
+            Gestión avanzada del sistema
+          </p>
         </div>
 
-        {/* Admin Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Quick Access Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Card 
             className="glass-card p-6 hover-scale cursor-pointer"
             onClick={() => navigate("/admin/companies")}
@@ -43,13 +34,16 @@ const Admin = () => {
               <div className="flex-1">
                 <h3 className="font-semibold mb-1">Empresas</h3>
                 <p className="text-sm text-muted-foreground">
-                  Gestionar e impersonar empresas del sistema
+                  Gestionar e impersonar empresas
                 </p>
               </div>
             </div>
           </Card>
 
-          <Card className="glass-card p-6 hover-scale cursor-pointer">
+          <Card 
+            className="glass-card p-6 hover-scale cursor-pointer"
+            onClick={() => navigate("/admin/users")}
+          >
             <div className="flex items-start gap-4">
               <div className="p-3 rounded-lg bg-green-500/10">
                 <Users className="w-6 h-6 text-green-500" />
@@ -57,35 +51,41 @@ const Admin = () => {
               <div className="flex-1">
                 <h3 className="font-semibold mb-1">Usuarios</h3>
                 <p className="text-sm text-muted-foreground">
-                  Ver y gestionar todos los usuarios
+                  Buscar y gestionar usuarios
                 </p>
               </div>
             </div>
           </Card>
 
-          <Card className="glass-card p-6 hover-scale cursor-pointer">
+          <Card 
+            className="glass-card p-6 hover-scale cursor-pointer"
+            onClick={() => navigate("/admin/logs")}
+          >
             <div className="flex items-start gap-4">
               <div className="p-3 rounded-lg bg-purple-500/10">
                 <Activity className="w-6 h-6 text-purple-500" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold mb-1">Actividad</h3>
+                <h3 className="font-semibold mb-1">Audit Logs</h3>
                 <p className="text-sm text-muted-foreground">
-                  Logs de auditoría y actividad del sistema
+                  Ver actividad del sistema
                 </p>
               </div>
             </div>
           </Card>
 
-          <Card className="glass-card p-6 hover-scale cursor-pointer">
+          <Card 
+            className="glass-card p-6 hover-scale cursor-pointer"
+            onClick={() => navigate("/admin")}
+          >
             <div className="flex items-start gap-4">
               <div className="p-3 rounded-lg bg-amber-500/10">
                 <Shield className="w-6 h-6 text-amber-500" />
               </div>
               <div className="flex-1">
-                <h3 className="font-semibold mb-1">Superadmins</h3>
+                <h3 className="font-semibold mb-1">Dashboard</h3>
                 <p className="text-sm text-muted-foreground">
-                  Gestionar accesos de superadministrador
+                  Estadísticas globales
                 </p>
               </div>
             </div>
@@ -106,7 +106,7 @@ const Admin = () => {
           </div>
         </Card>
       </div>
-    </div>
+    </AdminLayout>
   );
 };
 
