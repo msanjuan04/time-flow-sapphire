@@ -301,33 +301,26 @@ const People = () => {
   };
 
   const handleResendInvite = async (invite: Invite) => {
-    // Generate new token and expiration
-    const token = crypto.randomUUID();
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 7);
+    try {
+      const { data, error } = await supabase.functions.invoke("resend-invite", {
+        body: { invite_id: invite.id },
+      });
+      if (error) throw error;
 
-    const { error } = await supabase
-      .from("invites")
-      .update({
-        token,
-        expires_at: expiresAt.toISOString(),
-        status: "pending",
-      })
-      .eq("id", invite.id);
-
-    if (error) {
-      console.error("Error resending invite:", error);
-      toast.error("Error al reenviar invitación");
-      return;
+      const newToken = data?.invite?.token;
+      if (newToken) {
+        const inviteUrl = `${window.location.origin}/accept-invite?token=${newToken}`;
+        try { await navigator.clipboard.writeText(inviteUrl); } catch {}
+        toast.success("Invitación reenviada", {
+          description: "Enlace actualizado copiado al portapapeles",
+        });
+      } else {
+        toast.success("Invitación reenviada por email");
+      }
+    } catch (e: any) {
+      console.error("Error resending invite:", e);
+      toast.error(e?.message || "Error al reenviar invitación");
     }
-
-    // Copy invite link to clipboard
-    const inviteUrl = `${window.location.origin}/accept-invite?token=${token}`;
-    await navigator.clipboard.writeText(inviteUrl);
-    
-    toast.success("Invitación reenviada", {
-      description: "Enlace copiado al portapapeles",
-    });
     fetchInvites();
   };
 

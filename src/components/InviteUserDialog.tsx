@@ -113,74 +113,27 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
     setLoading(true);
 
     try {
-      // Check if email already exists in company
-      const { data: existingMembership } = await supabase
-        .from("memberships")
-        .select(`
-          profiles!inner(email)
-        `)
-        .eq("company_id", companyId)
-        .eq("profiles.email", email.toLowerCase().trim())
-        .maybeSingle();
-
-      if (existingMembership) {
-        setErrors({ email: "Este email ya pertenece a esta empresa" });
-        setLoading(false);
-        return;
-      }
-
-      // Check if there's already a pending invite for this email in this company
-      const { data: existingInvite } = await supabase
-        .from("invites")
-        .select("id")
-        .eq("company_id", companyId)
-        .eq("email", email.toLowerCase().trim())
-        .eq("status", "pending")
-        .maybeSingle();
-
-      if (existingInvite) {
-        setErrors({ email: "Ya existe una invitación pendiente para este email en esta empresa" });
-        setLoading(false);
-        return;
-      }
-
-      // Get current user
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Usuario no autenticado");
-
-      // Generate unique token and expiration date (7 days)
-      const token = crypto.randomUUID();
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7);
-
-      // Create invite record
-      const { error: inviteError } = await supabase
-        .from("invites")
-        .insert({
-          company_id: companyId,
+      // Delegate creation + email to the edge function
+      const { data, error } = await supabase.functions.invoke("create-invite", {
+        body: {
           email: email.toLowerCase().trim(),
           role: role as "admin" | "manager" | "worker",
           center_id: centerId || null,
           team_id: teamId || null,
-          token,
-          expires_at: expiresAt.toISOString(),
-          created_by: user.id,
-          status: "pending",
-        });
+        },
+      });
 
-      if (inviteError) {
-        if (inviteError.code === "23505") {
-          throw new Error("Ya existe una invitación pendiente para este email");
-        }
-        throw inviteError;
+      if (error) throw error;
+
+      // Copy invite link to clipboard for convenience
+      const token = data?.invite?.token;
+      if (token) {
+        const inviteUrl = `${window.location.origin}/accept-invite?token=${token}`;
+        try { await navigator.clipboard.writeText(inviteUrl); } catch {}
       }
 
-      // Copy invite link to clipboard
-      const inviteUrl = `${window.location.origin}/accept-invite?token=${token}`;
-      await navigator.clipboard.writeText(inviteUrl);
-
       toast.success("Invitación creada correctamente", {
-        description: "Enlace de invitación copiado al portapapeles",
+        description: token ? "Enlace de invitación copiado al portapapeles" : undefined,
       });
 
       // Reset form
@@ -198,8 +151,12 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
         toast.error("Límite de plan alcanzado", {
           description: error.message || "Has alcanzado el límite de miembros de tu plan actual",
         });
+      } else if (error?.status === 409) {
+        toast.error("Ya existe una invitación o email registrado");
+      } else if (error?.status === 401 || error?.status === 403) {
+        toast.error("Permisos insuficientes o sesión no válida");
       } else {
-        toast.error(error.message || "Error al crear invitación");
+        toast.error(error?.message || "Error al crear invitación");
       }
     } finally {
       setLoading(false);

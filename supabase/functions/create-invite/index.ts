@@ -195,8 +195,50 @@ serve(async (req) => {
 
     console.log("Invite created successfully:", invite.id);
 
-    // TODO: Send email with invite link
-    // const inviteUrl = `${Deno.env.get("SITE_URL")}/accept-invite?token=${token}`;
+    // Send email with invite link via Resend (if configured)
+    try {
+      const siteUrl = Deno.env.get("SITE_URL") || "http://localhost:8080";
+      const resendApiKey = Deno.env.get("RESEND_API_KEY");
+      const fromEmail = Deno.env.get("EMAIL_FROM") || "GTiQ <no-reply@gtiq.local>";
+      const inviteUrl = `${siteUrl}/accept-invite?token=${token}`;
+
+      if (resendApiKey) {
+        const res = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${resendApiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            from: fromEmail,
+            to: invite.email,
+            subject: "Invitación a GTiQ",
+            html: `
+              <div style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.6;color:#111827">
+                <h2 style="margin:0 0 12px">Has sido invitado a GTiQ</h2>
+                <p>Te han invitado a unirte a la empresa en GTiQ con el rol <strong>${invite.role}</strong>.</p>
+                <p>Puedes aceptar la invitación usando este enlace:</p>
+                <p><a href="${inviteUrl}" style="color:#1d4ed8">Aceptar invitación</a></p>
+                <p>Si el botón no funciona, copia y pega esta URL en tu navegador:</p>
+                <code style="display:block;padding:8px;background:#f3f4f6;border-radius:6px">${inviteUrl}</code>
+              </div>
+            `,
+          }),
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error("Resend email failed:", errText);
+        } else {
+          console.log("Invite email sent via Resend to:", invite.email);
+        }
+      } else {
+        console.warn("RESEND_API_KEY not set; skipping invite email send.");
+      }
+    } catch (emailErr) {
+      console.error("Error sending invite email:", emailErr);
+      // Do not fail the whole request if email fails
+    }
 
     return new Response(
       JSON.stringify({

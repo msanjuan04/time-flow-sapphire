@@ -94,6 +94,22 @@ npm run dev
 # Abrir en http://localhost:8080
 ```
 
+### Envío de emails de invitación
+
+Las invitaciones se envían desde funciones Edge de Supabase. Se requiere configurar un proveedor de correo (por ejemplo, Resend):
+
+1. Crea una cuenta en Resend y genera una API Key.
+2. Configura estas variables de entorno en Supabase (Dashboard o `supabase secrets set`):
+   - `RESEND_API_KEY`: tu API key de Resend
+   - `EMAIL_FROM`: dirección de envío, por ejemplo `GTiQ <no-reply@tudominio.com>`
+   - `SITE_URL`: URL pública de la app, por ejemplo `https://app.tudominio.com` (se usa para generar el enlace de aceptación)
+
+Las funciones afectadas:
+- `create-invite`: crea la invitación y envía email
+- `resend-invite`: regenera el token y reenvía el email
+
+En local, puedes crear un archivo `.env` para Vite, pero recuerda que las funciones Edge usan variables configuradas en el entorno de Supabase, no las del frontend.
+
 ## Diseño
 
 El sistema utiliza un diseño inspirado en Apple con:
