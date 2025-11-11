@@ -32,7 +32,10 @@ const Admin = () => {
 
         {/* Admin Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card className="glass-card p-6 hover-scale cursor-pointer">
+          <Card 
+            className="glass-card p-6 hover-scale cursor-pointer"
+            onClick={() => navigate("/admin/companies")}
+          >
             <div className="flex items-start gap-4">
               <div className="p-3 rounded-lg bg-blue-500/10">
                 <Building2 className="w-6 h-6 text-blue-500" />
@@ -40,7 +43,7 @@ const Admin = () => {
               <div className="flex-1">
                 <h3 className="font-semibold mb-1">Empresas</h3>
                 <p className="text-sm text-muted-foreground">
-                  Gestionar todas las empresas del sistema
+                  Gestionar e impersonar empresas del sistema
                 </p>
               </div>
             </div>

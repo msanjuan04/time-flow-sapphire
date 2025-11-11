@@ -15,6 +15,7 @@ interface Membership {
 }
 
 const ACTIVE_COMPANY_KEY = "active_company_id";
+const IMPERSONATION_KEY = "superadmin_impersonation";
 
 export const useMembership = () => {
   const { user } = useAuth();
@@ -29,6 +30,43 @@ export const useMembership = () => {
         return;
       }
 
+      // Check for impersonation mode
+      const impersonationStr = localStorage.getItem(IMPERSONATION_KEY);
+      if (impersonationStr) {
+        try {
+          const impersonation = JSON.parse(impersonationStr);
+          
+          // Fetch company data for impersonated company
+          const { data: companyData, error: companyError } = await supabase
+            .from("companies")
+            .select("id, name")
+            .eq("id", impersonation.company_id)
+            .single();
+
+          if (!companyError && companyData) {
+            // Create a virtual membership for impersonation
+            const virtualMembership: Membership = {
+              id: `impersonate_${impersonation.company_id}`,
+              role: impersonation.as_role || "admin",
+              company_id: impersonation.company_id,
+              company: {
+                id: companyData.id,
+                name: companyData.name,
+              },
+            };
+
+            setMemberships([virtualMembership]);
+            setActiveMembership(virtualMembership);
+            setLoading(false);
+            return;
+          }
+        } catch (error) {
+          console.error("Error loading impersonation:", error);
+          localStorage.removeItem(IMPERSONATION_KEY);
+        }
+      }
+
+      // Normal flow: fetch user's actual memberships
       const { data, error } = await supabase
         .from("memberships")
         .select(`

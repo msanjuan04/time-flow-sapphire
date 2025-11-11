@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { SuperadminRoute } from "@/components/SuperadminRoute";
+import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Employees from "./pages/Employees";
@@ -15,6 +16,7 @@ import CorrectionRequests from "./pages/CorrectionRequests";
 import Devices from "./pages/Devices";
 import Kiosk from "./pages/Kiosk";
 import Admin from "./pages/Admin";
+import AdminCompanies from "./pages/AdminCompanies";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -25,6 +27,7 @@ const App = () => (
     <Sonner />
     <BrowserRouter>
       <AuthProvider>
+        <ImpersonationBanner />
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
@@ -40,6 +43,14 @@ const App = () => (
             element={
               <SuperadminRoute>
                 <Admin />
+              </SuperadminRoute>
+            } 
+          />
+          <Route 
+            path="/admin/companies" 
+            element={
+              <SuperadminRoute>
+                <AdminCompanies />
               </SuperadminRoute>
             } 
           />
