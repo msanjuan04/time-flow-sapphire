@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
-import { Loader2, Clock } from "lucide-react";
+import { Loader2 } from "lucide-react";
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -62,9 +62,11 @@ const Auth = () => {
         <div className="glass rounded-2xl p-8 space-y-6">
           <div className="text-center space-y-2">
             <div className="flex justify-center mb-4">
-              <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center shadow-lg">
-                <Clock className="w-8 h-8 text-primary-foreground" />
-              </div>
+              <img 
+                src="/logo.png" 
+                alt="GTiQ Logo" 
+                className="w-24 h-24 object-contain"
+              />
             </div>
             <h1 className="text-3xl font-bold">GTiQ</h1>
             <p className="text-muted-foreground">
