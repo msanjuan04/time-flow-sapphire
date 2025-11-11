@@ -35,6 +35,70 @@ export type Database = {
         }
         Relationships: []
       }
+      incidents: {
+        Row: {
+          company_id: string
+          created_at: string
+          description: string | null
+          id: string
+          incident_date: string
+          incident_type: Database["public"]["Enums"]["incident_type"]
+          resolved_at: string | null
+          resolved_by: string | null
+          status: Database["public"]["Enums"]["incident_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          incident_date: string
+          incident_type: Database["public"]["Enums"]["incident_type"]
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: Database["public"]["Enums"]["incident_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          incident_date?: string
+          incident_type?: Database["public"]["Enums"]["incident_type"]
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: Database["public"]["Enums"]["incident_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "incidents_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incidents_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "incidents_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       memberships: {
         Row: {
           company_id: string
@@ -209,6 +273,13 @@ export type Database = {
     }
     Enums: {
       event_type: "clock_in" | "clock_out" | "pause_start" | "pause_end"
+      incident_status: "pending" | "resolved" | "dismissed"
+      incident_type:
+        | "late_arrival"
+        | "early_departure"
+        | "missing_checkout"
+        | "missing_checkin"
+        | "other"
       user_role: "owner" | "admin" | "manager" | "worker"
     }
     CompositeTypes: {
@@ -338,6 +409,14 @@ export const Constants = {
   public: {
     Enums: {
       event_type: ["clock_in", "clock_out", "pause_start", "pause_end"],
+      incident_status: ["pending", "resolved", "dismissed"],
+      incident_type: [
+        "late_arrival",
+        "early_departure",
+        "missing_checkout",
+        "missing_checkin",
+        "other",
+      ],
       user_role: ["owner", "admin", "manager", "worker"],
     },
   },
