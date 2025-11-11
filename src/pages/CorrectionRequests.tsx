@@ -155,6 +155,8 @@ const CorrectionRequests = () => {
   ) => {
     setLoading(true);
     try {
+      const request = requests.find((r) => r.id === requestId);
+      
       const { error } = await supabase
         .from("correction_requests")
         .update({
@@ -168,23 +170,35 @@ const CorrectionRequests = () => {
       if (error) throw error;
 
       // If approved, create the time event
-      if (newStatus === "approved") {
-        const request = requests.find((r) => r.id === requestId);
-        if (request) {
-          const { error: eventError } = await supabase.from("time_events").insert({
-            company_id: companyId,
-            user_id: request.user_id,
-            event_type: request.payload.event_type,
-            event_time: request.payload.event_time,
-            source: "web",
-            notes: `Corrección aprobada: ${request.payload.reason}`,
-          });
+      if (newStatus === "approved" && request) {
+        const { error: eventError } = await supabase.from("time_events").insert({
+          company_id: companyId,
+          user_id: request.user_id,
+          event_type: request.payload.event_type,
+          event_time: request.payload.event_time,
+          source: "web",
+          notes: `Corrección aprobada: ${request.payload.reason}`,
+        });
 
-          if (eventError) {
-            console.error("Error creating time event:", eventError);
-            toast.error("Solicitud aprobada pero error al crear el evento");
-          }
+        if (eventError) {
+          console.error("Error creating time event:", eventError);
+          toast.error("Solicitud aprobada pero error al crear el evento");
         }
+      }
+
+      // Create notification for the worker
+      if (request) {
+        await supabase.from("notifications").insert({
+          company_id: companyId,
+          user_id: request.user_id,
+          title: newStatus === "approved" ? "Solicitud aprobada" : "Solicitud rechazada",
+          message: newStatus === "approved"
+            ? `Tu solicitud de corrección para el ${new Date(request.payload.event_time).toLocaleString("es-ES")} ha sido aprobada.`
+            : `Tu solicitud de corrección ha sido rechazada. ${reason ? `Motivo: ${reason}` : ""}`,
+          type: newStatus === "approved" ? "success" : "error",
+          entity_type: "correction_request",
+          entity_id: requestId,
+        });
       }
 
       toast.success(

@@ -7,6 +7,9 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
 import { useNavigate } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
+import NotificationBell from "@/components/NotificationBell";
+import { motion } from "framer-motion";
+import { cn } from "@/lib/utils";
 
 interface DailyStats {
   date: string;
@@ -28,12 +31,26 @@ const AdminView = () => {
   const [recentEvents, setRecentEvents] = useState<any[]>([]);
   const [weeklyData, setWeeklyData] = useState<DailyStats[]>([]);
   const [loading, setLoading] = useState(true);
+  const [companyStatus, setCompanyStatus] = useState<string>("active");
 
   useEffect(() => {
     if (companyId) {
       fetchAllData();
+      fetchCompanyStatus();
     }
   }, [companyId]);
+
+  const fetchCompanyStatus = async () => {
+    const { data } = await supabase
+      .from("companies")
+      .select("status")
+      .eq("id", companyId)
+      .single();
+
+    if (data) {
+      setCompanyStatus(data.status || "active");
+    }
+  };
 
   const fetchAllData = async () => {
     setLoading(true);
@@ -203,6 +220,42 @@ const AdminView = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
       <div className="max-w-7xl mx-auto space-y-6 pt-8 animate-fade-in">
+        {/* Company Status Warning */}
+        {(companyStatus === "grace" || companyStatus === "suspended") && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <Card className={cn(
+              "p-4 border-2",
+              companyStatus === "grace" ? "bg-amber-50 border-amber-500" : "bg-red-50 border-red-500"
+            )}>
+              <div className="flex items-center gap-3">
+                <AlertCircle className={cn(
+                  "w-6 h-6",
+                  companyStatus === "grace" ? "text-amber-600" : "text-red-600"
+                )} />
+                <div>
+                  <h3 className={cn(
+                    "font-semibold",
+                    companyStatus === "grace" ? "text-amber-900" : "text-red-900"
+                  )}>
+                    {companyStatus === "grace" ? "Período de gracia activo" : "Empresa suspendida"}
+                  </h3>
+                  <p className={cn(
+                    "text-sm",
+                    companyStatus === "grace" ? "text-amber-700" : "text-red-700"
+                  )}>
+                    {companyStatus === "grace"
+                      ? "Tu suscripción está en período de gracia. Por favor, actualiza tu método de pago."
+                      : "Tu empresa ha sido suspendida. Contacta con soporte para más información."}
+                  </p>
+                </div>
+              </div>
+            </Card>
+          </motion.div>
+        )}
+        
         {/* Header */}
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
@@ -217,6 +270,7 @@ const AdminView = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <NotificationBell />
             <Button
               variant="outline"
               size="icon"

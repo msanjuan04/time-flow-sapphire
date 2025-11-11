@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useMembership } from "@/hooks/useMembership";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
+import NotificationBell from "@/components/NotificationBell";
 
 type WorkerStatus = "out" | "in" | "on_break";
 
@@ -219,6 +220,7 @@ const WorkerView = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <NotificationBell />
             <Button
               variant="outline"
               size="icon"
