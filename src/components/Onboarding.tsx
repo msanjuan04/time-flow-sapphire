@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSuperadmin } from "@/hooks/useSuperadmin";
 import { toast } from "sonner";
 import { Building2, Loader2 } from "lucide-react";
 
@@ -16,6 +17,7 @@ const Onboarding = ({ onComplete }: OnboardingProps) => {
   const [companyName, setCompanyName] = useState("");
   const [loading, setLoading] = useState(false);
   const { user } = useAuth();
+  const { isSuperadmin } = useSuperadmin();
 
   const handleCreateCompany = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -76,6 +78,27 @@ const Onboarding = ({ onComplete }: OnboardingProps) => {
     }
   };
 
+  // If not superadmin: show info and disable self-service creation
+  if (!isSuperadmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
+        <Card className="glass-card p-8 max-w-md w-full space-y-6">
+          <div className="text-center space-y-2">
+            <div className="flex justify-center mb-4">
+              <div className="w-16 h-16 bg-primary rounded-2xl flex items-center justify-center shadow-lg">
+                <Building2 className="w-8 h-8 text-primary-foreground" />
+              </div>
+            </div>
+            <h1 className="text-2xl font-bold">Acceso pendiente</h1>
+            <p className="text-muted-foreground">
+              Tu cuenta aún no está asociada a ninguna empresa. Contacta con el administrador para que te añadan.
+            </p>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
       <Card className="glass-card p-8 max-w-md w-full space-y-6">
@@ -122,7 +145,6 @@ const Onboarding = ({ onComplete }: OnboardingProps) => {
 
         <div className="text-xs text-center text-muted-foreground space-y-1">
           <p>Serás asignado como propietario (Owner) de la empresa</p>
-          <p>Plan: <strong>Free</strong> (hasta 5 miembros)</p>
         </div>
       </Card>
     </div>

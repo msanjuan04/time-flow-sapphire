@@ -110,6 +110,13 @@ Las funciones afectadas:
 
 En local, puedes crear un archivo `.env` para Vite, pero recuerda que las funciones Edge usan variables configuradas en el entorno de Supabase, no las del frontend.
 
+### Funciones de Superadmin y RLS
+
+Para que el Superadmin vea todas las empresas y usuarios, las funciones Edge usan el Service Role (bypass RLS). Configura también:
+- `SUPABASE_SERVICE_ROLE_KEY`: clave service role de tu proyecto Supabase.
+
+Añádela en Supabase → Project Settings → Configuration → Secrets y vuelve a desplegar las funciones.
+
 ## Diseño
 
 El sistema utiliza un diseño inspirado en Apple con:

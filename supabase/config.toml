@@ -33,5 +33,8 @@ verify_jwt = true
 [functions.admin-create-company]
 verify_jwt = true
 
+[functions.admin-list-users]
+verify_jwt = true
+
 [functions.admin-create-superadmin]
 verify_jwt = false

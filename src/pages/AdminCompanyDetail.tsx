@@ -18,6 +18,7 @@ import { useImpersonation } from "@/hooks/useImpersonation";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+ 
 
 interface CompanyDetail {
   id: string;
@@ -55,11 +56,13 @@ const AdminCompanyDetail = () => {
   const [inviteCenter, setInviteCenter] = useState<string>("none");
   const [inviteTeam, setInviteTeam] = useState<string>("none");
   const [sendingInvite, setSendingInvite] = useState(false);
+  const [members, setMembers] = useState<Array<{id:string;email:string;full_name:string|null;role:string;is_active:boolean;center_name:string|null;team_name:string|null;}>>([]);
 
   useEffect(() => {
     if (id) {
       fetchCompanyDetail();
       fetchAux();
+      fetchMembers();
     }
   }, [id]);
 
@@ -101,6 +104,19 @@ const AdminCompanyDetail = () => {
       toast.error(e?.message || "Error al enviar invitación");
     } finally {
       setSendingInvite(false);
+    }
+  };
+
+  const fetchMembers = async () => {
+    if (!id) return;
+    try {
+      const { data, error } = await (supabase as any).functions.invoke("admin-list-users", {
+        body: { company_id: id },
+      });
+      if (error) throw error;
+      setMembers(data.members || []);
+    } catch (e: any) {
+      console.error("Failed to fetch members:", e);
     }
   };
 
@@ -367,6 +383,41 @@ const AdminCompanyDetail = () => {
                       <TableCell className="text-muted-foreground whitespace-nowrap">
                         {new Date(log.created_at).toLocaleString()}
                       </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </Card>
+
+        {/* Users List */}
+        <Card className="glass-card p-6">
+          <h2 className="text-lg font-semibold mb-4">Usuarios ({members.length})</h2>
+          {members.length === 0 ? (
+            <p className="text-center py-8 text-muted-foreground">No hay usuarios</p>
+          ) : (
+            <div className="rounded-lg border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Rol</TableHead>
+                    <TableHead>Centro</TableHead>
+                    <TableHead>Equipo</TableHead>
+                    <TableHead>Activo</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {members.map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell className="font-medium">{m.full_name || "—"}</TableCell>
+                      <TableCell className="text-muted-foreground">{m.email}</TableCell>
+                      <TableCell>{m.role}</TableCell>
+                      <TableCell className="text-muted-foreground">{m.center_name || "—"}</TableCell>
+                      <TableCell className="text-muted-foreground">{m.team_name || "—"}</TableCell>
+                      <TableCell>{m.is_active ? "Sí" : "No"}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

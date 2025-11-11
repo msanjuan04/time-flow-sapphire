@@ -10,7 +10,8 @@ interface SuperadminContext {
  * @throws Error if user is not authenticated or not a superadmin
  */
 export async function requireSuperadmin(req: Request): Promise<SuperadminContext> {
-  const supabase = createClient(
+  // Use an authenticated client to verify user + role
+  const authClient = createClient(
     Deno.env.get("SUPABASE_URL") ?? "",
     Deno.env.get("SUPABASE_ANON_KEY") ?? "",
     {
@@ -24,7 +25,7 @@ export async function requireSuperadmin(req: Request): Promise<SuperadminContext
   const {
     data: { user },
     error: authError,
-  } = await supabase.auth.getUser();
+  } = await authClient.auth.getUser();
 
   if (authError || !user) {
     console.error("Auth error:", authError);
@@ -32,7 +33,7 @@ export async function requireSuperadmin(req: Request): Promise<SuperadminContext
   }
 
   // Check if user is superadmin
-  const { data: isSuperadmin, error: superadminError } = await supabase.rpc("is_superadmin");
+  const { data: isSuperadmin, error: superadminError } = await authClient.rpc("is_superadmin");
 
   if (superadminError) {
     console.error("Superadmin check error:", superadminError);
@@ -44,7 +45,17 @@ export async function requireSuperadmin(req: Request): Promise<SuperadminContext
     throw new Error("Forbidden: Superadmin access required");
   }
 
-  return { supabase, user };
+  // After verifying superadmin, use service role client to bypass RLS for admin operations
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  if (!serviceKey) {
+    console.warn("SUPABASE_SERVICE_ROLE_KEY not set; admin functions may be limited by RLS");
+  }
+  const serviceClient = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    serviceKey || (Deno.env.get("SUPABASE_ANON_KEY") ?? "")
+  );
+
+  return { supabase: serviceClient, user };
 }
 
 interface AuditLogPayload {
