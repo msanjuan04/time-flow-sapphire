@@ -206,11 +206,6 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
     }
   };
 
-  // Don't render if companyId is not available yet
-  if (!companyId) {
-    return null;
-  }
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="glass-card max-w-md">
@@ -290,13 +285,13 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
               type="button"
               variant="ghost"
               onClick={() => onOpenChange(false)}
-              disabled={loading}
+              disabled={loading || !companyId}
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading}>
+            <Button type="submit" disabled={loading || !companyId}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Enviar Invitación
+              {!companyId ? "Cargando..." : "Enviar Invitación"}
             </Button>
           </div>
         </form>
