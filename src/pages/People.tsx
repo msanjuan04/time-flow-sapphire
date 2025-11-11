@@ -43,6 +43,7 @@ import { ArrowLeft, UserPlus, Search, Edit, Mail, XCircle, RefreshCw, Power, Cro
 import { supabase } from "@/integrations/supabase/client";
 import { useMembership } from "@/hooks/useMembership";
 import { usePlanLimits } from "@/hooks/usePlanLimits";
+import { useSuperadmin } from "@/hooks/useSuperadmin";
 import { toast } from "sonner";
 import InviteUserDialog from "@/components/InviteUserDialog";
 import EditUserDialog from "@/components/EditUserDialog";
@@ -78,6 +79,7 @@ const People = () => {
   const { user } = useAuth();
   const { companyId, role, loading: membershipLoading } = useMembership();
   const { plan, maxEmployees, currentEmployees, canInviteMore, refetch: refetchLimits } = usePlanLimits();
+  const { isSuperadmin } = useSuperadmin();
   const [members, setMembers] = useState<Member[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [filteredMembers, setFilteredMembers] = useState<Member[]>([]);
@@ -247,8 +249,8 @@ const People = () => {
   };
 
   const handleInviteClick = () => {
-    if (!canInviteMore) {
-      setShowLimitDialog(true);
+    if (!isSuperadmin) {
+      toast.error("Solo el Superadmin puede invitar usuarios");
       return;
     }
     setShowInviteDialog(true);
@@ -340,22 +342,15 @@ const People = () => {
             </Button>
             <div>
               <h1 className="text-2xl font-bold">Gestión de Personas</h1>
-              <div className="flex items-center gap-2">
-                <p className="text-sm text-muted-foreground">
-                  {currentEmployees} / {maxEmployees === Infinity ? "∞" : maxEmployees} miembros
-                </p>
-                <Badge className={getPlanBadgeColor(plan)}>
-                  {plan === "free" && "Plan Free"}
-                  {plan === "pro" && "Plan Pro"}
-                  {plan === "enterprise" && "Plan Enterprise"}
-                </Badge>
-              </div>
+              {/* Plan y límites ocultos por nueva política */}
             </div>
           </div>
+          {isSuperadmin && (
           <Button onClick={handleInviteClick} className="hover-scale">
             <UserPlus className="w-4 h-4 mr-2" />
             Invitar Usuario
           </Button>
+          )}
         </div>
 
         {/* Tabs */}
@@ -552,30 +547,34 @@ const People = () => {
                             {new Date(invite.expires_at).toLocaleDateString("es-ES")}
                           </TableCell>
                           <TableCell className="text-right">
-                            <div className="flex justify-end gap-2">
-                              {invite.status === "pending" && (
-                                <>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleResendInvite(invite)}
-                                    className="hover-scale"
-                                    title="Reenviar invitación"
-                                  >
-                                    <RefreshCw className="w-4 h-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleRevokeInvite(invite.id)}
-                                    className="hover-scale text-red-500"
-                                    title="Revocar invitación"
-                                  >
-                                    <XCircle className="w-4 h-4" />
-                                  </Button>
-                                </>
-                              )}
-                            </div>
+                            {isSuperadmin ? (
+                              <div className="flex justify-end gap-2">
+                                {invite.status === "pending" && (
+                                  <>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleResendInvite(invite)}
+                                      className="hover-scale"
+                                      title="Reenviar invitación"
+                                    >
+                                      <RefreshCw className="w-4 h-4" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleRevokeInvite(invite.id)}
+                                      className="hover-scale text-red-500"
+                                      title="Revocar invitación"
+                                    >
+                                      <XCircle className="w-4 h-4" />
+                                    </Button>
+                                  </>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-muted-foreground text-sm">—</span>
+                            )}
                           </TableCell>
                         </motion.tr>
                       ))}

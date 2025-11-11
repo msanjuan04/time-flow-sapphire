@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { requireSuperadmin } from "../_shared/admin.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -12,28 +13,8 @@ serve(async (req) => {
   }
 
   try {
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      {
-        global: {
-          headers: { Authorization: req.headers.get("Authorization")! },
-        },
-      }
-    );
-
-    // Get authenticated user
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // Validate superadmin
+    const { supabase } = await requireSuperadmin(req);
 
     // Get invite ID from request body
     const body = await req.json();
@@ -49,37 +30,11 @@ serve(async (req) => {
 
     console.log("Resending invite with ID:", inviteId);
 
-    // Get user's company and role
-    const { data: membership, error: membershipError } = await supabase
-      .from("memberships")
-      .select("company_id, role")
-      .eq("user_id", user.id)
-      .single();
-
-    if (membershipError) {
-      console.error("Error fetching membership:", membershipError);
-      return new Response(
-        JSON.stringify({ error: "Failed to fetch user membership" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    if (!membership || !["owner", "admin"].includes(membership.role)) {
-      console.error("Insufficient permissions. Role:", membership?.role);
-      return new Response(
-        JSON.stringify({ error: "Insufficient permissions" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log("User membership verified. Company ID:", membership.company_id);
-
     // Get the invite
     const { data: invite, error: fetchError } = await supabase
       .from("invites")
       .select("*")
       .eq("id", inviteId)
-      .eq("company_id", membership.company_id)
       .single();
 
     if (fetchError) {

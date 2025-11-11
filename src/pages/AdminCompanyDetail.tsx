@@ -16,6 +16,8 @@ import { AdminLayout } from "@/components/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useImpersonation } from "@/hooks/useImpersonation";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 
 interface CompanyDetail {
   id: string;
@@ -46,12 +48,61 @@ const AdminCompanyDetail = () => {
   const { startImpersonation, loading: impersonationLoading } = useImpersonation();
   const [company, setCompany] = useState<CompanyDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<"admin" | "manager" | "worker">("worker");
+  const [centers, setCenters] = useState<{ id: string; name: string }[]>([]);
+  const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
+  const [inviteCenter, setInviteCenter] = useState<string>("none");
+  const [inviteTeam, setInviteTeam] = useState<string>("none");
+  const [sendingInvite, setSendingInvite] = useState(false);
 
   useEffect(() => {
     if (id) {
       fetchCompanyDetail();
+      fetchAux();
     }
   }, [id]);
+
+  const fetchAux = async () => {
+    if (!id) return;
+    const [{ data: centersData }, { data: teamsData }] = await Promise.all([
+      supabase.from("centers").select("id, name").eq("company_id", id),
+      supabase.from("teams").select("id, name").eq("company_id", id),
+    ]);
+    setCenters(centersData || []);
+    setTeams(teamsData || []);
+  };
+
+  const handleInvite = async () => {
+    if (!id) return;
+    if (!inviteEmail.trim()) {
+      toast.error("Email requerido");
+      return;
+    }
+    setSendingInvite(true);
+    try {
+      const { error } = await (supabase as any).functions.invoke("admin-create-invite", {
+        body: {
+          company_id: id,
+          email: inviteEmail.trim(),
+          role: inviteRole,
+          center_id: inviteCenter === "none" ? null : inviteCenter,
+          team_id: inviteTeam === "none" ? null : inviteTeam,
+        },
+      });
+      if (error) throw error;
+      toast.success("Invitación enviada");
+      setInviteEmail("");
+      setInviteRole("worker");
+      setInviteCenter("none");
+      setInviteTeam("none");
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || "Error al enviar invitación");
+    } finally {
+      setSendingInvite(false);
+    }
+  };
 
   const fetchCompanyDetail = async () => {
     setLoading(true);
@@ -166,6 +217,56 @@ const AdminCompanyDetail = () => {
               <p className="font-medium">
                 {new Date(company.created_at).toLocaleDateString()}
               </p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Invite Users */}
+        <Card className="glass-card p-6">
+          <h2 className="text-lg font-semibold mb-4">Invitar usuario a esta empresa</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <Input
+              placeholder="email@empresa.com"
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+            />
+            <Select value={inviteRole} onValueChange={(v: any) => setInviteRole(v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Rol" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="manager">Manager</SelectItem>
+                <SelectItem value="worker">Worker</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={inviteCenter} onValueChange={setInviteCenter}>
+              <SelectTrigger>
+                <SelectValue placeholder="Centro" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Sin centro</SelectItem>
+                {centers.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={inviteTeam} onValueChange={setInviteTeam}>
+              <SelectTrigger>
+                <SelectValue placeholder="Equipo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Sin equipo</SelectItem>
+                {teams.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="flex justify-end">
+              <Button onClick={handleInvite} disabled={sendingInvite}>
+                {sendingInvite && <Loader2 className="w-4 h-4 mr-2 animate-spin"/>}
+                Enviar invitación
+              </Button>
             </div>
           </div>
         </Card>

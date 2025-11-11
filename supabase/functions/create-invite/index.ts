@@ -19,49 +19,27 @@ serve(async (req) => {
   }
 
   try {
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
-      {
-        global: {
-          headers: { Authorization: req.headers.get("Authorization")! },
-        },
-      }
+    // This endpoint is disabled: invites ahora solo las crea el Superadmin
+    // desde admin-create-invite. Mantener 403 explícito.
+    return new Response(
+      JSON.stringify({ error: "Forbidden: Use admin-create-invite" }),
+      { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
 
-    // Get authenticated user
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
+    // Unreachable code below (kept intentionally minimal) 
 
-    if (authError || !user) {
-      console.error("Auth error:", authError);
+    // Restrict: only superadmin can create invites from app UI
+    const { data: isSuperadmin, error: superadminError } = await supabase.rpc("is_superadmin");
+    if (superadminError) {
+      console.error("Superadmin check error:", superadminError);
       return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Failed to verify permissions" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Get user's company and role
-    const { data: membership, error: membershipError } = await supabase
-      .from("memberships")
-      .select("company_id, role")
-      .eq("user_id", user.id)
-      .single();
-
-    if (membershipError || !membership) {
-      console.error("Membership error:", membershipError);
+    if (!isSuperadmin) {
       return new Response(
-        JSON.stringify({ error: "User not associated with any company" }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Check if user is owner or admin
-    if (!["owner", "admin"].includes(membership.role)) {
-      return new Response(
-        JSON.stringify({ error: "Insufficient permissions" }),
+        JSON.stringify({ error: "Forbidden: Superadmin required" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -102,41 +80,13 @@ serve(async (req) => {
       .eq("id", membership.company_id)
       .single();
 
-    const plan = company?.plan || "free";
-    const planLimits: Record<string, number> = {
-      free: 5,
-      pro: 50,
-      enterprise: Infinity,
-    };
-
-    const maxEmployees = planLimits[plan];
-
-    // Count current employees
-    const { count: currentCount } = await supabase
-      .from("memberships")
-      .select("*", { count: "exact", head: true })
-      .eq("company_id", membership.company_id);
-
-    const currentEmployees = currentCount || 0;
-
-    if (currentEmployees >= maxEmployees) {
-      return new Response(
-        JSON.stringify({ 
-          error: "Plan limit reached",
-          message: `Has alcanzado el límite de ${maxEmployees} miembros del plan ${plan.toUpperCase()}`,
-          plan,
-          maxEmployees,
-          currentEmployees,
-        }),
-        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // Plan limits no longer enforced
 
     // Check if email already exists in this company
     const { data: existingMembership } = await supabase
       .from("memberships")
       .select("profiles!inner(email)")
-      .eq("company_id", membership.company_id)
+      .eq("company_id", body.center_id || body.team_id ? company?.id : company?.id)
       .eq("profiles.email", email)
       .maybeSingle();
 
@@ -172,7 +122,7 @@ serve(async (req) => {
     const { data: invite, error: inviteError } = await supabase
       .from("invites")
       .insert({
-        company_id: membership.company_id,
+        company_id: company?.id,
         email,
         role: body.role,
         center_id: body.center_id || null,

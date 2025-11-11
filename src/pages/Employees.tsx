@@ -53,6 +53,7 @@ const Employees = () => {
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const { isSuperadmin } = useSuperadmin();
 
   useEffect(() => {
     if (!user) {
@@ -232,13 +233,15 @@ const Employees = () => {
               </p>
             </div>
           </div>
-          <Button
-            onClick={() => setInviteDialogOpen(true)}
-            className="hover-scale"
-          >
-            <UserPlus className="w-4 h-4 mr-2" />
-            Invitar Usuario
-          </Button>
+          {isSuperadmin && (
+            <Button
+              onClick={() => setInviteDialogOpen(true)}
+              className="hover-scale"
+            >
+              <UserPlus className="w-4 h-4 mr-2" />
+              Invitar Usuario
+            </Button>
+          )}
         </div>
 
         {/* Filters */}
@@ -358,11 +361,13 @@ const Employees = () => {
         </Card>
       </div>
 
-      <InviteUserDialog
-        open={inviteDialogOpen}
-        onOpenChange={setInviteDialogOpen}
-        onSuccess={fetchEmployees}
-      />
+      {isSuperadmin && (
+        <InviteUserDialog
+          open={inviteDialogOpen}
+          onOpenChange={setInviteDialogOpen}
+          onSuccess={fetchEmployees}
+        />
+      )}
 
       {selectedEmployee && (
         <EditUserDialog
@@ -377,3 +382,4 @@ const Employees = () => {
 };
 
 export default Employees;
+import { useSuperadmin } from "@/hooks/useSuperadmin";

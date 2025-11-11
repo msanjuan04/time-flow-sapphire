@@ -19,10 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, UserCog, Search, Loader2 } from "lucide-react";
+import { ArrowLeft, UserCog, Search, Loader2, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useImpersonation } from "@/hooks/useImpersonation";
 import { toast } from "sonner";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 interface Company {
   id: string;
@@ -42,6 +43,9 @@ const AdminCompanies = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRole, setSelectedRole] = useState<"admin" | "manager" | "worker">("admin");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newCompanyName, setNewCompanyName] = useState("");
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     fetchCompanies();
@@ -64,6 +68,27 @@ const AdminCompanies = () => {
       toast.error("Error al cargar empresas");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCreateCompany = async () => {
+    const name = newCompanyName.trim();
+    if (!name) return;
+    setCreating(true);
+    try {
+      const { error } = await (supabase as any).functions.invoke("admin-create-company", {
+        body: { name },
+      });
+      if (error) throw error;
+      setCreateOpen(false);
+      setNewCompanyName("");
+      fetchCompanies();
+      toast.success("Empresa creada correctamente");
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || "Error al crear empresa");
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -114,6 +139,9 @@ const AdminCompanies = () => {
               </p>
             </div>
           </div>
+          <Button onClick={() => setCreateOpen(true)} className="hover-scale">
+            <Plus className="w-4 h-4 mr-2" /> Crear empresa
+          </Button>
         </div>
 
         {/* Filters */}
@@ -224,6 +252,30 @@ const AdminCompanies = () => {
           )}
         </Card>
       </div>
+
+      {/* Create Company Dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="glass-card">
+          <DialogHeader>
+            <DialogTitle>Nueva empresa</DialogTitle>
+            <DialogDescription>Introduce el nombre de la empresa</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Input
+              placeholder="Nombre de la empresa"
+              value={newCompanyName}
+              onChange={(e) => setNewCompanyName(e.target.value)}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setCreateOpen(false)} disabled={creating}>Cancelar</Button>
+              <Button onClick={handleCreateCompany} disabled={creating || !newCompanyName.trim()}>
+                {creating && <Loader2 className="w-4 h-4 mr-2 animate-spin"/>}
+                Crear
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

@@ -26,3 +26,9 @@ verify_jwt = true
 
 [functions.reactivate-person]
 verify_jwt = true
+
+[functions.admin-create-invite]
+verify_jwt = true
+
+[functions.admin-create-company]
+verify_jwt = true

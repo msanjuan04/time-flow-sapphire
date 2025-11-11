@@ -113,9 +113,10 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
     setLoading(true);
 
     try {
-      // Delegate creation + email to the edge function
-      const { data, error } = await supabase.functions.invoke("create-invite", {
+      // Delegate creation + email to the superadmin edge function
+      const { data, error } = await supabase.functions.invoke("admin-create-invite", {
         body: {
+          company_id: companyId,
           email: email.toLowerCase().trim(),
           role: role as "admin" | "manager" | "worker",
           center_id: centerId || null,
