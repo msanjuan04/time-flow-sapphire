@@ -786,6 +786,14 @@ export type Database = {
     }
     Functions: {
       check_company_active: { Args: { p_company_id: string }; Returns: boolean }
+      get_user_role: {
+        Args: { p_company_id: string; p_user_id: string }
+        Returns: Database["public"]["Enums"]["user_role"]
+      }
+      has_company_membership: {
+        Args: { p_company_id: string; p_user_id: string }
+        Returns: boolean
+      }
       log_audit_event: {
         Args: {
           p_action: string
