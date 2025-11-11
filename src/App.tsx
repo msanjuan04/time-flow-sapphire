@@ -27,6 +27,7 @@ import AdminCompanyDetail from "./pages/AdminCompanyDetail";
 import AdminUsers from "./pages/AdminUsers";
 import AdminLogs from "./pages/AdminLogs";
 import NotFound from "./pages/NotFound";
+import ThemeToggle from "@/components/ThemeToggle";
 
 const queryClient = new QueryClient();
 
@@ -34,6 +35,7 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <Toaster />
     <Sonner />
+    <ThemeToggle />
     <BrowserRouter>
       <AuthProvider>
         <ImpersonationBanner />
