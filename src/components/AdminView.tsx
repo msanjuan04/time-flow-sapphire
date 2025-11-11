@@ -301,9 +301,9 @@ const AdminView = () => {
             <Button
               variant="outline"
               size="icon"
-              onClick={() => navigate("/employees")}
+              onClick={() => navigate("/people")}
               className="hover-scale"
-              title="Empleados"
+              title="Gestión de Personas"
             >
               <Users className="w-5 h-5" />
             </Button>

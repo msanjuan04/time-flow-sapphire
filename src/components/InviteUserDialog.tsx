@@ -24,7 +24,6 @@ import { z } from "zod";
 
 const inviteSchema = z.object({
   email: z.string().email("Email inválido").max(255, "Email demasiado largo"),
-  fullName: z.string().trim().min(1, "El nombre es requerido").max(100, "Nombre demasiado largo"),
   role: z.enum(["admin", "manager", "worker"]),
 });
 
@@ -48,7 +47,6 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
   const { companyId } = useMembership();
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
-  const [fullName, setFullName] = useState("");
   const [role, setRole] = useState<string>("worker");
   const [centerId, setCenterId] = useState<string>("");
   const [teamId, setTeamId] = useState<string>("");
@@ -89,7 +87,7 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
 
     // Validate
     try {
-      inviteSchema.parse({ email, fullName, role });
+      inviteSchema.parse({ email, role });
     } catch (error) {
       if (error instanceof z.ZodError) {
         const newErrors: { [key: string]: string } = {};
@@ -122,63 +120,66 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
         return;
       }
 
-      // Create auth user with magic link (placeholder - will send email in production)
-      const temporaryPassword = Math.random().toString(36).slice(-16);
-      
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: email.toLowerCase().trim(),
-        password: temporaryPassword,
-        options: {
-          data: {
-            full_name: fullName.trim(),
-          },
-          emailRedirectTo: `${window.location.origin}/`,
-        },
-      });
+      // Check if there's already a pending invite for this email
+      const { data: existingInvite } = await supabase
+        .from("invites")
+        .select("id")
+        .eq("company_id", companyId)
+        .eq("email", email.toLowerCase().trim())
+        .eq("status", "pending")
+        .maybeSingle();
 
-      if (authError) throw authError;
-      if (!authData.user) throw new Error("Error al crear usuario");
+      if (existingInvite) {
+        setErrors({ email: "Ya existe una invitación pendiente para este email" });
+        setLoading(false);
+        return;
+      }
 
-      // Wait a moment for profile trigger to complete
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Get current user
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuario no autenticado");
 
-      // Update profile with center and team
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({
+      // Generate unique token and expiration date (7 days)
+      const token = crypto.randomUUID();
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 7);
+
+      // Create invite record
+      const { error: inviteError } = await supabase
+        .from("invites")
+        .insert({
+          company_id: companyId,
+          email: email.toLowerCase().trim(),
+          role: role as "admin" | "manager" | "worker",
           center_id: centerId || null,
           team_id: teamId || null,
-        })
-        .eq("id", authData.user.id);
-
-      if (profileError) throw profileError;
-
-      // Create membership
-      const { error: membershipError } = await supabase
-        .from("memberships")
-        .insert({
-          user_id: authData.user.id,
-          company_id: companyId,
-          role: role as "admin" | "manager" | "worker",
+          token,
+          expires_at: expiresAt.toISOString(),
+          created_by: user.id,
+          status: "pending",
         });
 
-      if (membershipError) throw membershipError;
+      if (inviteError) {
+        if (inviteError.code === "23505") {
+          throw new Error("Ya existe una invitación pendiente para este email");
+        }
+        throw inviteError;
+      }
 
-      toast.success("Usuario invitado correctamente", {
-        description: "Se ha enviado un email de confirmación (placeholder)",
+      toast.success("Invitación creada correctamente", {
+        description: "El usuario recibirá un email con el enlace de invitación",
       });
 
       // Reset form
       setEmail("");
-      setFullName("");
       setRole("worker");
       setCenterId("");
       setTeamId("");
       onSuccess();
       onOpenChange(false);
     } catch (error: any) {
-      console.error("Error inviting user:", error);
-      toast.error(error.message || "Error al invitar usuario");
+      console.error("Error creating invite:", error);
+      toast.error(error.message || "Error al crear invitación");
     } finally {
       setLoading(false);
     }
@@ -207,21 +208,6 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
             />
             {errors.email && (
               <p className="text-sm text-destructive">{errors.email}</p>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="fullName">Nombre completo *</Label>
-            <Input
-              id="fullName"
-              type="text"
-              placeholder="Juan Pérez"
-              value={fullName}
-              onChange={(e) => setFullName(e.target.value)}
-              required
-            />
-            {errors.fullName && (
-              <p className="text-sm text-destructive">{errors.fullName}</p>
             )}
           </div>
 
