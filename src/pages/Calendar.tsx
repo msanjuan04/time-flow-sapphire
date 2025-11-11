@@ -3,7 +3,7 @@ import { useMembership } from "@/hooks/useMembership";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
-import { Calendar as CalendarIcon, Clock, AlertCircle } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, AlertCircle, MapPin } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { format, startOfMonth, endOfMonth, parseISO, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
@@ -15,6 +15,14 @@ interface WorkSession {
   clock_in_time: string;
   clock_out_time: string | null;
   total_work_duration: string | null;
+}
+
+interface TimeEvent {
+  id: string;
+  event_type: string;
+  event_time: string;
+  latitude: number | null;
+  longitude: number | null;
 }
 
 interface Absence {
@@ -39,10 +47,12 @@ const WorkerCalendar = () => {
   const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [scheduledHours, setScheduledHours] = useState<ScheduledHours[]>([]);
+  const [timeEvents, setTimeEvents] = useState<TimeEvent[]>([]);
   const [selectedDateData, setSelectedDateData] = useState<{
     worked: number;
     expected: number;
     absence: Absence | null;
+    events: TimeEvent[];
   } | null>(null);
 
   useEffect(() => {
@@ -92,6 +102,18 @@ const WorkerCalendar = () => {
 
       if (scheduledError) throw scheduledError;
       setScheduledHours((scheduled as ScheduledHours[]) || []);
+
+      // Fetch time events with geolocation
+      const { data: events, error: eventsError } = await supabase
+        .from("time_events")
+        .select("id, event_type, event_time, latitude, longitude")
+        .eq("user_id", user.id)
+        .gte("event_time", monthStart.toISOString())
+        .lte("event_time", monthEnd.toISOString())
+        .order("event_time", { ascending: false });
+
+      if (eventsError) throw eventsError;
+      setTimeEvents((events as TimeEvent[]) || []);
     } catch (error: any) {
       toast.error("Error al cargar datos del calendario");
       console.error(error);
@@ -135,13 +157,20 @@ const WorkerCalendar = () => {
     );
   };
 
+  const getEventsForDate = (checkDate: Date): TimeEvent[] => {
+    return timeEvents.filter((event) =>
+      isSameDay(parseISO(event.event_time), checkDate)
+    );
+  };
+
   const handleDateSelect = (selectedDate: Date | undefined) => {
     setDate(selectedDate);
     if (selectedDate) {
       const worked = getWorkedHours(selectedDate);
       const expected = getExpectedHours(selectedDate);
       const absence = getAbsenceForDate(selectedDate);
-      setSelectedDateData({ worked, expected, absence });
+      const events = getEventsForDate(selectedDate);
+      setSelectedDateData({ worked, expected, absence, events });
     }
   };
 
@@ -285,6 +314,53 @@ const WorkerCalendar = () => {
                     </>
                   )}
                 </div>
+
+                {selectedDateData.events.length > 0 && (
+                  <div className="mt-6 pt-4 border-t">
+                    <div className="flex items-center gap-2 mb-3">
+                      <MapPin className="h-5 w-5 text-primary" />
+                      <h3 className="font-semibold">Ubicaciones de fichaje</h3>
+                    </div>
+                    <div className="space-y-2">
+                      {selectedDateData.events.map((event) => (
+                        <div
+                          key={event.id}
+                          className="p-3 bg-muted/50 rounded-lg space-y-1"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium">
+                              {event.event_type === "clock_in"
+                                ? "Entrada"
+                                : event.event_type === "clock_out"
+                                ? "Salida"
+                                : event.event_type === "pause_start"
+                                ? "Inicio pausa"
+                                : "Fin pausa"}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {format(parseISO(event.event_time), "HH:mm")}
+                            </span>
+                          </div>
+                          {event.latitude && event.longitude ? (
+                            <a
+                              href={`https://www.google.com/maps?q=${event.latitude},${event.longitude}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-primary hover:underline flex items-center gap-1"
+                            >
+                              <MapPin className="h-3 w-3" />
+                              Ver ubicación en mapa
+                            </a>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              Sin ubicación registrada
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </Card>
