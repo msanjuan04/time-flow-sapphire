@@ -95,7 +95,44 @@ serve(async (req) => {
 
     const email = body.email.toLowerCase().trim();
 
-    // Check if email already exists in company
+    // Check plan limits
+    const { data: company } = await supabase
+      .from("companies")
+      .select("plan")
+      .eq("id", membership.company_id)
+      .single();
+
+    const plan = company?.plan || "free";
+    const planLimits: Record<string, number> = {
+      free: 5,
+      pro: 50,
+      enterprise: Infinity,
+    };
+
+    const maxEmployees = planLimits[plan];
+
+    // Count current employees
+    const { count: currentCount } = await supabase
+      .from("memberships")
+      .select("*", { count: "exact", head: true })
+      .eq("company_id", membership.company_id);
+
+    const currentEmployees = currentCount || 0;
+
+    if (currentEmployees >= maxEmployees) {
+      return new Response(
+        JSON.stringify({ 
+          error: "Plan limit reached",
+          message: `Has alcanzado el límite de ${maxEmployees} miembros del plan ${plan.toUpperCase()}`,
+          plan,
+          maxEmployees,
+          currentEmployees,
+        }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    // Check if email already exists in this company
     const { data: existingMembership } = await supabase
       .from("memberships")
       .select("profiles!inner(email)")

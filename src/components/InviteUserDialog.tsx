@@ -183,7 +183,15 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
       onOpenChange(false);
     } catch (error: any) {
       console.error("Error creating invite:", error);
-      toast.error(error.message || "Error al crear invitación");
+      
+      // Handle plan limit error
+      if (error.message?.includes("límite") || error.message?.includes("limit")) {
+        toast.error("Límite de plan alcanzado", {
+          description: error.message || "Has alcanzado el límite de miembros de tu plan actual",
+        });
+      } else {
+        toast.error(error.message || "Error al crear invitación");
+      }
     } finally {
       setLoading(false);
     }

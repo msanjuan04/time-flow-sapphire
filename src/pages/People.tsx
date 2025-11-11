@@ -30,9 +30,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowLeft, UserPlus, Search, Edit, Mail, XCircle, RefreshCw, Power } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ArrowLeft, UserPlus, Search, Edit, Mail, XCircle, RefreshCw, Power, Crown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMembership } from "@/hooks/useMembership";
+import { usePlanLimits } from "@/hooks/usePlanLimits";
 import { toast } from "sonner";
 import InviteUserDialog from "@/components/InviteUserDialog";
 import EditUserDialog from "@/components/EditUserDialog";
@@ -66,6 +75,7 @@ interface Invite {
 const People = () => {
   const navigate = useNavigate();
   const { companyId, role } = useMembership();
+  const { plan, maxEmployees, currentEmployees, canInviteMore, refetch: refetchLimits } = usePlanLimits();
   const [members, setMembers] = useState<Member[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [filteredMembers, setFilteredMembers] = useState<Member[]>([]);
@@ -74,6 +84,7 @@ const People = () => {
   const [roleFilter, setRoleFilter] = useState<string>("all");
   const [showInviteDialog, setShowInviteDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [toggleUserDialog, setToggleUserDialog] = useState<{ show: boolean; member: Member | null }>({
     show: false,
@@ -100,6 +111,7 @@ const People = () => {
   const fetchData = async () => {
     setLoading(true);
     await Promise.all([fetchMembers(), fetchInvites()]);
+    await refetchLimits();
     setLoading(false);
   };
 
@@ -226,6 +238,23 @@ const People = () => {
     setShowEditDialog(true);
   };
 
+  const handleInviteClick = () => {
+    if (!canInviteMore) {
+      setShowLimitDialog(true);
+      return;
+    }
+    setShowInviteDialog(true);
+  };
+
+  const getPlanBadgeColor = (planType: string) => {
+    const colors: Record<string, string> = {
+      free: "bg-gray-500/10 text-gray-700 border-gray-500/20",
+      pro: "bg-blue-500/10 text-blue-700 border-blue-500/20",
+      enterprise: "bg-purple-500/10 text-purple-700 border-purple-500/20",
+    };
+    return colors[planType] || colors.free;
+  };
+
   const handleToggleUser = async (member: Member) => {
     const newStatus = !member.is_active;
 
@@ -310,12 +339,19 @@ const People = () => {
             </Button>
             <div>
               <h1 className="text-2xl font-bold">Gestión de Personas</h1>
-              <p className="text-sm text-muted-foreground">
-                Administra miembros e invitaciones
-              </p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm text-muted-foreground">
+                  {currentEmployees} / {maxEmployees === Infinity ? "∞" : maxEmployees} miembros
+                </p>
+                <Badge className={getPlanBadgeColor(plan)}>
+                  {plan === "free" && "Plan Free"}
+                  {plan === "pro" && "Plan Pro"}
+                  {plan === "enterprise" && "Plan Enterprise"}
+                </Badge>
+              </div>
             </div>
           </div>
-          <Button onClick={() => setShowInviteDialog(true)} className="hover-scale">
+          <Button onClick={handleInviteClick} className="hover-scale">
             <UserPlus className="w-4 h-4 mr-2" />
             Invitar Usuario
           </Button>
@@ -604,6 +640,92 @@ const People = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Plan Limit Dialog */}
+      <Dialog open={showLimitDialog} onOpenChange={setShowLimitDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Crown className="w-5 h-5 text-amber-500" />
+              Límite de plan alcanzado
+            </DialogTitle>
+            <DialogDescription>
+              Has alcanzado el límite de {maxEmployees} {maxEmployees === 1 ? "miembro" : "miembros"} del plan {plan.toUpperCase()}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="bg-muted p-4 rounded-lg space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Plan actual:</span>
+                <Badge className={getPlanBadgeColor(plan)}>
+                  {plan.toUpperCase()}
+                </Badge>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Miembros actuales:</span>
+                <span className="font-semibold">{currentEmployees} / {maxEmployees}</span>
+              </div>
+            </div>
+
+            {plan === "free" && (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Actualiza a un plan superior para invitar más miembros:
+                </p>
+                <div className="space-y-2">
+                  <div className="p-3 border rounded-lg">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="font-semibold">Plan Pro</span>
+                      <Badge className={getPlanBadgeColor("pro")}>PRO</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Hasta 50 miembros
+                    </p>
+                  </div>
+                  <div className="p-3 border rounded-lg">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="font-semibold">Plan Enterprise</span>
+                      <Badge className={getPlanBadgeColor("enterprise")}>ENTERPRISE</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Miembros ilimitados
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {plan === "pro" && (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Actualiza al plan Enterprise para miembros ilimitados:
+                </p>
+                <div className="p-3 border rounded-lg">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="font-semibold">Plan Enterprise</span>
+                    <Badge className={getPlanBadgeColor("enterprise")}>ENTERPRISE</Badge>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Miembros ilimitados + características premium
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="sm:justify-between">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowLimitDialog(false)}
+            >
+              Cancelar
+            </Button>
+            <Button type="button" onClick={() => toast.info("Contacta con soporte para actualizar tu plan")}>
+              Actualizar Plan
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

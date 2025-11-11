@@ -166,6 +166,7 @@ export type Database = {
           id: string
           name: string
           owner_user_id: string | null
+          plan: string
           policies: Json | null
           status: string | null
           updated_at: string
@@ -175,6 +176,7 @@ export type Database = {
           id?: string
           name: string
           owner_user_id?: string | null
+          plan?: string
           policies?: Json | null
           status?: string | null
           updated_at?: string
@@ -184,6 +186,7 @@ export type Database = {
           id?: string
           name?: string
           owner_user_id?: string | null
+          plan?: string
           policies?: Json | null
           status?: string | null
           updated_at?: string
