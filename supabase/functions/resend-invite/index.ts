@@ -50,18 +50,29 @@ serve(async (req) => {
     console.log("Resending invite with ID:", inviteId);
 
     // Get user's company and role
-    const { data: membership } = await supabase
+    const { data: membership, error: membershipError } = await supabase
       .from("memberships")
       .select("company_id, role")
       .eq("user_id", user.id)
       .single();
 
+    if (membershipError) {
+      console.error("Error fetching membership:", membershipError);
+      return new Response(
+        JSON.stringify({ error: "Failed to fetch user membership" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     if (!membership || !["owner", "admin"].includes(membership.role)) {
+      console.error("Insufficient permissions. Role:", membership?.role);
       return new Response(
         JSON.stringify({ error: "Insufficient permissions" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    console.log("User membership verified. Company ID:", membership.company_id);
 
     // Get the invite
     const { data: invite, error: fetchError } = await supabase
@@ -71,17 +82,30 @@ serve(async (req) => {
       .eq("company_id", membership.company_id)
       .single();
 
-    if (fetchError || !invite) {
+    if (fetchError) {
+      console.error("Error fetching invite:", fetchError);
+      return new Response(
+        JSON.stringify({ error: "Invitation not found", details: fetchError.message }),
+        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!invite) {
+      console.error("Invite not found for ID:", inviteId);
       return new Response(
         JSON.stringify({ error: "Invitation not found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
+    console.log("Invite found:", invite.email, "status:", invite.status);
+
     // Generate new token and expiration
     const newToken = crypto.randomUUID();
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
+
+    console.log("Updating invite with new token and expiration:", expiresAt.toISOString());
 
     // Update invite with new token and reset to pending
     const { data: updatedInvite, error: updateError } = await supabase
@@ -97,8 +121,21 @@ serve(async (req) => {
 
     if (updateError) {
       console.error("Error updating invite:", updateError);
+      console.error("Update error details:", JSON.stringify(updateError));
       return new Response(
-        JSON.stringify({ error: "Failed to resend invitation" }),
+        JSON.stringify({ 
+          error: "Failed to resend invitation",
+          details: updateError.message,
+          code: updateError.code 
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!updatedInvite) {
+      console.error("No updated invite returned after update");
+      return new Response(
+        JSON.stringify({ error: "Failed to update invitation" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
