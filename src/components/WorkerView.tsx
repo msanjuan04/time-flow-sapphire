@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Clock, LogIn, LogOut, Coffee, User, MapPin } from "lucide-react";
+import { Clock, LogIn, LogOut, Coffee, User, MapPin, AlertCircle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { useMembership } from "@/hooks/useMembership";
 import { motion, AnimatePresence } from "framer-motion";
+import { useNavigate } from "react-router-dom";
 
 type WorkerStatus = "out" | "in" | "on_break";
 
@@ -18,6 +19,7 @@ interface GeolocationCoords {
 const WorkerView = () => {
   const { user, signOut } = useAuth();
   const { companyId, membership } = useMembership();
+  const navigate = useNavigate();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [status, setStatus] = useState<WorkerStatus>("out");
   const [activeSession, setActiveSession] = useState<any>(null);
@@ -216,9 +218,20 @@ const WorkerView = () => {
               <p className="text-sm text-muted-foreground">Control de fichaje</p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={signOut} className="hover-scale">
-            <LogOut className="w-5 h-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => navigate("/correction-requests")}
+              className="hover-scale"
+              title="Solicitudes de corrección"
+            >
+              <AlertCircle className="w-5 h-5" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={signOut} className="hover-scale">
+              <LogOut className="w-5 h-5" />
+            </Button>
+          </div>
         </motion.div>
 
         {/* Main Clock Card */}

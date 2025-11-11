@@ -220,6 +220,15 @@ const AdminView = () => {
             <Button
               variant="outline"
               size="icon"
+              onClick={() => navigate("/correction-requests")}
+              className="hover-scale"
+              title="Solicitudes de corrección"
+            >
+              <AlertCircle className="w-5 h-5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
               onClick={() => navigate("/reports")}
               className="hover-scale"
               title="Reportes"
