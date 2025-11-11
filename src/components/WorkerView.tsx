@@ -215,7 +215,7 @@ const WorkerView = () => {
             </div>
             <div>
               <h1 className="text-xl font-bold">
-                {membership?.company.name || "TimeTrack"}
+                {membership?.company.name || "GTiQ"}
               </h1>
               <p className="text-sm text-muted-foreground">Control de fichaje</p>
             </div>

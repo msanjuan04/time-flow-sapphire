@@ -66,7 +66,7 @@ const Auth = () => {
                 <Clock className="w-8 h-8 text-primary-foreground" />
               </div>
             </div>
-            <h1 className="text-3xl font-bold">TimeTrack</h1>
+            <h1 className="text-3xl font-bold">GTiQ</h1>
             <p className="text-muted-foreground">
               {isLogin ? "Inicia sesión en tu cuenta" : "Crea tu cuenta"}
             </p>

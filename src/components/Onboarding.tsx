@@ -85,7 +85,7 @@ const Onboarding = ({ onComplete }: OnboardingProps) => {
               <Building2 className="w-8 h-8 text-primary-foreground" />
             </div>
           </div>
-          <h1 className="text-2xl font-bold">¡Bienvenido a TimeTrack!</h1>
+          <h1 className="text-2xl font-bold">¡Bienvenido a GTiQ!</h1>
           <p className="text-muted-foreground">
             Crea tu empresa para comenzar a gestionar el control horario
           </p>
