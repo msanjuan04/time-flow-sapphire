@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   Table,
   TableBody,
@@ -74,7 +75,8 @@ interface Invite {
 
 const People = () => {
   const navigate = useNavigate();
-  const { companyId, role } = useMembership();
+  const { user } = useAuth();
+  const { companyId, role, loading: membershipLoading } = useMembership();
   const { plan, maxEmployees, currentEmployees, canInviteMore, refetch: refetchLimits } = usePlanLimits();
   const [members, setMembers] = useState<Member[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
@@ -92,11 +94,17 @@ const People = () => {
   });
 
   useEffect(() => {
-    if (role && !["owner", "admin"].includes(role)) {
-      toast.error("No tienes permisos para acceder a esta página");
-      navigate("/");
+    if (!membershipLoading) {
+      if (!user) {
+        navigate("/auth");
+        return;
+      }
+      if (role && !["owner", "admin"].includes(role)) {
+        toast.error("No tienes permisos para acceder a esta página");
+        navigate("/");
+      }
     }
-  }, [role, navigate]);
+  }, [user, role, membershipLoading, navigate]);
 
   useEffect(() => {
     if (companyId) {

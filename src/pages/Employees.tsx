@@ -55,14 +55,18 @@ const Employees = () => {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
 
   useEffect(() => {
-    if (role !== "owner" && role !== "admin") {
+    if (!user) {
+      navigate("/auth");
+      return;
+    }
+    if (role && role !== "owner" && role !== "admin") {
       navigate("/");
       return;
     }
     if (companyId) {
       fetchEmployees();
     }
-  }, [companyId, role, navigate]);
+  }, [companyId, role, user, navigate]);
 
   useEffect(() => {
     filterEmployees();
