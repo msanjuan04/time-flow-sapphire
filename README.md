@@ -1,73 +1,131 @@
-# Welcome to your Lovable project
+# TimeTrack - Sistema de Control Horario
 
-## Project info
+Sistema profesional de control horario (fichaje) para empresas construido con React, TypeScript, Tailwind CSS y Lovable Cloud.
 
-**URL**: https://lovable.dev/projects/89cfaf7c-6577-465f-9af9-e3a51fd6ee32
+## Características
 
-## How can I edit this code?
+- 🔐 **Autenticación**: Login y registro con email/contraseña
+- 👥 **Sistema de roles**: Owner, Admin, Manager y Worker
+- 🏢 **Multi-empresa**: Cada empresa tiene su espacio aislado
+- ⏱️ **Fichaje rápido**: Workers pueden fichar entrada/salida/pausas
+- 📊 **Dashboard**: Métricas y visualización para administradores
+- 🎨 **Diseño Apple**: Interfaz limpia con efecto "liquid glass"
+- 🔵 **Marca personalizada**: Color azul GnerAI (#1A6AFF)
 
-There are several ways of editing your application.
+## Stack Tecnológico
 
-**Use Lovable**
+- **Frontend**: React 18 + TypeScript + Vite
+- **Estilos**: Tailwind CSS + Shadcn UI
+- **Backend**: Lovable Cloud (Supabase)
+- **Base de datos**: PostgreSQL con RLS
+- **Autenticación**: Supabase Auth
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/89cfaf7c-6577-465f-9af9-e3a51fd6ee32) and start prompting.
+## Estructura de Base de Datos
 
-Changes made via Lovable will be committed automatically to this repo.
+### Tablas principales
 
-**Use your preferred IDE**
+- **companies**: Empresas registradas
+- **profiles**: Perfiles de usuarios (extiende auth.users)
+- **memberships**: Relación usuario-empresa con roles
+- **time_events**: Eventos de fichaje (entrada/salida/pausa)
+- **work_sessions**: Sesiones de trabajo calculadas
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+### Roles
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+- **Owner**: Control total de la empresa
+- **Admin**: Gestión y visualización completa
+- **Manager**: Visualización del equipo asignado
+- **Worker**: Solo puede fichar entrada/salida/pausas
 
-Follow these steps:
+## Cómo empezar
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+### Primer registro
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+1. Ve a `/auth` y regístrate con tu email
+2. Automáticamente se te redirigirá al onboarding
+3. Crea tu empresa (serás asignado como Owner)
+4. ¡Listo para usar!
 
-# Step 3: Install the necessary dependencies.
-npm i
+### Agregar empleados
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+Los Owners y Admins pueden:
+1. Crear cuentas para empleados
+2. Asignarles roles directamente en la base de datos (por ahora)
+3. Los empleados recibirán acceso según su rol
+
+### Testing rápido
+
+Para probar los diferentes roles, crea múltiples cuentas y asígnales roles en la tabla `memberships` desde el panel de Lovable Cloud:
+
+```sql
+-- Ejemplo: Asignar rol worker a un usuario
+UPDATE memberships 
+SET role = 'worker' 
+WHERE user_id = '[user-id-aquí]';
 ```
 
-**Edit a file directly in GitHub**
+## Vistas por rol
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Worker
+- Botón grande de fichar entrada/salida
+- Indicador de tiempo transcurrido
+- Gestión de pausas
+- Interfaz simple y directa
 
-**Use GitHub Codespaces**
+### Admin/Owner
+- Dashboard con métricas
+- Usuarios activos en tiempo real
+- Listado de fichajes recientes
+- Estadísticas del día
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### Manager
+- Vista del equipo asignado (próximamente)
+- Métricas de su departamento
 
-## What technologies are used for this project?
+## Desarrollo local
 
-This project is built with:
+```bash
+# Instalar dependencias
+npm install
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+# Iniciar servidor de desarrollo
+npm run dev
 
-## How can I deploy this project?
+# Abrir en http://localhost:8080
+```
 
-Simply open [Lovable](https://lovable.dev/projects/89cfaf7c-6577-465f-9af9-e3a51fd6ee32) and click on Share -> Publish.
+## Diseño
 
-## Can I connect a custom domain to my Lovable project?
+El sistema utiliza un diseño inspirado en Apple con:
+- Efecto "liquid glass" (glassmorphism)
+- Color primario: GnerAI Blue (#1A6AFF)
+- Fuentes del sistema (SF Pro Display)
+- Animaciones suaves y fluidas
+- Diseño responsive
 
-Yes, you can!
+## Seguridad
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+- ✅ Row Level Security (RLS) en todas las tablas
+- ✅ Aislamiento por empresa
+- ✅ Autenticación segura con Supabase
+- ✅ Roles almacenados en tabla separada
+- ✅ Validación de permisos en el backend
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## Próximas funcionalidades
+
+- [ ] Panel de gestión de empleados
+- [ ] Vista de Manager con filtros de equipo
+- [ ] Reportes y exportación de datos
+- [ ] Notificaciones push
+- [ ] Geolocalización de fichajes
+- [ ] Aplicación móvil
+
+## Soporte
+
+Para más información sobre Lovable Cloud:
+- [Documentación oficial](https://docs.lovable.dev/)
+- [Guía de Cloud](https://docs.lovable.dev/features/cloud)
+
+---
+
+Desarrollado con ❤️ usando Lovable
