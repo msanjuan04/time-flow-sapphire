@@ -220,8 +220,18 @@ const AdminView = () => {
             <Button
               variant="outline"
               size="icon"
+              onClick={() => navigate("/reports")}
+              className="hover-scale"
+              title="Reportes"
+            >
+              <BarChart3 className="w-5 h-5" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
               onClick={() => navigate("/employees")}
               className="hover-scale"
+              title="Empleados"
             >
               <Users className="w-5 h-5" />
             </Button>
