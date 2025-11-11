@@ -166,8 +166,12 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
         throw inviteError;
       }
 
+      // Copy invite link to clipboard
+      const inviteUrl = `${window.location.origin}/accept-invite?token=${token}`;
+      await navigator.clipboard.writeText(inviteUrl);
+
       toast.success("Invitación creada correctamente", {
-        description: "El usuario recibirá un email con el enlace de invitación",
+        description: "Enlace de invitación copiado al portapapeles",
       });
 
       // Reset form

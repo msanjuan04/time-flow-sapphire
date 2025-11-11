@@ -8,6 +8,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Employees from "./pages/Employees";
 import People from "./pages/People";
+import AcceptInvite from "./pages/AcceptInvite";
 import Reports from "./pages/Reports";
 import CorrectionRequests from "./pages/CorrectionRequests";
 import Devices from "./pages/Devices";
@@ -27,6 +28,7 @@ const App = () => (
           <Route path="/auth" element={<Auth />} />
           <Route path="/employees" element={<Employees />} />
           <Route path="/people" element={<People />} />
+          <Route path="/accept-invite" element={<AcceptInvite />} />
           <Route path="/reports" element={<Reports />} />
           <Route path="/correction-requests" element={<CorrectionRequests />} />
           <Route path="/devices" element={<Devices />} />

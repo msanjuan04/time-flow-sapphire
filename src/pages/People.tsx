@@ -284,7 +284,13 @@ const People = () => {
       return;
     }
 
-    toast.success("Invitación reenviada (email no implementado aún)");
+    // Copy invite link to clipboard
+    const inviteUrl = `${window.location.origin}/accept-invite?token=${token}`;
+    await navigator.clipboard.writeText(inviteUrl);
+    
+    toast.success("Invitación reenviada", {
+      description: "Enlace copiado al portapapeles",
+    });
     fetchInvites();
   };
 
