@@ -35,21 +35,19 @@ serve(async (req) => {
       );
     }
 
-    // Get invite ID from URL or request body
-    const url = new URL(req.url);
-    let inviteId = url.pathname.split("/").pop() || undefined;
-    try {
-      const maybeJson = await req.clone().json().catch(() => null);
-      const bodyInviteId = (maybeJson && (maybeJson.invite_id as string)) || undefined;
-      if (bodyInviteId) inviteId = bodyInviteId;
-    } catch {}
+    // Get invite ID from request body
+    const body = await req.json();
+    const inviteId = body.invite_id;
 
     if (!inviteId) {
+      console.error("No invite_id provided in request body");
       return new Response(
         JSON.stringify({ error: "Invite ID is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    console.log("Resending invite with ID:", inviteId);
 
     // Get user's company and role
     const { data: membership } = await supabase
