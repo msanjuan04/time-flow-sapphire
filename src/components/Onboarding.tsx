@@ -25,7 +25,11 @@ const Onboarding = ({ onComplete }: OnboardingProps) => {
       // Create company
       const { data: company, error: companyError } = await supabase
         .from("companies")
-        .insert({ name: companyName })
+        .insert({ 
+          name: companyName,
+          owner_user_id: user?.id,
+          status: 'active'
+        })
         .select()
         .single();
 

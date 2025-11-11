@@ -14,26 +14,350 @@ export type Database = {
   }
   public: {
     Tables: {
+      alerts: {
+        Row: {
+          company_id: string
+          created_at: string
+          entity_id: string | null
+          entity_type: string | null
+          id: string
+          kind: string
+          payload: Json | null
+          resolved_at: string | null
+          severity: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          kind: string
+          payload?: Json | null
+          resolved_at?: string | null
+          severity: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          kind?: string
+          payload?: Json | null
+          resolved_at?: string | null
+          severity?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "alerts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      audit_logs: {
+        Row: {
+          acting_as_user_id: string | null
+          action: string
+          actor_user_id: string | null
+          company_id: string
+          created_at: string
+          diff: Json | null
+          entity_id: string | null
+          entity_type: string | null
+          id: string
+          ip: unknown
+          reason: string | null
+          user_agent: string | null
+        }
+        Insert: {
+          acting_as_user_id?: string | null
+          action: string
+          actor_user_id?: string | null
+          company_id: string
+          created_at?: string
+          diff?: Json | null
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          ip?: unknown
+          reason?: string | null
+          user_agent?: string | null
+        }
+        Update: {
+          acting_as_user_id?: string | null
+          action?: string
+          actor_user_id?: string | null
+          company_id?: string
+          created_at?: string
+          diff?: Json | null
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          ip?: unknown
+          reason?: string | null
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_logs_acting_as_user_id_fkey"
+            columns: ["acting_as_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_logs_actor_user_id_fkey"
+            columns: ["actor_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "audit_logs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      centers: {
+        Row: {
+          address: string | null
+          company_id: string
+          created_at: string
+          geojson: Json | null
+          id: string
+          name: string
+        }
+        Insert: {
+          address?: string | null
+          company_id: string
+          created_at?: string
+          geojson?: Json | null
+          id?: string
+          name: string
+        }
+        Update: {
+          address?: string | null
+          company_id?: string
+          created_at?: string
+          geojson?: Json | null
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "centers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       companies: {
         Row: {
           created_at: string
           id: string
           name: string
+          owner_user_id: string | null
+          policies: Json | null
+          status: string | null
           updated_at: string
         }
         Insert: {
           created_at?: string
           id?: string
           name: string
+          owner_user_id?: string | null
+          policies?: Json | null
+          status?: string | null
           updated_at?: string
         }
         Update: {
           created_at?: string
           id?: string
           name?: string
+          owner_user_id?: string | null
+          policies?: Json | null
+          status?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "companies_owner_user_id_fkey"
+            columns: ["owner_user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      correction_requests: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          manager_id: string | null
+          payload: Json
+          reason: string | null
+          status: string
+          submitted_by: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          manager_id?: string | null
+          payload: Json
+          reason?: string | null
+          status?: string
+          submitted_by: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          manager_id?: string | null
+          payload?: Json
+          reason?: string | null
+          status?: string
+          submitted_by?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "correction_requests_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "correction_requests_manager_id_fkey"
+            columns: ["manager_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "correction_requests_submitted_by_fkey"
+            columns: ["submitted_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "correction_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      device_tokens: {
+        Row: {
+          created_at: string
+          device_id: string
+          expires_at: string
+          id: string
+          token: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          device_id: string
+          expires_at: string
+          id?: string
+          token: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          device_id?: string
+          expires_at?: string
+          id?: string
+          token?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "device_tokens_device_id_fkey"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "device_tokens_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      devices: {
+        Row: {
+          center_id: string | null
+          company_id: string
+          created_at: string
+          id: string
+          last_seen_at: string | null
+          meta: Json | null
+          name: string
+          secret_hash: string | null
+          type: string
+        }
+        Insert: {
+          center_id?: string | null
+          company_id: string
+          created_at?: string
+          id?: string
+          last_seen_at?: string | null
+          meta?: Json | null
+          name: string
+          secret_hash?: string | null
+          type: string
+        }
+        Update: {
+          center_id?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          last_seen_at?: string | null
+          meta?: Json | null
+          name?: string
+          secret_hash?: string | null
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "devices_center_id_fkey"
+            columns: ["center_id"]
+            isOneToOne: false
+            referencedRelation: "centers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "devices_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       incidents: {
         Row: {
@@ -141,59 +465,144 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          center_id: string | null
           created_at: string
           email: string
           full_name: string | null
           id: string
+          team_id: string | null
           updated_at: string
         }
         Insert: {
           avatar_url?: string | null
+          center_id?: string | null
           created_at?: string
           email: string
           full_name?: string | null
           id: string
+          team_id?: string | null
           updated_at?: string
         }
         Update: {
           avatar_url?: string | null
+          center_id?: string | null
           created_at?: string
           email?: string
           full_name?: string | null
           id?: string
+          team_id?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "fk_profiles_center"
+            columns: ["center_id"]
+            isOneToOne: false
+            referencedRelation: "centers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_profiles_team"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      teams: {
+        Row: {
+          center_id: string | null
+          company_id: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          center_id?: string | null
+          company_id: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          center_id?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "teams_center_id_fkey"
+            columns: ["center_id"]
+            isOneToOne: false
+            referencedRelation: "centers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "teams_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       time_events: {
         Row: {
           company_id: string
           created_at: string
+          device_id: string | null
           event_time: string
           event_type: Database["public"]["Enums"]["event_type"]
           id: string
+          latitude: number | null
+          longitude: number | null
+          meta: Json | null
           notes: string | null
+          photo_url: string | null
+          source: string | null
           user_id: string
         }
         Insert: {
           company_id: string
           created_at?: string
+          device_id?: string | null
           event_time?: string
           event_type: Database["public"]["Enums"]["event_type"]
           id?: string
+          latitude?: number | null
+          longitude?: number | null
+          meta?: Json | null
           notes?: string | null
+          photo_url?: string | null
+          source?: string | null
           user_id: string
         }
         Update: {
           company_id?: string
           created_at?: string
+          device_id?: string | null
           event_time?: string
           event_type?: Database["public"]["Enums"]["event_type"]
           id?: string
+          latitude?: number | null
+          longitude?: number | null
+          meta?: Json | null
           notes?: string | null
+          photo_url?: string | null
+          source?: string | null
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "fk_time_events_device"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "time_events_company_id_fkey"
             columns: ["company_id"]
@@ -218,6 +627,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean | null
+          status: string | null
           total_pause_duration: unknown
           total_work_duration: unknown
           updated_at: string
@@ -230,6 +640,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean | null
+          status?: string | null
           total_pause_duration?: unknown
           total_work_duration?: unknown
           updated_at?: string
@@ -242,6 +653,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean | null
+          status?: string | null
           total_pause_duration?: unknown
           total_work_duration?: unknown
           updated_at?: string
@@ -266,10 +678,88 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      reports_sanitized: {
+        Row: {
+          company_id: string | null
+          created_at: string | null
+          device_id: string | null
+          event_time: string | null
+          event_type: Database["public"]["Enums"]["event_type"] | null
+          id: string | null
+          meta_sanitized: Json | null
+          source: string | null
+          user_id: string | null
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string | null
+          device_id?: string | null
+          event_time?: string | null
+          event_type?: Database["public"]["Enums"]["event_type"] | null
+          id?: string | null
+          meta_sanitized?: never
+          source?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string | null
+          device_id?: string | null
+          event_time?: string | null
+          event_type?: Database["public"]["Enums"]["event_type"] | null
+          id?: string | null
+          meta_sanitized?: never
+          source?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_time_events_device"
+            columns: ["device_id"]
+            isOneToOne: false
+            referencedRelation: "devices"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "time_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
-      [_ in never]: never
+      check_company_active: { Args: { p_company_id: string }; Returns: boolean }
+      log_audit_event: {
+        Args: {
+          p_action: string
+          p_actor_user_id: string
+          p_company_id: string
+          p_diff?: Json
+          p_entity_id: string
+          p_entity_type: string
+          p_reason?: string
+        }
+        Returns: string
+      }
+      validate_geofence: {
+        Args: {
+          p_center_id: string
+          p_company_id: string
+          p_latitude: number
+          p_longitude: number
+        }
+        Returns: boolean
+      }
     }
     Enums: {
       event_type: "clock_in" | "clock_out" | "pause_start" | "pause_end"
