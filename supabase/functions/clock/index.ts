@@ -12,6 +12,7 @@ interface ClockRequest {
   photo_url?: string;
   device_id?: string;
   source?: 'mobile' | 'web' | 'kiosk';
+  user_id?: string; // For kiosk mode
 }
 
 Deno.serve(async (req) => {
@@ -21,6 +22,11 @@ Deno.serve(async (req) => {
   }
 
   try {
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
       Deno.env.get('SUPABASE_ANON_KEY') ?? '',
@@ -31,31 +37,36 @@ Deno.serve(async (req) => {
       }
     );
 
-    // Get authenticated user
+    // Get request body
+    const body: ClockRequest = await req.json();
+    const { action, latitude, longitude, photo_url, device_id, source = 'web', user_id } = body;
+
+    let currentUserId: string;
+
+    // Check if authenticated user or if user_id is provided (for kiosk)
     const {
       data: { user },
-      error: authError,
     } = await supabase.auth.getUser();
 
-    if (authError || !user) {
-      console.error('Auth error:', authError);
+    if (user) {
+      currentUserId = user.id;
+    } else if (user_id) {
+      // Kiosk mode - user_id provided
+      currentUserId = user_id;
+    } else {
       return new Response(
-        JSON.stringify({ error: 'No autenticado' }),
+        JSON.stringify({ error: 'No autenticado o user_id no proporcionado' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Get request body
-    const body: ClockRequest = await req.json();
-    const { action, latitude, longitude, photo_url, device_id, source = 'web' } = body;
-
-    console.log('Clock request:', { user_id: user.id, action, source });
+    console.log('Clock request:', { user_id: currentUserId, action, source });
 
     // Get user's company membership
-    const { data: membership, error: membershipError } = await supabase
+    const { data: membership, error: membershipError } = await supabaseAdmin
       .from('memberships')
       .select('company_id, company:companies(id, name, status)')
-      .eq('user_id', user.id)
+      .eq('user_id', currentUserId)
       .single();
 
     if (membershipError || !membership) {
@@ -79,10 +90,10 @@ Deno.serve(async (req) => {
     }
 
     // Get current active session
-    const { data: activeSession } = await supabase
+    const { data: activeSession } = await supabaseAdmin
       .from('work_sessions')
       .select('*')
-      .eq('user_id', user.id)
+      .eq('user_id', currentUserId)
       .eq('company_id', companyId)
       .eq('is_active', true)
       .maybeSingle();
@@ -125,8 +136,8 @@ Deno.serve(async (req) => {
     }
 
     // Insert time event
-    const { error: eventError } = await supabase.from('time_events').insert({
-      user_id: user.id,
+    const { error: eventError } = await supabaseAdmin.from('time_events').insert({
+      user_id: currentUserId,
       company_id: companyId,
       event_type: eventType,
       source,
@@ -148,8 +159,8 @@ Deno.serve(async (req) => {
     // Update or create work session
     if (action === 'in') {
       // Create new session
-      const { error: sessionError } = await supabase.from('work_sessions').insert({
-        user_id: user.id,
+      const { error: sessionError } = await supabaseAdmin.from('work_sessions').insert({
+        user_id: currentUserId,
         company_id: companyId,
         clock_in_time: new Date().toISOString(),
         is_active: true,
@@ -165,7 +176,7 @@ Deno.serve(async (req) => {
       }
     } else if (action === 'out' && activeSession) {
       // Close session
-      const { error: updateError } = await supabase
+      const { error: updateError } = await supabaseAdmin
         .from('work_sessions')
         .update({
           clock_out_time: new Date().toISOString(),
@@ -193,7 +204,7 @@ Deno.serve(async (req) => {
       currentStatus = 'working';
     }
 
-    console.log('Clock action completed:', { user_id: user.id, action, status: currentStatus });
+    console.log('Clock action completed:', { user_id: currentUserId, action, status: currentStatus });
 
     return new Response(
       JSON.stringify({

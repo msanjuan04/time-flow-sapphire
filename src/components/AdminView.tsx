@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, Users, TrendingUp, LogOut, AlertCircle, BarChart3, Calendar, Settings } from "lucide-react";
+import { Clock, Users, TrendingUp, LogOut, AlertCircle, BarChart3, Calendar, Settings, Tablet } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -271,6 +271,15 @@ const AdminView = () => {
           </div>
           <div className="flex items-center gap-2">
             <NotificationBell />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => navigate("/devices")}
+              className="hover-scale"
+              title="Dispositivos"
+            >
+              <Tablet className="w-5 h-5" />
+            </Button>
             <Button
               variant="outline"
               size="icon"
