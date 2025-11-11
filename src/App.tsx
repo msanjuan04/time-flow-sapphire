@@ -26,6 +26,7 @@ import AdminCompanies from "./pages/AdminCompanies";
 import AdminCompanyDetail from "./pages/AdminCompanyDetail";
 import AdminUsers from "./pages/AdminUsers";
 import AdminLogs from "./pages/AdminLogs";
+import CreateSuperadmin from "./pages/CreateSuperadmin";
 import NotFound from "./pages/NotFound";
 import ThemeToggle from "@/components/ThemeToggle";
 
@@ -54,7 +55,8 @@ const App = () => (
           <Route path="/correction-requests" element={<CorrectionRequests />} />
           <Route path="/devices" element={<Devices />} />
           <Route path="/kiosk" element={<Kiosk />} />
-          <Route 
+          <Route path="/create-superadmin" element={<CreateSuperadmin />} />
+          <Route
             path="/admin" 
             element={
               <SuperadminRoute>
