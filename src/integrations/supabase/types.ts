@@ -423,6 +423,70 @@ export type Database = {
           },
         ]
       }
+      invites: {
+        Row: {
+          center_id: string | null
+          company_id: string
+          created_at: string
+          created_by: string
+          email: string
+          expires_at: string
+          id: string
+          role: string
+          status: string
+          team_id: string | null
+          token: string
+        }
+        Insert: {
+          center_id?: string | null
+          company_id: string
+          created_at?: string
+          created_by: string
+          email: string
+          expires_at: string
+          id?: string
+          role: string
+          status?: string
+          team_id?: string | null
+          token: string
+        }
+        Update: {
+          center_id?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          email?: string
+          expires_at?: string
+          id?: string
+          role?: string
+          status?: string
+          team_id?: string | null
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invites_center_id_fkey"
+            columns: ["center_id"]
+            isOneToOne: false
+            referencedRelation: "centers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invites_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invites_team_id_fkey"
+            columns: ["team_id"]
+            isOneToOne: false
+            referencedRelation: "teams"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       memberships: {
         Row: {
           company_id: string
