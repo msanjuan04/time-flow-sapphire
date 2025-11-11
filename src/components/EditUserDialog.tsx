@@ -162,12 +162,12 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
 
           <div className="space-y-2">
             <Label htmlFor="center">Centro</Label>
-            <Select value={centerId} onValueChange={setCenterId}>
+            <Select value={centerId || "none"} onValueChange={(val) => setCenterId(val === "none" ? "" : val)}>
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar centro" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Sin centro</SelectItem>
+                <SelectItem value="none">Sin centro</SelectItem>
                 {centers.map((center) => (
                   <SelectItem key={center.id} value={center.id}>
                     {center.name}
@@ -179,12 +179,12 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
 
           <div className="space-y-2">
             <Label htmlFor="team">Equipo</Label>
-            <Select value={teamId} onValueChange={setTeamId}>
+            <Select value={teamId || "none"} onValueChange={(val) => setTeamId(val === "none" ? "" : val)}>
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar equipo" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Sin equipo</SelectItem>
+                <SelectItem value="none">Sin equipo</SelectItem>
                 {teams.map((team) => (
                   <SelectItem key={team.id} value={team.id}>
                     {team.name}

@@ -270,12 +270,12 @@ const Devices = () => {
                   </div>
                   <div>
                     <Label htmlFor="center">Centro (opcional)</Label>
-                    <Select value={deviceCenter} onValueChange={setDeviceCenter}>
+                    <Select value={deviceCenter || "none"} onValueChange={(val) => setDeviceCenter(val === "none" ? "" : val)}>
                       <SelectTrigger id="center">
                         <SelectValue placeholder="Sin asignar" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">Sin asignar</SelectItem>
+                        <SelectItem value="none">Sin asignar</SelectItem>
                         {centers.map((center) => (
                           <SelectItem key={center.id} value={center.id}>
                             {center.name}
