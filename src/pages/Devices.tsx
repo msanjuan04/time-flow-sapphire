@@ -57,7 +57,7 @@ interface Center {
 
 const Devices = () => {
   const { user } = useAuth();
-  const { companyId } = useMembership();
+  const { companyId, role, loading: membershipLoading } = useMembership();
   const navigate = useNavigate();
 
   const [devices, setDevices] = useState<Device[]>([]);
@@ -73,11 +73,25 @@ const Devices = () => {
   const [deviceCenter, setDeviceCenter] = useState<string>("");
 
   useEffect(() => {
-    if (companyId) {
+    if (!membershipLoading) {
+      if (!user) {
+        navigate("/auth");
+        return;
+      }
+      if (role && !["owner", "admin"].includes(role)) {
+        toast.error("No tienes permisos para acceder a esta página");
+        navigate("/");
+        return;
+      }
+      if (!companyId) {
+        toast.error("No tienes una empresa asignada");
+        navigate("/");
+        return;
+      }
       fetchDevices();
       fetchCenters();
     }
-  }, [companyId]);
+  }, [companyId, user, role, membershipLoading, navigate]);
 
   const fetchDevices = async () => {
     setLoading(true);

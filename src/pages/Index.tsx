@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -10,14 +10,24 @@ import { Loader2 } from "lucide-react";
 
 const Index = () => {
   const { user, loading: authLoading } = useAuth();
-  const { role, loading: membershipLoading } = useMembership();
+  const { role, companyId, loading: membershipLoading } = useMembership();
   const navigate = useNavigate();
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    // Wait for both auth and membership to load
+    if (authLoading || membershipLoading) return;
+
+    if (!user) {
       navigate("/auth");
+      return;
     }
-  }, [user, authLoading, navigate]);
+
+    // If user has no company, show onboarding
+    if (!companyId) {
+      setShowOnboarding(true);
+    }
+  }, [user, companyId, authLoading, membershipLoading, navigate]);
 
   if (authLoading || membershipLoading) {
     return (
@@ -27,8 +37,12 @@ const Index = () => {
     );
   }
 
+  if (showOnboarding || !companyId) {
+    return <Onboarding onComplete={() => setShowOnboarding(false)} />;
+  }
+
   if (!role) {
-    return <Onboarding onComplete={() => window.location.reload()} />;
+    return null;
   }
 
   if (role === "worker") {

@@ -14,13 +14,16 @@ interface Membership {
   };
 }
 
+const ACTIVE_COMPANY_KEY = "active_company_id";
+
 export const useMembership = () => {
   const { user } = useAuth();
-  const [membership, setMembership] = useState<Membership | null>(null);
+  const [memberships, setMemberships] = useState<Membership[]>([]);
+  const [activeMembership, setActiveMembership] = useState<Membership | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchMembership = async () => {
+    const fetchMemberships = async () => {
       if (!user) {
         setLoading(false);
         return;
@@ -34,20 +37,48 @@ export const useMembership = () => {
           company_id,
           company:companies(id, name)
         `)
-        .eq("user_id", user.id)
-        .single();
+        .eq("user_id", user.id);
 
       if (error) {
-        console.error("Error fetching membership:", error);
-      } else {
-        setMembership(data as any);
+        console.error("Error fetching memberships:", error);
+        setLoading(false);
+        return;
       }
+
+      const membershipsList = (data || []) as any[];
+      setMemberships(membershipsList);
+
+      // Get stored company or use first one
+      const storedCompanyId = localStorage.getItem(ACTIVE_COMPANY_KEY);
+      let active = membershipsList.find(m => m.company_id === storedCompanyId);
       
+      if (!active && membershipsList.length > 0) {
+        active = membershipsList[0];
+        localStorage.setItem(ACTIVE_COMPANY_KEY, active.company_id);
+      }
+
+      setActiveMembership(active || null);
       setLoading(false);
     };
 
-    fetchMembership();
+    fetchMemberships();
   }, [user]);
 
-  return { membership, role: membership?.role, companyId: membership?.company_id, loading };
+  const switchCompany = (companyId: string) => {
+    const newMembership = memberships.find(m => m.company_id === companyId);
+    if (newMembership) {
+      setActiveMembership(newMembership);
+      localStorage.setItem(ACTIVE_COMPANY_KEY, companyId);
+    }
+  };
+
+  return {
+    membership: activeMembership,
+    memberships,
+    role: activeMembership?.role,
+    companyId: activeMembership?.company_id,
+    loading,
+    switchCompany,
+    hasMultipleCompanies: memberships.length > 1,
+  };
 };

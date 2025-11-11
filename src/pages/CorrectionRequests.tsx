@@ -55,7 +55,7 @@ interface CorrectionRequest {
 
 const CorrectionRequests = () => {
   const { user } = useAuth();
-  const { companyId, role } = useMembership();
+  const { companyId, role, loading: membershipLoading } = useMembership();
   const navigate = useNavigate();
 
   const [requests, setRequests] = useState<CorrectionRequest[]>([]);
@@ -72,10 +72,19 @@ const CorrectionRequests = () => {
   const canManage = role === "owner" || role === "admin" || role === "manager";
 
   useEffect(() => {
-    if (companyId && user) {
+    if (!membershipLoading) {
+      if (!user) {
+        navigate("/auth");
+        return;
+      }
+      if (!companyId) {
+        toast.error("No tienes una empresa asignada");
+        navigate("/");
+        return;
+      }
       fetchRequests();
     }
-  }, [companyId, user]);
+  }, [companyId, user, membershipLoading, navigate]);
 
   const fetchRequests = async () => {
     setLoading(true);

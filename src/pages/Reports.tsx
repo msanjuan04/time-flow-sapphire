@@ -75,7 +75,7 @@ const CHART_COLORS = ["hsl(var(--primary))", "hsl(var(--secondary))", "#10b981",
 
 const Reports = () => {
   const { user } = useAuth();
-  const { companyId, membership } = useMembership();
+  const { companyId, membership, loading: membershipLoading } = useMembership();
   const navigate = useNavigate();
   
   const [loading, setLoading] = useState(false);
@@ -94,10 +94,19 @@ const Reports = () => {
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
 
   useEffect(() => {
-    if (companyId) {
+    if (!membershipLoading) {
+      if (!user) {
+        navigate("/auth");
+        return;
+      }
+      if (!companyId) {
+        toast.error("No tienes una empresa asignada");
+        navigate("/");
+        return;
+      }
       fetchFiltersData();
     }
-  }, [companyId]);
+  }, [companyId, user, membershipLoading, navigate]);
 
   useEffect(() => {
     if (companyId) {

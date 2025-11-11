@@ -8,6 +8,7 @@ import { useMembership } from "@/hooks/useMembership";
 import { useNavigate } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import NotificationBell from "@/components/NotificationBell";
+import { CompanySelector } from "@/components/CompanySelector";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -270,6 +271,7 @@ const AdminView = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <CompanySelector />
             <NotificationBell />
             <Button
               variant="outline"
