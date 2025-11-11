@@ -62,6 +62,8 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
   }, [open, companyId]);
 
   const fetchCenters = async () => {
+    if (!companyId) return;
+    
     const { data } = await supabase
       .from("centers")
       .select("id, name")
@@ -72,6 +74,8 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
   };
 
   const fetchTeams = async () => {
+    if (!companyId) return;
+    
     const { data } = await supabase
       .from("teams")
       .select("id, name")
@@ -84,6 +88,11 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
+
+    if (!companyId) {
+      toast.error("No se pudo obtener la información de la empresa");
+      return;
+    }
 
     // Validate
     try {
@@ -196,6 +205,11 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
       setLoading(false);
     }
   };
+
+  // Don't render if companyId is not available yet
+  if (!companyId) {
+    return null;
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
