@@ -4,6 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
+import { SuperadminRoute } from "@/components/SuperadminRoute";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Employees from "./pages/Employees";
@@ -13,6 +14,7 @@ import Reports from "./pages/Reports";
 import CorrectionRequests from "./pages/CorrectionRequests";
 import Devices from "./pages/Devices";
 import Kiosk from "./pages/Kiosk";
+import Admin from "./pages/Admin";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -33,6 +35,14 @@ const App = () => (
           <Route path="/correction-requests" element={<CorrectionRequests />} />
           <Route path="/devices" element={<Devices />} />
           <Route path="/kiosk" element={<Kiosk />} />
+          <Route 
+            path="/admin" 
+            element={
+              <SuperadminRoute>
+                <Admin />
+              </SuperadminRoute>
+            } 
+          />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
