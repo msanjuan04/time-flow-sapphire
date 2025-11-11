@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
 import WorkerView from "@/components/WorkerView";
+import ManagerView from "@/components/ManagerView";
 import AdminView from "@/components/AdminView";
 import Onboarding from "@/components/Onboarding";
 import { Loader2 } from "lucide-react";
@@ -34,6 +35,11 @@ const Index = () => {
     return <WorkerView />;
   }
 
+  if (role === "manager") {
+    return <ManagerView />;
+  }
+
+  // Owner and Admin
   return <AdminView />;
 };
 

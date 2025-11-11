@@ -202,11 +202,7 @@ const AcceptInvite = () => {
       
       // Redirect based on role
       setTimeout(() => {
-        if (inviteData.role === "worker") {
-          navigate("/");
-        } else {
-          navigate("/");
-        }
+        navigate("/");
       }, 2000);
     } catch (err: any) {
       console.error("Error during registration:", err);
@@ -292,13 +288,9 @@ const AcceptInvite = () => {
 
       setStep("success");
       
-      // Redirect based on role
+      // Redirect to home (role-based redirection happens in Index.tsx)
       setTimeout(() => {
-        if (inviteData.role === "worker") {
-          navigate("/");
-        } else {
-          navigate("/");
-        }
+        navigate("/");
       }, 2000);
     } catch (err: any) {
       console.error("Error during login:", err);
