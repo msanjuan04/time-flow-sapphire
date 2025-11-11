@@ -237,7 +237,7 @@ const AcceptInvite = () => {
       if (authError) throw authError;
       if (!authData.user) throw new Error("Error al iniciar sesión");
 
-      // Check if membership already exists
+      // Check if membership already exists for THIS company
       const { data: existingMembership } = await supabase
         .from("memberships")
         .select("id")
@@ -245,29 +245,42 @@ const AcceptInvite = () => {
         .eq("company_id", inviteData.company_id)
         .maybeSingle();
 
-      if (!existingMembership) {
-        // Create membership if it doesn't exist
-        const { error: membershipError } = await supabase
-          .from("memberships")
-          .insert({
-            user_id: authData.user.id,
-            company_id: inviteData.company_id,
-            role: inviteData.role as "owner" | "admin" | "manager" | "worker",
-          });
+      if (existingMembership) {
+        // User is already a member of this company, just mark invite as accepted
+        await supabase
+          .from("invites")
+          .update({ status: "accepted" })
+          .eq("id", inviteData.id);
 
-        if (membershipError) throw membershipError;
-
-        // Update profile with center and team
-        const { error: profileError } = await supabase
-          .from("profiles")
-          .update({
-            center_id: inviteData.center_id,
-            team_id: inviteData.team_id,
-          })
-          .eq("id", authData.user.id);
-
-        if (profileError) console.error("Error updating profile:", profileError);
+        toast.success("Ya eres miembro de esta empresa");
+        
+        setTimeout(() => {
+          navigate("/");
+        }, 1500);
+        return;
       }
+
+      // Create new membership for this company (multi-tenant support)
+      const { error: membershipError } = await supabase
+        .from("memberships")
+        .insert({
+          user_id: authData.user.id,
+          company_id: inviteData.company_id,
+          role: inviteData.role as "owner" | "admin" | "manager" | "worker",
+        });
+
+      if (membershipError) throw membershipError;
+
+      // Update profile with center and team for this company
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({
+          center_id: inviteData.center_id,
+          team_id: inviteData.team_id,
+        })
+        .eq("id", authData.user.id);
+
+      if (profileError) console.error("Error updating profile:", profileError);
 
       // Mark invite as accepted
       const { error: updateError } = await supabase

@@ -435,6 +435,7 @@ const People = () => {
                                   setToggleUserDialog({ show: true, member })
                                 }
                                 className="hover-scale"
+                                title={member.is_active ? "Desactivar usuario" : "Reactivar usuario"}
                               >
                                 <Power
                                   className={`w-4 h-4 ${

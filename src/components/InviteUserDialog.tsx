@@ -115,12 +115,12 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
         .maybeSingle();
 
       if (existingMembership) {
-        setErrors({ email: "Este email ya está registrado en la empresa" });
+        setErrors({ email: "Este email ya pertenece a esta empresa" });
         setLoading(false);
         return;
       }
 
-      // Check if there's already a pending invite for this email
+      // Check if there's already a pending invite for this email in this company
       const { data: existingInvite } = await supabase
         .from("invites")
         .select("id")
@@ -130,7 +130,7 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
         .maybeSingle();
 
       if (existingInvite) {
-        setErrors({ email: "Ya existe una invitación pendiente para este email" });
+        setErrors({ email: "Ya existe una invitación pendiente para este email en esta empresa" });
         setLoading(false);
         return;
       }

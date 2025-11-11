@@ -105,12 +105,12 @@ serve(async (req) => {
 
     if (existingMembership) {
       return new Response(
-        JSON.stringify({ error: "Email already registered in company" }),
+        JSON.stringify({ error: "Email already registered in this company" }),
         { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Check if there's already a pending invite
+    // Check if there's already a pending invite for this company
     const { data: existingInvite } = await supabase
       .from("invites")
       .select("id")
@@ -121,7 +121,7 @@ serve(async (req) => {
 
     if (existingInvite) {
       return new Response(
-        JSON.stringify({ error: "Pending invitation already exists for this email" }),
+        JSON.stringify({ error: "Pending invitation already exists for this email in this company" }),
         { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }

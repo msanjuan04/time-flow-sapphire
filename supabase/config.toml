@@ -23,3 +23,6 @@ verify_jwt = true
 
 [functions.delete-person]
 verify_jwt = true
+
+[functions.reactivate-person]
+verify_jwt = true
