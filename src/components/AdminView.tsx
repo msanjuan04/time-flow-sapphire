@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, Users, TrendingUp, LogOut, AlertCircle, BarChart3, Calendar } from "lucide-react";
+import { Clock, Users, TrendingUp, LogOut, AlertCircle, BarChart3, Calendar, Settings } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
+import { useNavigate } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 
 interface DailyStats {
@@ -16,6 +17,7 @@ interface DailyStats {
 const AdminView = () => {
   const { signOut } = useAuth();
   const { companyId, membership } = useMembership();
+  const navigate = useNavigate();
   const [stats, setStats] = useState({
     activeUsers: 0,
     todayCheckIns: 0,
@@ -214,9 +216,19 @@ const AdminView = () => {
               </p>
             </div>
           </div>
-          <Button variant="ghost" size="icon" onClick={signOut} className="hover-scale">
-            <LogOut className="w-5 h-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => navigate("/employees")}
+              className="hover-scale"
+            >
+              <Users className="w-5 h-5" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={signOut} className="hover-scale">
+              <LogOut className="w-5 h-5" />
+            </Button>
+          </div>
         </div>
 
         {/* Stats Cards */}
