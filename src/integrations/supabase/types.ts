@@ -627,6 +627,21 @@ export type Database = {
           },
         ]
       }
+      superadmins: {
+        Row: {
+          created_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       teams: {
         Row: {
           center_id: string | null
@@ -864,6 +879,7 @@ export type Database = {
         Args: { p_company_id: string; p_user_id: string }
         Returns: boolean
       }
+      is_superadmin: { Args: never; Returns: boolean }
       log_audit_event: {
         Args: {
           p_action: string
