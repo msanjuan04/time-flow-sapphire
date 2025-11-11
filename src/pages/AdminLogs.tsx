@@ -47,31 +47,22 @@ const AdminLogs = () => {
   const fetchLogs = async () => {
     setLoading(true);
     try {
-      let query = supabase
-        .from("audit_logs")
-        .select(`
-          id,
-          action,
-          entity_type,
-          entity_id,
-          created_at,
-          ip,
-          reason,
-          company_id,
-          companies(name)
-        `)
-        .order("created_at", { ascending: false })
-        .limit(100);
-
+      // Build query parameters
+      const params = new URLSearchParams();
+      
       if (actionFilter !== "all") {
-        query = query.ilike("action", `%${actionFilter}%`);
+        params.append("action", actionFilter);
       }
-
+      
       if (searchQuery) {
-        query = query.or(`action.ilike.%${searchQuery}%,reason.ilike.%${searchQuery}%`);
+        params.append("action", searchQuery);
       }
+      
+      params.append("limit", "100");
 
-      const { data, error } = await query;
+      const { data, error } = await supabase.functions.invoke(
+        `admin-list-logs?${params.toString()}`
+      );
 
       if (error) {
         console.error("Error fetching logs:", error);
@@ -79,7 +70,7 @@ const AdminLogs = () => {
         return;
       }
 
-      setLogs((data || []) as AuditLog[]);
+      setLogs((data.data || []) as AuditLog[]);
     } catch (error) {
       console.error("Failed to fetch logs:", error);
       toast.error("Error al cargar logs");

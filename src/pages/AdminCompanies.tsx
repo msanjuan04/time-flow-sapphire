@@ -30,7 +30,9 @@ interface Company {
   status: string;
   plan: string;
   created_at: string;
-  member_count?: number;
+  users_count?: number;
+  last_event_at?: string | null;
+  owner_email?: string | null;
 }
 
 const AdminCompanies = () => {
@@ -48,16 +50,7 @@ const AdminCompanies = () => {
   const fetchCompanies = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("companies")
-        .select(`
-          id,
-          name,
-          status,
-          plan,
-          created_at
-        `)
-        .order("created_at", { ascending: false });
+      const { data, error } = await supabase.functions.invoke("admin-list-companies");
 
       if (error) {
         console.error("Error fetching companies:", error);
@@ -65,7 +58,7 @@ const AdminCompanies = () => {
         return;
       }
 
-      setCompanies(data || []);
+      setCompanies(data.data || []);
     } catch (error) {
       console.error("Failed to fetch companies:", error);
       toast.error("Error al cargar empresas");
@@ -160,12 +153,15 @@ const AdminCompanies = () => {
             </p>
           ) : (
             <div className="rounded-lg border overflow-hidden">
-              <Table>
+                  <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Empresa</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Plan</TableHead>
+                    <TableHead>Owner</TableHead>
+                    <TableHead>Usuarios</TableHead>
+                    <TableHead>Último fichaje</TableHead>
                     <TableHead>Fecha creación</TableHead>
                     <TableHead className="text-right">Acciones</TableHead>
                   </TableRow>
@@ -184,20 +180,41 @@ const AdminCompanies = () => {
                           {company.plan.toUpperCase()}
                         </Badge>
                       </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {company.owner_email || "—"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {company.users_count || 0}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {company.last_event_at
+                          ? new Date(company.last_event_at).toLocaleString()
+                          : "—"}
+                      </TableCell>
                       <TableCell className="text-muted-foreground">
                         {new Date(company.created_at).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleImpersonate(company.id)}
-                          disabled={impersonationLoading}
-                          className="hover-scale"
-                        >
-                          <UserCog className="w-4 h-4 mr-2" />
-                          Impersonar
-                        </Button>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleImpersonate(company.id)}
+                            disabled={impersonationLoading}
+                            className="hover-scale"
+                          >
+                            <UserCog className="w-4 h-4 mr-1" />
+                            Impersonar
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => navigate(`/admin/companies/${company.id}`)}
+                            className="hover-scale"
+                          >
+                            Ver
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

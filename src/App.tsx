@@ -18,6 +18,7 @@ import Kiosk from "./pages/Kiosk";
 import Admin from "./pages/Admin";
 import AdminOverview from "./pages/AdminOverview";
 import AdminCompanies from "./pages/AdminCompanies";
+import AdminCompanyDetail from "./pages/AdminCompanyDetail";
 import AdminUsers from "./pages/AdminUsers";
 import AdminLogs from "./pages/AdminLogs";
 import NotFound from "./pages/NotFound";
@@ -54,6 +55,14 @@ const App = () => (
             element={
               <SuperadminRoute>
                 <AdminCompanies />
+              </SuperadminRoute>
+            } 
+          />
+          <Route 
+            path="/admin/companies/:id" 
+            element={
+              <SuperadminRoute>
+                <AdminCompanyDetail />
               </SuperadminRoute>
             } 
           />
