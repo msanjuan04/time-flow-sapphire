@@ -13,6 +13,7 @@ interface ClockRequest {
   device_id?: string;
   source?: 'mobile' | 'web' | 'kiosk';
   user_id?: string; // For kiosk mode
+  company_id?: string; // Active company
 }
 
 Deno.serve(async (req) => {
@@ -39,7 +40,7 @@ Deno.serve(async (req) => {
 
     // Get request body
     const body: ClockRequest = await req.json();
-    const { action, latitude, longitude, photo_url, device_id, source = 'web', user_id } = body;
+    const { action, latitude, longitude, photo_url, device_id, source = 'web', user_id, company_id } = body;
 
     let currentUserId: string;
 
@@ -60,22 +61,31 @@ Deno.serve(async (req) => {
       );
     }
 
-    console.log('Clock request:', { user_id: currentUserId, action, source });
+    console.log('Clock request:', { user_id: currentUserId, action, source, company_id });
 
     // Get user's company membership
-    const { data: membership, error: membershipError } = await supabaseAdmin
+    let membershipQuery = supabaseAdmin
       .from('memberships')
       .select('company_id, company:companies(id, name, status)')
-      .eq('user_id', currentUserId)
-      .single();
+      .eq('user_id', currentUserId);
+    
+    // If company_id is provided, filter by it
+    if (company_id) {
+      membershipQuery = membershipQuery.eq('company_id', company_id);
+    }
+    
+    const { data: memberships, error: membershipError } = await membershipQuery;
 
-    if (membershipError || !membership) {
+    if (membershipError || !memberships || memberships.length === 0) {
       console.error('Membership error:', membershipError);
       return new Response(
         JSON.stringify({ error: 'Usuario sin empresa asignada' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Use the first membership (or the one matching company_id if provided)
+    const membership = memberships[0];
 
     const companyId = membership.company_id;
     const company = membership.company as any;

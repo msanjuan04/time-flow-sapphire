@@ -118,6 +118,7 @@ const WorkerView = () => {
           latitude: location?.latitude,
           longitude: location?.longitude,
           source: 'web',
+          company_id: companyId,
         },
       });
 

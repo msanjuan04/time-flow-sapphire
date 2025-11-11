@@ -152,6 +152,7 @@ const Kiosk = () => {
           action,
           user_id: userId,
           device_id: device.id,
+          company_id: device.company_id,
           latitude,
           longitude,
           source: "kiosk",
