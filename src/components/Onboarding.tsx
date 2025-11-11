@@ -19,6 +19,18 @@ const Onboarding = ({ onComplete }: OnboardingProps) => {
 
   const handleCreateCompany = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const trimmedName = companyName.trim();
+    if (!trimmedName) {
+      toast.error("El nombre de la empresa es requerido");
+      return;
+    }
+
+    if (trimmedName.length > 100) {
+      toast.error("El nombre de la empresa debe tener menos de 100 caracteres");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -26,9 +38,10 @@ const Onboarding = ({ onComplete }: OnboardingProps) => {
       const { data: company, error: companyError } = await supabase
         .from("companies")
         .insert({ 
-          name: companyName,
+          name: trimmedName,
           owner_user_id: user?.id,
-          status: 'active'
+          status: 'active',
+          plan: 'free'
         })
         .select()
         .single();
@@ -47,10 +60,18 @@ const Onboarding = ({ onComplete }: OnboardingProps) => {
       if (membershipError) throw membershipError;
 
       toast.success("¡Empresa creada con éxito!");
-      onComplete();
+      
+      // Store active company in localStorage
+      localStorage.setItem("active_company_id", company.id);
+      
+      // Reload to refresh membership data
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+      
     } catch (error: any) {
+      console.error("Error creating company:", error);
       toast.error(error.message || "Error al crear empresa");
-    } finally {
       setLoading(false);
     }
   };
@@ -80,8 +101,13 @@ const Onboarding = ({ onComplete }: OnboardingProps) => {
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
               required
+              maxLength={100}
               className="glass-card"
+              disabled={loading}
             />
+            <p className="text-xs text-muted-foreground">
+              Máximo 100 caracteres
+            </p>
           </div>
 
           <Button
@@ -94,8 +120,9 @@ const Onboarding = ({ onComplete }: OnboardingProps) => {
           </Button>
         </form>
 
-        <div className="text-xs text-center text-muted-foreground">
-          Serás asignado como propietario (Owner) de la empresa
+        <div className="text-xs text-center text-muted-foreground space-y-1">
+          <p>Serás asignado como propietario (Owner) de la empresa</p>
+          <p>Plan: <strong>Free</strong> (hasta 5 miembros)</p>
         </div>
       </Card>
     </div>

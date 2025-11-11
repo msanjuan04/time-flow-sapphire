@@ -29,6 +29,7 @@ serve(async (req) => {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
+      console.error("Auth error:", authError);
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -46,31 +47,56 @@ serve(async (req) => {
       );
     }
 
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(targetUserId)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid user ID format" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Get user's company and role
-    const { data: membership } = await supabase
+    const { data: membership, error: membershipError } = await supabase
       .from("memberships")
       .select("company_id, role")
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle();
+
+    if (membershipError) {
+      console.error("Membership error:", membershipError);
+      return new Response(
+        JSON.stringify({ error: "Failed to fetch membership" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     if (!membership || !["owner", "admin"].includes(membership.role)) {
       return new Response(
-        JSON.stringify({ error: "Insufficient permissions" }),
+        JSON.stringify({ error: "Insufficient permissions. Only owners and admins can delete users." }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     // Verify target user is in same company
-    const { data: targetMembership } = await supabase
+    const { data: targetMembership, error: targetError } = await supabase
       .from("memberships")
       .select("id, role")
       .eq("user_id", targetUserId)
       .eq("company_id", membership.company_id)
-      .single();
+      .maybeSingle();
+
+    if (targetError) {
+      console.error("Target membership error:", targetError);
+      return new Response(
+        JSON.stringify({ error: "Failed to fetch target user" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     if (!targetMembership) {
       return new Response(
-        JSON.stringify({ error: "User not found in company" }),
+        JSON.stringify({ error: "User not found in your company" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -83,15 +109,31 @@ serve(async (req) => {
       );
     }
 
+    // Prevent deleting last owner
+    if (targetMembership.role === "owner") {
+      const { count: ownerCount } = await supabase
+        .from("memberships")
+        .select("*", { count: "exact", head: true })
+        .eq("company_id", membership.company_id)
+        .eq("role", "owner");
+
+      if (ownerCount && ownerCount <= 1) {
+        return new Response(
+          JSON.stringify({ error: "Cannot delete the last owner. Assign another owner first." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
+
     // Prevent self-deletion
     if (targetUserId === user.id) {
       return new Response(
-        JSON.stringify({ error: "Cannot delete your own account" }),
+        JSON.stringify({ error: "Cannot delete your own account. Ask another admin to remove you." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    // Option 1: Soft delete - just deactivate the user
+    // Soft delete - deactivate the user
     const { error: deactivateError } = await supabase
       .from("profiles")
       .update({ is_active: false })
@@ -106,25 +148,6 @@ serve(async (req) => {
     }
 
     console.log("User deactivated successfully:", targetUserId);
-
-    // Option 2: Hard delete - remove membership (uncomment if needed)
-    /*
-    const { error: deleteError } = await supabase
-      .from("memberships")
-      .delete()
-      .eq("user_id", targetUserId)
-      .eq("company_id", membership.company_id);
-
-    if (deleteError) {
-      console.error("Error deleting membership:", deleteError);
-      return new Response(
-        JSON.stringify({ error: "Failed to delete user" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log("User membership deleted successfully:", targetUserId);
-    */
 
     return new Response(
       JSON.stringify({

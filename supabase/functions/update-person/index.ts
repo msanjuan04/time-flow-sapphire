@@ -14,6 +14,42 @@ interface UpdatePersonRequest {
   is_active?: boolean;
 }
 
+// Validation helper
+const validateUpdateRequest = (body: UpdatePersonRequest): { valid: boolean; error?: string } => {
+  // Validate role
+  if (body.role && !["owner", "admin", "manager", "worker"].includes(body.role)) {
+    return { valid: false, error: "Invalid role. Must be: owner, admin, manager, or worker" };
+  }
+
+  // Validate full_name
+  if (body.full_name !== undefined) {
+    const trimmedName = body.full_name.trim();
+    if (trimmedName.length === 0) {
+      return { valid: false, error: "Full name cannot be empty" };
+    }
+    if (trimmedName.length > 100) {
+      return { valid: false, error: "Full name must be less than 100 characters" };
+    }
+  }
+
+  // Validate UUIDs if provided
+  if (body.center_id && body.center_id !== null) {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(body.center_id)) {
+      return { valid: false, error: "Invalid center_id format" };
+    }
+  }
+
+  if (body.team_id && body.team_id !== null) {
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(body.team_id)) {
+      return { valid: false, error: "Invalid team_id format" };
+    }
+  }
+
+  return { valid: true };
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -37,6 +73,7 @@ serve(async (req) => {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
+      console.error("Auth error:", authError);
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -54,31 +91,56 @@ serve(async (req) => {
       );
     }
 
+    // Validate UUID format
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(targetUserId)) {
+      return new Response(
+        JSON.stringify({ error: "Invalid user ID format" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     // Get user's company and role
-    const { data: membership } = await supabase
+    const { data: membership, error: membershipError } = await supabase
       .from("memberships")
       .select("company_id, role")
       .eq("user_id", user.id)
-      .single();
+      .maybeSingle();
+
+    if (membershipError) {
+      console.error("Membership error:", membershipError);
+      return new Response(
+        JSON.stringify({ error: "Failed to fetch membership" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     if (!membership || !["owner", "admin"].includes(membership.role)) {
       return new Response(
-        JSON.stringify({ error: "Insufficient permissions" }),
+        JSON.stringify({ error: "Insufficient permissions. Only owners and admins can update users." }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     // Verify target user is in same company
-    const { data: targetMembership } = await supabase
+    const { data: targetMembership, error: targetError } = await supabase
       .from("memberships")
       .select("id, role")
       .eq("user_id", targetUserId)
       .eq("company_id", membership.company_id)
-      .single();
+      .maybeSingle();
+
+    if (targetError) {
+      console.error("Target membership error:", targetError);
+      return new Response(
+        JSON.stringify({ error: "Failed to fetch target user" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
     if (!targetMembership) {
       return new Response(
-        JSON.stringify({ error: "User not found in company" }),
+        JSON.stringify({ error: "User not found in your company" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -86,17 +148,11 @@ serve(async (req) => {
     // Parse request body
     const body: UpdatePersonRequest = await req.json();
 
-    // Validate inputs
-    if (body.role && !["owner", "admin", "manager", "worker"].includes(body.role)) {
+    // Validate request body
+    const validation = validateUpdateRequest(body);
+    if (!validation.valid) {
       return new Response(
-        JSON.stringify({ error: "Invalid role" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    if (body.full_name !== undefined && body.full_name.trim().length === 0) {
-      return new Response(
-        JSON.stringify({ error: "Full name cannot be empty" }),
+        JSON.stringify({ error: validation.error }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -107,6 +163,22 @@ serve(async (req) => {
         JSON.stringify({ error: "Only owners can modify other owners" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
+    }
+
+    // Prevent removing last owner
+    if (body.role && body.role !== "owner" && targetMembership.role === "owner") {
+      const { count: ownerCount } = await supabase
+        .from("memberships")
+        .select("*", { count: "exact", head: true })
+        .eq("company_id", membership.company_id)
+        .eq("role", "owner");
+
+      if (ownerCount && ownerCount <= 1) {
+        return new Response(
+          JSON.stringify({ error: "Cannot change role of the last owner. Assign another owner first." }),
+          { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
     }
 
     // Update profile if needed
