@@ -16,6 +16,7 @@ import WorkerReports from "./pages/WorkerReports";
 import Absences from "./pages/Absences";
 import Calendar from "./pages/Calendar";
 import ManagerCalendar from "./pages/ManagerCalendar";
+import LocationReport from "./pages/LocationReport";
 import CorrectionRequests from "./pages/CorrectionRequests";
 import Devices from "./pages/Devices";
 import Kiosk from "./pages/Kiosk";
@@ -47,6 +48,7 @@ const App = () => (
           <Route path="/absences" element={<Absences />} />
           <Route path="/calendar" element={<Calendar />} />
           <Route path="/manager-calendar" element={<ManagerCalendar />} />
+          <Route path="/location-report" element={<LocationReport />} />
           <Route path="/correction-requests" element={<CorrectionRequests />} />
           <Route path="/devices" element={<Devices />} />
           <Route path="/kiosk" element={<Kiosk />} />

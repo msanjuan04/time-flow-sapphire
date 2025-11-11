@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, Users, TrendingUp, LogOut, BarChart3, Calendar, UserCog } from "lucide-react";
+import { Clock, Users, TrendingUp, LogOut, BarChart3, Calendar, UserCog, MapPin } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -328,6 +328,15 @@ const ManagerView = () => {
           </div>
           <div className="flex items-center gap-2">
             <NotificationBell />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => navigate("/location-report")}
+              className="hover-scale"
+              title="Ubicaciones"
+            >
+              <MapPin className="w-5 h-5" />
+            </Button>
             <Button
               variant="outline"
               size="icon"
