@@ -2,3 +2,24 @@ project_id = "zsjmkxbiywswjopihqwc"
 
 [functions.clock]
 verify_jwt = true
+
+[functions.create-invite]
+verify_jwt = true
+
+[functions.resend-invite]
+verify_jwt = true
+
+[functions.revoke-invite]
+verify_jwt = true
+
+[functions.list-invites]
+verify_jwt = true
+
+[functions.list-people]
+verify_jwt = true
+
+[functions.update-person]
+verify_jwt = true
+
+[functions.delete-person]
+verify_jwt = true
