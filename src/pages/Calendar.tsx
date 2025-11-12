@@ -3,7 +3,9 @@ import { useMembership } from "@/hooks/useMembership";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
-import { Calendar as CalendarIcon, Clock, AlertCircle, MapPin } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Calendar as CalendarIcon, Clock, AlertCircle, MapPin, ArrowLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { Calendar } from "@/components/ui/calendar";
 import { format, startOfMonth, endOfMonth, parseISO, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
@@ -42,6 +44,7 @@ interface ScheduledHours {
 
 const WorkerCalendar = () => {
   const { membership, loading: membershipLoading } = useMembership();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
@@ -183,7 +186,8 @@ const WorkerCalendar = () => {
   const modifiersStyles = {
     hasWork: { backgroundColor: "hsl(var(--primary))", color: "white" },
     hasAbsence: { backgroundColor: "hsl(var(--destructive))", color: "white" },
-  };
+    hasScheduled: { backgroundColor: "hsl(var(--secondary))" },
+  } as const;
 
   if (membershipLoading) {
     return (
@@ -195,14 +199,19 @@ const WorkerCalendar = () => {
 
   return (
     <div className="container mx-auto p-4 space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <CalendarIcon className="h-8 w-8 text-primary" />
-        <div>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <CalendarIcon className="h-8 w-8 text-primary" />
+          <div>
           <h1 className="text-3xl font-bold">Mi Calendario</h1>
           <p className="text-muted-foreground">
             Consulta tus horas trabajadas y programadas
           </p>
+          </div>
         </div>
+        <Button variant="ghost" onClick={() => navigate(-1)} className="hover-scale">
+          <ArrowLeft className="w-5 h-5 mr-2" /> Volver
+        </Button>
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
@@ -225,6 +234,10 @@ const WorkerCalendar = () => {
             <div className="flex items-center gap-2">
               <div className="w-4 h-4 rounded" style={{ backgroundColor: "hsl(var(--destructive))" }} />
               <span className="text-sm">Ausencia</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-4 h-4 rounded" style={{ backgroundColor: "hsl(var(--secondary))" }} />
+              <span className="text-sm">Horas programadas</span>
             </div>
           </div>
         </Card>

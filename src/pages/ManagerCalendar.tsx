@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useMembership } from "@/hooks/useMembership";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
-import { Calendar as CalendarIcon, Clock, Users, Plus, AlertCircle, Trash2, Pencil } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, Users, Plus, AlertCircle, Trash2, Pencil, ArrowLeft } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { format, parseISO, startOfMonth, endOfMonth, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
@@ -34,12 +35,15 @@ interface Employee {
 
 const ManagerCalendar = () => {
   const { membership, loading: membershipLoading } = useMembership();
+  const navigate = useNavigate();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<string>("");
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [isAbsenceDialogOpen, setIsAbsenceDialogOpen] = useState(false);
   const [timeEvents, setTimeEvents] = useState<any[]>([]);
+  const [scheduledHours, setScheduledHours] = useState<any[]>([]);
+  const [absences, setAbsences] = useState<any[]>([]);
   const [selectedDayEvents, setSelectedDayEvents] = useState<any[]>([]);
   const [eventType, setEventType] = useState<string>("clock_in");
   const [eventTime, setEventTime] = useState<string>("");
@@ -89,6 +93,24 @@ const ManagerCalendar = () => {
           (data || []).filter((e: any) => isSameDay(parseISO(e.event_time), date!))
         );
       }
+      // Fetch scheduled hours for the month
+      const { data: sh } = await supabase
+        .from("scheduled_hours")
+        .select("id, date, expected_hours")
+        .eq("user_id", selectedEmployee)
+        .gte("date", format(monthStart, "yyyy-MM-dd"))
+        .lte("date", format(monthEnd, "yyyy-MM-dd"));
+      setScheduledHours(sh || []);
+
+      // Fetch absences for the month overlap
+      const { data: abs } = await supabase
+        .from("absences")
+        .select("id, start_date, end_date, absence_type, status")
+        .eq("user_id", selectedEmployee)
+        .or(
+          `and(start_date.lte.${format(monthEnd, "yyyy-MM-dd")},end_date.gte.${format(monthStart, "yyyy-MM-dd")})`
+        );
+      setAbsences(abs || []);
     };
 
     fetchEvents();
@@ -339,14 +361,19 @@ const ManagerCalendar = () => {
 
   return (
     <div className="container mx-auto p-4 space-y-6">
-      <div className="flex items-center gap-3 mb-6">
-        <CalendarIcon className="h-8 w-8 text-primary" />
-        <div>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <CalendarIcon className="h-8 w-8 text-primary" />
+          <div>
           <h1 className="text-3xl font-bold">Calendario de Equipo</h1>
           <p className="text-muted-foreground">
             Gestiona las horas y ausencias de tu equipo
           </p>
+          </div>
         </div>
+        <Button variant="ghost" onClick={() => navigate(-1)} className="hover-scale">
+          <ArrowLeft className="w-5 h-5 mr-2" /> Volver
+        </Button>
       </div>
 
       {/* Diálogo de edición de evento */}
@@ -512,8 +539,36 @@ const ManagerCalendar = () => {
                   }
                 }}
                 locale={es}
+                modifiers={{
+                  hasWork: (day: Date) => timeEvents.some((e) => isSameDay(parseISO(e.event_time), day)),
+                  hasAbsence: (day: Date) => absences.some((a: any) => {
+                    const s = parseISO(a.start_date);
+                    const e = parseISO(a.end_date);
+                    return day >= s && day <= e;
+                  }),
+                  hasScheduled: (day: Date) => scheduledHours.some((sh: any) => isSameDay(parseISO(sh.date), day)),
+                }}
+                modifiersStyles={{
+                  hasWork: { backgroundColor: "hsl(var(--primary))", color: "white" },
+                  hasAbsence: { backgroundColor: "hsl(var(--destructive))", color: "white" },
+                  hasScheduled: { backgroundColor: "hsl(var(--secondary))" },
+                }}
                 className="rounded-md border pointer-events-auto"
               />
+              <div className="mt-4 space-y-2">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: "hsl(var(--primary))" }} />
+                  <span className="text-sm">Día con fichajes</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: "hsl(var(--destructive))" }} />
+                  <span className="text-sm">Ausencia</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: "hsl(var(--secondary))" }} />
+                  <span className="text-sm">Horas programadas</span>
+                </div>
+              </div>
             </Card>
 
             <Card className="p-6 space-y-4">
@@ -604,106 +659,6 @@ const ManagerCalendar = () => {
             </Card>
           </div>
         </div>
-      </div>
-
-      <div className="grid md:grid-cols-2 gap-6">
-        <Card className="p-6">
-          <Calendar
-            mode="single"
-            selected={date}
-            onSelect={(d) => {
-              setDate(d);
-              if (d) {
-                setSelectedDayEvents(
-                  timeEvents.filter((e) => isSameDay(parseISO(e.event_time), d))
-                );
-              }
-            }}
-            locale={es}
-            className="rounded-md border pointer-events-auto"
-          />
-        </Card>
-
-        <Card className="p-6 space-y-4">
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <AlertCircle className="w-5 h-5 text-primary" />
-            Gestión del día seleccionado
-          </h3>
-          {!selectedEmployee || !date ? (
-            <p className="text-sm text-muted-foreground">
-              Selecciona un empleado y un día del calendario.
-            </p>
-          ) : (
-            <>
-              <div className="flex gap-2 items-end">
-                <div className="flex-1">
-                  <Label>Tipo de evento</Label>
-                  <Select value={eventType} onValueChange={setEventType}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="clock_in">Entrada</SelectItem>
-                      <SelectItem value="clock_out">Salida</SelectItem>
-                      <SelectItem value="pause_start">Inicio pausa</SelectItem>
-                      <SelectItem value="pause_end">Fin pausa</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="w-40">
-                  <Label>Hora</Label>
-                  <Input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} />
-                </div>
-                <Button onClick={handleAddEvent}>Añadir</Button>
-              </div>
-
-              <div className="pt-2">
-                <h4 className="font-medium mb-2">Eventos del día</h4>
-                {selectedDayEvents.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No hay eventos.</p>
-                ) : (
-                  <ul className="space-y-2">
-                    {selectedDayEvents.map((e) => (
-                      <li key={e.id} className="flex items-center justify-between p-2 rounded-md bg-muted/50">
-                        <span className="text-sm">
-                          {e.event_type === "clock_in"
-                            ? "Entrada"
-                            : e.event_type === "clock_out"
-                            ? "Salida"
-                            : e.event_type === "pause_start"
-                            ? "Inicio pausa"
-                            : "Fin pausa"}
-                          {" • "}
-                          {format(parseISO(e.event_time), "HH:mm")}
-                        </span>
-                        <Button size="icon" variant="ghost" onClick={() => handleDeleteEvent(e.id)} title="Eliminar">
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      </li>) )}
-                  </ul>
-                )}
-              </div>
-
-              <div className="pt-4 border-t flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">Otras acciones</span>
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    if (!date) return;
-                    setAbsenceType("other");
-                    const d = format(date, "yyyy-MM-dd");
-                    setStartDate(d);
-                    setEndDate(d);
-                    setAbsenceReason("Festivo");
-                    setIsAbsenceDialogOpen(true);
-                  }}
-                >
-                  Marcar festivo
-                </Button>
-              </div>
-            </>
-          )}
-        </Card>
       </div>
     </div>
   );
