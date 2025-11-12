@@ -63,7 +63,10 @@ const Absences = () => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setAbsences((data as Absence[]) || []);
+      setAbsences((data as any[])?.map(item => ({
+        ...item,
+        payload: item.payload as AbsencePayload
+      })) as Absence[] || []);
     } catch (error) {
       console.error("Error fetching absences:", error);
       toast.error("Error al cargar las ausencias");

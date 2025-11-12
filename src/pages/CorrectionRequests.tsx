@@ -114,7 +114,10 @@ const CorrectionRequests = () => {
 
       if (error) throw error;
 
-      setRequests((data as CorrectionRequest[]) || []);
+      setRequests((data as any[])?.map(item => ({
+        ...item,
+        payload: item.payload as CorrectionPayload
+      })) as CorrectionRequest[] || []);
     } catch (error) {
       console.error("Error fetching requests:", error);
       toast.error("Error al cargar las solicitudes");
@@ -206,13 +209,13 @@ const CorrectionRequests = () => {
       // If approved, create the time event
       if (newStatus === "approved" && request) {
         const { error: eventError } = await supabase.from("time_events").insert({
-          company_id: companyId,
           user_id: request.user_id,
-          event_type: request.payload.event_type,
+          event_type: request.payload.event_type as "clock_in" | "clock_out" | "pause_start" | "pause_end",
           event_time: request.payload.event_time,
           source: "web",
           notes: `Corrección aprobada: ${request.payload.reason}`,
-        });
+          company_id: companyId,
+        } as any);
 
         if (eventError) {
           console.error("Error creating time event:", eventError);

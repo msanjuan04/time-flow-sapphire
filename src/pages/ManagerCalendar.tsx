@@ -260,13 +260,13 @@ const ManagerCalendar = () => {
       const dateStr = format(date, "yyyy-MM-dd");
       const eventTimestamp = `${dateStr}T${eventTime}:00`;
       const { error } = await supabase.from("time_events").insert({
-        company_id: membership.company_id,
         user_id: selectedEmployee,
-        event_type: eventType,
+        event_type: eventType as "clock_in" | "clock_out" | "pause_start" | "pause_end",
         event_time: eventTimestamp,
         source: "web",
         notes: "Añadido por manager desde calendario",
-      });
+        company_id: membership.company_id,
+      } as any);
       if (error) throw error;
       toast.success("Evento añadido");
       // Refresh list
@@ -314,7 +314,10 @@ const ManagerCalendar = () => {
       const newTimestamp = `${datePart}T${editEventTime}:00`;
       const { error } = await supabase
         .from("time_events")
-        .update({ event_type: editEventType, event_time: newTimestamp })
+        .update({ 
+          event_type: editEventType as "clock_in" | "clock_out" | "pause_start" | "pause_end", 
+          event_time: newTimestamp 
+        })
         .eq("id", editingEvent.id);
       if (error) throw error;
       toast.success("Evento actualizado");
