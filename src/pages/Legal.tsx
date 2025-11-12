@@ -2,6 +2,7 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { printHTML } from "@/lib/exports";
+import { Button } from "@/components/ui/button";
 
 const Legal = () => {
   return (
@@ -18,6 +19,36 @@ const Legal = () => {
               <Badge variant="outline">RGPD/LOPDGDD</Badge>
               <Badge variant="outline">Consentimientos</Badge>
               <Badge variant="outline">Retención</Badge>
+            </div>
+            {/* Acciones principales visibles */}
+            <div className="mt-4 flex items-center gap-3 flex-wrap">
+              <Button
+                onClick={() => {
+                  const body = `
+                    <h1>Información legal y privacidad</h1>
+                    <div class='muted'>Plantilla para empresa responsable · ${new Date().toLocaleString('es-ES')}</div>
+                    <h2>Aviso legal</h2>
+                    <p>Responsable: [EMPRESA TITULAR], CIF/NIF [CIF], domicilio [DIRECCIÓN], email [EMAIL].</p>
+                    <h2>Política de privacidad</h2>
+                    <p>Finalidades: registro de jornada, gestión de incidencias, informes y opcionalmente geolocalización/foto.</p>
+                    <p>Base jurídica: obligación legal, contrato, interés legítimo y, en su caso, consentimiento.</p>
+                    <p>Conservación: al menos 4 años para registros de jornada.</p>
+                    <h2>Política de cookies</h2>
+                    <p>Cookies esenciales para sesión/preferencias. Sin publicidad salvo activación expresa de la empresa.</p>
+                    <h2>Consentimientos</h2>
+                    <p>Geolocalización/foto opcionales y revocables. Firma/acuse mensual disponible.</p>
+                    <h2>Conservación y auditoría</h2>
+                    <p>Revisiones y cambios quedan auditados (quién/cuándo/motivo).</p>
+                    <h2>Derechos</h2>
+                    <p>La persona trabajadora puede ejercer sus derechos ante la empresa responsable o la AEPD.</p>
+                  `;
+                  printHTML('Legal · Plantilla', body);
+                }}
+              >Descargar plantilla</Button>
+              <span className="text-sm text-muted-foreground">
+                Tras rellenarla, envíala a {" "}
+                <a className="underline" href="mailto:gnerai@gneraitiq.com">gnerai@gneraitiq.com</a>
+              </span>
             </div>
           </div>
 
