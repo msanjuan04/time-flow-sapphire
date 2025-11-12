@@ -20,14 +20,40 @@ const Legal = () => {
             </div>
           </div>
 
-          <nav className="text-sm flex flex-wrap gap-3">
-            <a href="#aviso-legal" className="underline hover:text-primary">Aviso legal</a>
-            <a href="#privacidad" className="underline hover:text-primary">Política de privacidad</a>
-            <a href="#cookies" className="underline hover:text-primary">Política de cookies</a>
-            <a href="#consentimientos" className="underline hover:text-primary">Textos de consentimiento</a>
-            <a href="#retencion" className="underline hover:text-primary">Conservación y auditoría</a>
-            <a href="#derechos" className="underline hover:text-primary">Derechos de las personas</a>
-          </nav>
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <nav className="text-sm flex flex-wrap gap-3">
+              <a href="#aviso-legal" className="underline hover:text-primary">Aviso legal</a>
+              <a href="#privacidad" className="underline hover:text-primary">Política de privacidad</a>
+              <a href="#cookies" className="underline hover:text-primary">Política de cookies</a>
+              <a href="#consentimientos" className="underline hover:text-primary">Textos de consentimiento</a>
+              <a href="#retencion" className="underline hover:text-primary">Conservación y auditoría</a>
+              <a href="#derechos" className="underline hover:text-primary">Derechos de las personas</a>
+            </nav>
+            <button
+              className="text-sm underline hover:text-primary"
+              onClick={() => {
+                const body = `
+                  <h1>Información legal y privacidad</h1>
+                  <div class='muted'>Plantilla para empresa responsable · ${new Date().toLocaleString('es-ES')}</div>
+                  <h2>Aviso legal</h2>
+                  <p>Responsable: [EMPRESA TITULAR], CIF/NIF [CIF], domicilio [DIRECCIÓN], email [EMAIL].</p>
+                  <h2>Política de privacidad</h2>
+                  <p>Finalidades: registro de jornada, gestión de incidencias, informes y opcionalmente geolocalización/foto.</p>
+                  <p>Base jurídica: obligación legal, contrato, interés legítimo y, en su caso, consentimiento.</p>
+                  <p>Conservación: al menos 4 años para registros de jornada.</p>
+                  <h2>Política de cookies</h2>
+                  <p>Cookies esenciales para sesión/preferencias. Sin publicidad salvo activación expresa de la empresa.</p>
+                  <h2>Consentimientos</h2>
+                  <p>Geolocalización/foto opcionales y revocables. Firma/acuse mensual disponible.</p>
+                  <h2>Conservación y auditoría</h2>
+                  <p>Revisiones y cambios quedan auditados (quién/cuándo/motivo).</p>
+                  <h2>Derechos</h2>
+                  <p>La persona trabajadora puede ejercer sus derechos ante la empresa responsable o la AEPD.</p>
+                `;
+                import('@/lib/exports').then(m => m.printHTML('Legal · Plantilla', body));
+              }}
+            >Descargar plantilla (PDF)</button>
+          </div>
 
           <Separator />
 
@@ -126,6 +152,7 @@ const Legal = () => {
 
           <section className="space-y-2 text-xs text-muted-foreground">
             <p>Estas plantillas son orientativas y deben ser adaptadas por cada empresa (responsable del tratamiento) a su realidad organizativa, proveedores y flujos de datos.</p>
+            <p>Rellena la plantilla y envíala a <a className="underline" href="mailto:gnerai@gneraitiq.com">gnerai@gneraitiq.com</a>. El SuperAdmin archivará el documento en tu ficha de empresa.</p>
           </section>
         </Card>
       </div>

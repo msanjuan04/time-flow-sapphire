@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, Building2, Users, MapPin, Smartphone, Clock, UserCog, Loader2 } from "lucide-react";
+import { ArrowLeft, Building2, Users, MapPin, Smartphone, Clock, UserCog, Loader2, UploadCloud, RefreshCw, FileText } from "lucide-react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { useImpersonation } from "@/hooks/useImpersonation";
@@ -62,12 +62,16 @@ const AdminCompanyDetail = () => {
   const [inviteDni, setInviteDni] = useState("");
   const [invitePhone, setInvitePhone] = useState("");
   const [members, setMembers] = useState<Array<{id:string;email:string;full_name:string|null;role:string;is_active:boolean;center_name:string|null;team_name:string|null;}>>([]);
+  const [legalFiles, setLegalFiles] = useState<Array<{ name:string; path:string; url?:string; size?:number }>>([]);
+  const [uploading, setUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   useEffect(() => {
     if (id) {
       fetchCompanyDetail();
       fetchAux();
       fetchMembers();
+      fetchLegalFiles();
     }
   }, [id]);
 
@@ -79,6 +83,60 @@ const AdminCompanyDetail = () => {
     ]);
     setCenters(centersData || []);
     setTeams(teamsData || []);
+  };
+
+  const fetchLegalFiles = async () => {
+    if (!id) return;
+    try {
+      const folder = id; // path por empresa
+      const { data, error } = await (supabase as any).storage.from('company-legal').list(folder, { limit: 100, sortBy: { column: 'name', order: 'desc' } });
+      if (error) {
+        console.warn('Storage list error', error);
+        setLegalFiles([]);
+        return;
+      }
+      const files = (data || []).filter((f: any) => f && f.name).map((f: any) => ({ name: f.name, path: `${folder}/${f.name}`, size: f.metadata?.size }));
+      // Signed URLs
+      const withUrls: Array<{name:string;path:string;url?:string;size?:number}> = [];
+      for (const f of files) {
+        try {
+          const { data: s } = await (supabase as any).storage.from('company-legal').createSignedUrl(f.path, 60 * 60);
+          withUrls.push({ ...f, url: s?.signedUrl });
+        } catch {
+          withUrls.push(f);
+        }
+      }
+      setLegalFiles(withUrls);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const uploadLegalFile = async () => {
+    if (!id || !selectedFile) return;
+    setUploading(true);
+    try {
+      const path = `${id}/${Date.now()}_${selectedFile.name}`;
+      const { error } = await (supabase as any).storage.from('company-legal').upload(path, selectedFile, {
+        cacheControl: '3600', upsert: false,
+      });
+      if (error) {
+        if (String(error.message || '').toLowerCase().includes('not found')) {
+          toast.error("Falta el bucket 'company-legal' en Storage (privado)");
+        } else {
+          toast.error("No se pudo subir el archivo");
+        }
+        return;
+      }
+      toast.success("Archivo subido");
+      setSelectedFile(null);
+      await fetchLegalFiles();
+    } catch (e) {
+      console.error(e);
+      toast.error("Error inesperado subiendo archivo");
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleInvite = async () => {
@@ -482,6 +540,59 @@ const AdminCompanyDetail = () => {
               </Table>
             </div>
           )}
+        </Card>
+
+        {/* Documentación Legal */}
+        <Card className="glass-card p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-semibold">Documentación legal de la empresa</h2>
+            <Button variant="ghost" size="sm" onClick={fetchLegalFiles}>
+              <RefreshCw className="w-4 h-4 mr-2" /> Refrescar
+            </Button>
+          </div>
+          <div className="flex flex-col md:flex-row gap-3 md:items-center md:justify-between">
+            <div className="text-sm text-muted-foreground">
+              Sube aquí la plantilla legal firmada que te envió la empresa (PDF/DOC/DOCX).
+            </div>
+            <div className="flex items-center gap-2">
+              <Input type="file" accept=".pdf,.doc,.docx,.odt,.rtf" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
+              <Button onClick={uploadLegalFile} disabled={!selectedFile || uploading}>
+                {uploading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                <UploadCloud className="w-4 h-4 mr-2" /> Subir
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 border rounded-md overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40">
+                <tr>
+                  <th className="text-left p-2">Archivo</th>
+                  <th className="text-left p-2">Tamaño</th>
+                  <th className="text-left p-2">Acciones</th>
+                </tr>
+              </thead>
+              <tbody>
+                {legalFiles.length === 0 ? (
+                  <tr><td className="p-3 text-muted-foreground" colSpan={3}>No hay archivos</td></tr>
+                ) : (
+                  legalFiles.map((f) => (
+                    <tr key={f.path} className="border-t">
+                      <td className="p-2 flex items-center gap-2"><FileText className="w-4 h-4" /> {f.name}</td>
+                      <td className="p-2">{typeof f.size === 'number' ? `${(f.size/1024).toFixed(1)} KB` : '—'}</td>
+                      <td className="p-2">
+                        {f.url ? (
+                          <a className="underline hover:text-primary" href={f.url} target="_blank" rel="noreferrer">Ver/Descargar</a>
+                        ) : (
+                          <span className="text-muted-foreground">Genera URL no disponible</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </Card>
       </div>
     </AdminLayout>
