@@ -8,17 +8,32 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Loader2, CheckCircle2, XCircle, Mail, Building2 } from "lucide-react";
 import { motion } from "framer-motion";
+import type { UserRole } from "@/hooks/useMembership";
 
 interface InviteData {
   id: string;
   email: string;
-  role: string;
+  role: UserRole;
   company_id: string;
   company_name: string;
   center_id: string | null;
   team_id: string | null;
   expires_at: string;
   status: string;
+}
+
+interface InviteRecord {
+  id: string;
+  email: string;
+  role: UserRole;
+  company_id: string;
+  center_id: string | null;
+  team_id: string | null;
+  expires_at: string;
+  status: string;
+  companies: {
+    name: string;
+  };
 }
 
 const AcceptInvite = () => {
@@ -90,16 +105,17 @@ const AcceptInvite = () => {
         return;
       }
 
+      const record = data as InviteRecord;
       const inviteInfo: InviteData = {
-        id: data.id,
-        email: data.email,
-        role: data.role,
-        company_id: data.company_id,
-        company_name: (data.companies as any).name,
-        center_id: data.center_id,
-        team_id: data.team_id,
-        expires_at: data.expires_at,
-        status: data.status,
+        id: record.id,
+        email: record.email,
+        role: record.role,
+        company_id: record.company_id,
+        company_name: record.companies.name,
+        center_id: record.center_id,
+        team_id: record.team_id,
+        expires_at: record.expires_at,
+        status: record.status,
       };
 
       setInviteData(inviteInfo);
@@ -118,8 +134,8 @@ const AcceptInvite = () => {
       }
 
       setLoading(false);
-    } catch (err: any) {
-      console.error("Error validating invite:", err);
+    } catch (error) {
+      console.error("Error validating invite:", error);
       setError("Error al validar la invitación");
       setLoading(false);
     }
@@ -204,9 +220,10 @@ const AcceptInvite = () => {
       setTimeout(() => {
         navigate("/");
       }, 2000);
-    } catch (err: any) {
-      console.error("Error during registration:", err);
-      toast.error(err.message || "Error al crear cuenta");
+    } catch (error) {
+      console.error("Error during registration:", error);
+      const message = error instanceof Error ? error.message : "Error al crear cuenta";
+      toast.error(message);
       setSubmitting(false);
     }
   };
@@ -292,9 +309,10 @@ const AcceptInvite = () => {
       setTimeout(() => {
         navigate("/");
       }, 2000);
-    } catch (err: any) {
-      console.error("Error during login:", err);
-      toast.error(err.message || "Error al iniciar sesión");
+    } catch (error) {
+      console.error("Error during login:", error);
+      const message = error instanceof Error ? error.message : "Error al iniciar sesión";
+      toast.error(message);
       setSubmitting(false);
     }
   };

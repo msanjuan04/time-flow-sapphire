@@ -39,7 +39,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, UserPlus, Search, Edit, Mail, XCircle, RefreshCw, Power, Crown } from "lucide-react";
+import { UserPlus, Search, Edit, Mail, XCircle, RefreshCw, Power, Crown } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useMembership } from "@/hooks/useMembership";
 import { usePlanLimits } from "@/hooks/usePlanLimits";
@@ -48,6 +48,7 @@ import { toast } from "sonner";
 import InviteUserDialog from "@/components/InviteUserDialog";
 import EditUserDialog from "@/components/EditUserDialog";
 import { motion } from "framer-motion";
+import { BackButton } from "@/components/BackButton";
 
 interface Member {
   id: string;
@@ -72,6 +73,33 @@ interface Invite {
   team_name: string | null;
   created_at: string;
   expires_at: string;
+}
+
+interface MemberRow {
+  user_id: string;
+  role: string;
+  profiles: {
+    email: string;
+    full_name: string | null;
+    center_id: string | null;
+    team_id: string | null;
+    is_active: boolean;
+    centers?: { name: string | null } | null;
+    teams?: { name: string | null } | null;
+  };
+}
+
+interface InviteRow {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  center_id: string | null;
+  team_id: string | null;
+  created_at: string;
+  expires_at: string;
+  centers?: { name: string | null } | null;
+  teams?: { name: string | null } | null;
 }
 
 const People = () => {
@@ -150,7 +178,8 @@ const People = () => {
       return;
     }
 
-    const formattedMembers = data.map((m: any) => ({
+    const memberRows: MemberRow[] = (data || []) as MemberRow[];
+    const formattedMembers = memberRows.map((m) => ({
       id: m.user_id,
       email: m.profiles.email,
       full_name: m.profiles.full_name,
@@ -189,7 +218,8 @@ const People = () => {
       return;
     }
 
-    const formattedInvites = data.map((inv: any) => ({
+    const inviteRows: InviteRow[] = (data || []) as InviteRow[];
+    const formattedInvites = inviteRows.map((inv) => ({
       id: inv.id,
       email: inv.email,
       role: inv.role,
@@ -312,16 +342,21 @@ const People = () => {
       const newToken = data?.invite?.token;
       if (newToken) {
         const inviteUrl = `${window.location.origin}/accept-invite?token=${newToken}`;
-        try { await navigator.clipboard.writeText(inviteUrl); } catch {}
+        try {
+          await navigator.clipboard.writeText(inviteUrl);
+        } catch (clipboardError) {
+          console.warn("No se pudo copiar la invitación:", clipboardError);
+        }
         toast.success("Invitación reenviada", {
           description: "Enlace actualizado copiado al portapapeles",
         });
       } else {
         toast.success("Invitación reenviada por email");
       }
-    } catch (e: any) {
-      console.error("Error resending invite:", e);
-      toast.error(e?.message || "Error al reenviar invitación");
+    } catch (error) {
+      console.error("Error resending invite:", error);
+      const message = error instanceof Error ? error.message : "Error al reenviar invitación";
+      toast.error(message);
     }
     fetchInvites();
   };
@@ -332,14 +367,7 @@ const People = () => {
         {/* Header */}
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("/")}
-              className="hover-scale"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
+            <BackButton to="/" />
             <div>
               <h1 className="text-2xl font-bold">Gestión de Personas</h1>
               {/* Plan y límites ocultos por nueva política */}

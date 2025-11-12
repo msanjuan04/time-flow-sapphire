@@ -15,7 +15,7 @@ export const createSuperadminAccount = async (
 
     if (error) throw error;
     return { data, error: null };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error creating superadmin:", error);
     return { data: null, error };
   }

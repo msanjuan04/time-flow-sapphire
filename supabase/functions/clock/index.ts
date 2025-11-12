@@ -16,6 +16,15 @@ interface ClockRequest {
   company_id?: string; // Active company
 }
 
+interface MembershipResult {
+  company_id: string;
+  company: {
+    id: string;
+    name: string;
+    status: string;
+  } | null;
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -85,13 +94,13 @@ Deno.serve(async (req) => {
     }
 
     // Use the first membership (or the one matching company_id if provided)
-    const membership = memberships[0];
+    const membership = memberships[0] as MembershipResult;
 
     const companyId = membership.company_id;
-    const company = membership.company as any;
+    const company = membership.company;
 
     // Check if company is active
-    if (company.status === 'suspended') {
+    if (company?.status === 'suspended') {
       console.error('Company suspended:', companyId);
       return new Response(
         JSON.stringify({ error: 'Empresa suspendida. Contacta con administración.' }),

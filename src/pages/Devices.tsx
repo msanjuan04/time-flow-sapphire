@@ -28,7 +28,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Tablet, ArrowLeft, Plus, QrCode, Copy, Trash2 } from "lucide-react";
+import { Tablet, Plus, QrCode, Copy, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -36,6 +36,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
+import { BackButton } from "@/components/BackButton";
 
 interface Device {
   id: string;
@@ -160,9 +161,10 @@ const Devices = () => {
       setDeviceType("kiosk");
       setDeviceCenter("");
       fetchDevices();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error creating device:", error);
-      toast.error(error.message || "Error al crear dispositivo");
+      const message = error instanceof Error ? error.message : "Error al crear dispositivo";
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -182,9 +184,10 @@ const Devices = () => {
 
       toast.success("Dispositivo eliminado");
       fetchDevices();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error deleting device:", error);
-      toast.error(error.message || "Error al eliminar dispositivo");
+      const message = error instanceof Error ? error.message : "Error al eliminar dispositivo";
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -209,14 +212,7 @@ const Devices = () => {
           className="flex justify-between items-center"
         >
           <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("/")}
-              className="hover-scale"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
+            <BackButton to="/" />
             <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
               <Tablet className="w-6 h-6 text-primary-foreground" />
             </div>

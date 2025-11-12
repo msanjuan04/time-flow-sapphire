@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Calendar, Send, CheckCircle, XCircle, Clock } from "lucide-react";
+import { Calendar, Send, CheckCircle, XCircle, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -21,12 +21,18 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 
+interface AbsencePayload {
+  type: "absence";
+  start_date: string;
+  end_date: string;
+}
+
 interface Absence {
   id: string;
   reason: string;
   status: string;
   created_at: string;
-  payload: any;
+  payload: AbsencePayload;
 }
 
 const Absences = () => {
@@ -57,7 +63,7 @@ const Absences = () => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setAbsences(data || []);
+      setAbsences((data as Absence[]) || []);
     } catch (error) {
       console.error("Error fetching absences:", error);
       toast.error("Error al cargar las ausencias");
@@ -102,9 +108,10 @@ const Absences = () => {
       setReason("");
       setDialogOpen(false);
       fetchAbsences();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error creating absence request:", error);
-      toast.error(error.message || "Error al enviar la solicitud");
+      const message = error instanceof Error ? error.message : "Error al enviar la solicitud";
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -131,14 +138,7 @@ const Absences = () => {
           className="flex justify-between items-center"
         >
           <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("/")}
-              className="hover-scale"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
+            <BackButton to="/" />
             <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
               <Calendar className="w-6 h-6 text-primary-foreground" />
             </div>
@@ -227,9 +227,8 @@ const Absences = () => {
             </Card>
           ) : (
             absences.map((absence) => {
-              const payload = absence.payload as any;
-              const startDate = new Date(payload?.start_date);
-              const endDate = new Date(payload?.end_date);
+              const startDate = new Date(absence.payload.start_date);
+              const endDate = new Date(absence.payload.end_date);
               const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
 
               return (
@@ -271,3 +270,4 @@ const Absences = () => {
 };
 
 export default Absences;
+import { BackButton } from "@/components/BackButton";

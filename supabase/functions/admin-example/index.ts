@@ -48,12 +48,13 @@ serve(async (req) => {
       data: companies,
       message: "Companies retrieved successfully",
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Admin endpoint error:", error);
 
-    // Handle specific authorization errors
-    if (error.message.includes("Unauthorized") || error.message.includes("Forbidden")) {
-      return createErrorResponse(error.message, 403);
+    const message = error instanceof Error ? error.message : "Internal server error";
+
+    if (message.includes("Unauthorized") || message.includes("Forbidden")) {
+      return createErrorResponse(message, 403);
     }
 
     return createErrorResponse("Internal server error", 500);

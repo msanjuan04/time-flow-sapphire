@@ -73,11 +73,13 @@ serve(async (req) => {
       success: true,
       message: `Company status updated to ${body.status}`,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Set company status error:", error);
 
-    if (error.message.includes("Unauthorized") || error.message.includes("Forbidden")) {
-      return createErrorResponse(error.message, 403);
+    const message = error instanceof Error ? error.message : "Failed to update company status";
+
+    if (message.includes("Unauthorized") || message.includes("Forbidden")) {
+      return createErrorResponse(message, 403);
     }
 
     return createErrorResponse("Failed to update company status", 500);

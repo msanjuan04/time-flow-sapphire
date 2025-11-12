@@ -2,6 +2,18 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { handleCorsOptions, createJsonResponse, createErrorResponse } from "../_shared/cors.ts";
 import { requireSuperadmin } from "../_shared/admin.ts";
 
+interface MembershipRow {
+  user_id: string;
+  role: string;
+  profiles: {
+    email: string;
+    full_name: string | null;
+    is_active: boolean;
+    centers?: { name: string | null } | null;
+    teams?: { name: string | null } | null;
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return handleCorsOptions();
 
@@ -38,7 +50,8 @@ serve(async (req) => {
       return createErrorResponse("Failed to fetch users", 500);
     }
 
-    const members = (data || []).map((m: any) => ({
+    const memberRows: MembershipRow[] = (data || []) as MembershipRow[];
+    const members = memberRows.map((m) => ({
       id: m.user_id,
       email: m.profiles.email,
       full_name: m.profiles.full_name,
@@ -49,12 +62,12 @@ serve(async (req) => {
     }));
 
     return createJsonResponse({ success: true, members });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Admin list users unexpected error:", error);
-    if (error.message.includes("Unauthorized") || error.message.includes("Forbidden")) {
-      return createErrorResponse(error.message, 403);
+    const message = error instanceof Error ? error.message : "Failed to fetch users";
+    if (message.includes("Unauthorized") || message.includes("Forbidden")) {
+      return createErrorResponse(message, 403);
     }
     return createErrorResponse("Failed to fetch users", 500);
   }
 });
-

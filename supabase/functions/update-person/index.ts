@@ -188,7 +188,13 @@ serve(async (req) => {
       body.team_id !== undefined ||
       body.is_active !== undefined
     ) {
-      const profileUpdates: any = {};
+      const profileUpdates: {
+        full_name?: string | null;
+        center_id?: string | null;
+        team_id?: string | null;
+        phone_number?: string | null;
+        is_active?: boolean;
+      } = {};
       
       if (body.full_name !== undefined) {
         profileUpdates.full_name = body.full_name.trim();

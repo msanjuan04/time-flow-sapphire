@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -54,16 +54,9 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
   const [teams, setTeams] = useState<Team[]>([]);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
-  useEffect(() => {
-    if (open && companyId) {
-      fetchCenters();
-      fetchTeams();
-    }
-  }, [open, companyId]);
-
-  const fetchCenters = async () => {
+  const fetchCenters = useCallback(async () => {
     if (!companyId) return;
-    
+
     const { data } = await supabase
       .from("centers")
       .select("id, name")
@@ -71,11 +64,11 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
       .order("name");
 
     if (data) setCenters(data);
-  };
+  }, [companyId]);
 
-  const fetchTeams = async () => {
+  const fetchTeams = useCallback(async () => {
     if (!companyId) return;
-    
+
     const { data } = await supabase
       .from("teams")
       .select("id, name")
@@ -83,7 +76,14 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
       .order("name");
 
     if (data) setTeams(data);
-  };
+  }, [companyId]);
+
+  useEffect(() => {
+    if (open && companyId) {
+      fetchCenters();
+      fetchTeams();
+    }
+  }, [open, companyId, fetchCenters, fetchTeams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -130,7 +130,11 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
       const token = data?.invite?.token;
       if (token) {
         const inviteUrl = `${window.location.origin}/accept-invite?token=${token}`;
-        try { await navigator.clipboard.writeText(inviteUrl); } catch {}
+        try {
+          await navigator.clipboard.writeText(inviteUrl);
+        } catch (clipboardError) {
+          console.warn("No se pudo copiar el enlace de invitación:", clipboardError);
+        }
       }
 
       toast.success("Invitación creada correctamente", {
@@ -144,20 +148,22 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
       setTeamId("");
       onSuccess();
       onOpenChange(false);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error creating invite:", error);
+      const message = error instanceof Error ? error.message : "";
+      const status = (error as { status?: number })?.status;
       
       // Handle plan limit error
-      if (error.message?.includes("límite") || error.message?.includes("limit")) {
+      if (message?.includes("límite") || message?.includes("limit")) {
         toast.error("Límite de plan alcanzado", {
-          description: error.message || "Has alcanzado el límite de miembros de tu plan actual",
+          description: message || "Has alcanzado el límite de miembros de tu plan actual",
         });
-      } else if (error?.status === 409) {
+      } else if (status === 409) {
         toast.error("Ya existe una invitación o email registrado");
-      } else if (error?.status === 401 || error?.status === 403) {
+      } else if (status === 401 || status === 403) {
         toast.error("Permisos insuficientes o sesión no válida");
       } else {
-        toast.error(error?.message || "Error al crear invitación");
+        toast.error(message || "Error al crear invitación");
       }
     } finally {
       setLoading(false);

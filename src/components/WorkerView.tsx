@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Clock, LogIn, LogOut, Coffee, User, MapPin, AlertCircle, Calendar, BarChart3 } from "lucide-react";
@@ -17,13 +17,22 @@ interface GeolocationCoords {
   longitude: number;
 }
 
+interface ActiveWorkSession {
+  id: string;
+  clock_in_time: string;
+  clock_out_time: string | null;
+  is_active: boolean;
+}
+
+type ClockAction = "in" | "out" | "break_start" | "break_end";
+
 const WorkerView = () => {
   const { user, signOut } = useAuth();
   const { companyId, membership } = useMembership();
   const navigate = useNavigate();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [status, setStatus] = useState<WorkerStatus>("out");
-  const [activeSession, setActiveSession] = useState<any>(null);
+  const [activeSession, setActiveSession] = useState<ActiveWorkSession | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [loading, setLoading] = useState(false);
   const [location, setLocation] = useState<GeolocationCoords | null>(null);
@@ -37,11 +46,44 @@ const WorkerView = () => {
     return () => clearInterval(timer);
   }, []);
 
+  const fetchStatus = useCallback(async () => {
+    if (!user?.id || !companyId) return;
+    const { data: session } = await supabase
+      .from("work_sessions")
+      .select("id, clock_in_time, clock_out_time, is_active")
+      .eq("user_id", user.id)
+      .eq("company_id", companyId)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (session) {
+      setActiveSession(session as ActiveWorkSession);
+
+      const { data: lastEvent } = await supabase
+        .from("time_events")
+        .select("event_type")
+        .eq("user_id", user.id)
+        .eq("company_id", companyId)
+        .order("event_time", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (lastEvent?.event_type === "pause_start") {
+        setStatus("on_break");
+      } else {
+        setStatus("in");
+      }
+    } else {
+      setStatus("out");
+      setActiveSession(null);
+    }
+  }, [companyId, user?.id]);
+
   useEffect(() => {
     if (user && companyId) {
       fetchStatus();
     }
-  }, [user, companyId]);
+  }, [user, companyId, fetchStatus]);
 
   // Request GPS location on mount
   useEffect(() => {
@@ -74,40 +116,7 @@ const WorkerView = () => {
     return () => clearInterval(interval);
   }, [activeSession, status]);
 
-  const fetchStatus = async () => {
-    // Check active session
-    const { data: session } = await supabase
-      .from("work_sessions")
-      .select("*")
-      .eq("user_id", user?.id)
-      .eq("company_id", companyId)
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (session) {
-      setActiveSession(session);
-      
-      // Check last event to determine if on break
-      const { data: lastEvent } = await supabase
-        .from("time_events")
-        .select("event_type")
-        .eq("user_id", user?.id)
-        .eq("company_id", companyId)
-        .order("event_time", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (lastEvent?.event_type === "pause_start") {
-        setStatus("on_break");
-      } else {
-        setStatus("in");
-      }
-    } else {
-      setStatus("out");
-    }
-  };
-
-  const callClockAPI = async (action: 'in' | 'out' | 'break_start' | 'break_end') => {
+  const callClockAPI = async (action: ClockAction) => {
     setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -139,9 +148,10 @@ const WorkerView = () => {
       toast.success(messages[action], {
         description: new Date().toLocaleTimeString("es-ES"),
       });
-    } catch (error: any) {
-      console.error('Clock API error:', error);
-      toast.error(error.message || "Error al registrar fichaje");
+    } catch (error) {
+      console.error("Clock API error:", error);
+      const message = error instanceof Error ? error.message : "Error al registrar fichaje";
+      toast.error(message);
     } finally {
       setLoading(false);
     }

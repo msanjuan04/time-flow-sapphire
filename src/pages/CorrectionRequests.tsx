@@ -29,19 +29,26 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AlertCircle, ArrowLeft, CheckCircle, XCircle, FileText, Upload } from "lucide-react";
+import { AlertCircle, CheckCircle, XCircle, FileText, Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+import { BackButton } from "@/components/BackButton";
+
+interface CorrectionPayload {
+  event_type: string;
+  event_time: string;
+  reason: string;
+}
 
 interface CorrectionRequest {
   id: string;
   user_id: string;
   submitted_by: string;
-  payload: any;
+  payload: CorrectionPayload;
   status: string;
   reason: string | null;
   created_at: string;
@@ -107,7 +114,7 @@ const CorrectionRequests = () => {
 
       if (error) throw error;
 
-      setRequests(data || []);
+      setRequests((data as CorrectionRequest[]) || []);
     } catch (error) {
       console.error("Error fetching requests:", error);
       toast.error("Error al cargar las solicitudes");
@@ -132,15 +139,32 @@ const CorrectionRequests = () => {
         reason: requestReason,
       };
 
-      const { error } = await supabase.from("correction_requests").insert({
-        company_id: companyId,
-        user_id: user?.id,
-        submitted_by: user?.id,
-        payload,
-        status: "pending",
-      });
+      const { data: insertedRequest, error } = await supabase
+        .from("correction_requests")
+        .insert({
+          company_id: companyId,
+          user_id: user?.id,
+          submitted_by: user?.id,
+          payload,
+          status: "pending",
+        })
+        .select()
+        .single();
 
       if (error) throw error;
+
+      if (insertedRequest) {
+        supabase.functions
+          .invoke("notify-correction-request", {
+            body: {
+              company_id: companyId,
+              request_id: insertedRequest.id,
+            },
+          })
+          .catch((notifyError) => {
+            console.error("Failed to notify owner:", notifyError);
+          });
+      }
 
       toast.success("Solicitud enviada correctamente");
       setShowNewRequest(false);
@@ -149,9 +173,10 @@ const CorrectionRequests = () => {
       setRequestReason("");
       setEventType("clock_in");
       fetchRequests();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error submitting request:", error);
-      toast.error(error.message || "Error al enviar la solicitud");
+      const message = error instanceof Error ? error.message : "Error al enviar la solicitud";
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -216,9 +241,10 @@ const CorrectionRequests = () => {
           : "Solicitud rechazada"
       );
       fetchRequests();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error updating request:", error);
-      toast.error(error.message || "Error al actualizar la solicitud");
+      const message = error instanceof Error ? error.message : "Error al actualizar la solicitud";
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -257,14 +283,7 @@ const CorrectionRequests = () => {
           className="flex justify-between items-center"
         >
           <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("/")}
-              className="hover-scale"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
+            <BackButton to="/" />
             <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
               <AlertCircle className="w-6 h-6 text-primary-foreground" />
             </div>

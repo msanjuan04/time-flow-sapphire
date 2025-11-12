@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -30,18 +30,14 @@ const NotificationBell = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
 
-  useEffect(() => {
-    if (user) {
-      fetchNotifications();
-      subscribeToNotifications();
-    }
-  }, [user]);
+  const userId = user?.id;
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = useCallback(async () => {
+    if (!userId) return;
     const { data, error } = await supabase
       .from("notifications")
       .select("*")
-      .eq("user_id", user?.id)
+      .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(20);
 
@@ -50,11 +46,13 @@ const NotificationBell = () => {
       return;
     }
 
-    setNotifications((data || []) as Notification[]);
-    setUnreadCount(data?.filter((n) => !n.read).length || 0);
-  };
+    const notificationList: Notification[] = (data || []) as Notification[];
+    setNotifications(notificationList);
+    setUnreadCount(notificationList.filter((n) => !n.read).length);
+  }, [userId]);
 
-  const subscribeToNotifications = () => {
+  const subscribeToNotifications = useCallback(() => {
+    if (!userId) return undefined;
     const channel = supabase
       .channel("notifications-changes")
       .on(
@@ -63,7 +61,7 @@ const NotificationBell = () => {
           event: "INSERT",
           schema: "public",
           table: "notifications",
-          filter: `user_id=eq.${user?.id}`,
+          filter: `user_id=eq.${userId}`,
         },
         (payload) => {
           setNotifications((prev) => [payload.new as Notification, ...prev].slice(0, 20));
@@ -75,7 +73,16 @@ const NotificationBell = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    fetchNotifications();
+    const unsubscribe = subscribeToNotifications();
+    return () => {
+      unsubscribe?.();
+    };
+  }, [userId, fetchNotifications, subscribeToNotifications]);
 
   const markAsRead = async (notificationId: string) => {
     const { error } = await supabase

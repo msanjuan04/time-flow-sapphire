@@ -118,7 +118,7 @@ const LocationReport = () => {
         if (profilesError) throw profilesError;
         setEmployees(profiles || []);
       }
-    } catch (error: any) {
+    } catch (error) {
       toast.error("Error al cargar empleados");
       console.error(error);
     }
@@ -156,8 +156,8 @@ const LocationReport = () => {
       const { data, error } = await query;
 
       if (error) throw error;
-      setTimeEvents((data as any) || []);
-    } catch (error: any) {
+      setTimeEvents((data as TimeEvent[]) || []);
+    } catch (error) {
       toast.error("Error al cargar datos de ubicación");
       console.error(error);
     } finally {

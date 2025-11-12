@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, UserPlus, Search, Filter, Edit, UserX } from "lucide-react";
+import { UserPlus, Search, Filter, Edit, UserX } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -27,6 +27,8 @@ import { toast } from "sonner";
 import InviteUserDialog from "@/components/InviteUserDialog";
 import EditUserDialog from "@/components/EditUserDialog";
 import { motion } from "framer-motion";
+import { useSuperadmin } from "@/hooks/useSuperadmin";
+import { BackButton } from "@/components/BackButton";
 
 interface Employee {
   id: string;
@@ -39,6 +41,19 @@ interface Employee {
   team_name: string | null;
   last_event: string | null;
   last_event_time: string | null;
+}
+
+interface MembershipRow {
+  id: string;
+  role: string;
+  user_id: string;
+  profiles: {
+    id: string;
+    email: string;
+    full_name: string | null;
+    center_id: string | null;
+    team_id: string | null;
+  };
 }
 
 const Employees = () => {
@@ -95,8 +110,9 @@ const Employees = () => {
       if (error) throw error;
 
       // Get last event for each user
+      const membershipRows: MembershipRow[] = (data || []) as MembershipRow[];
       const employeesWithEvents = await Promise.all(
-        data.map(async (membership: any) => {
+        membershipRows.map(async (membership) => {
           const { data: lastEvent } = await supabase
             .from("time_events")
             .select("event_type, event_time")
@@ -144,7 +160,7 @@ const Employees = () => {
       );
 
       setEmployees(employeesWithEvents);
-    } catch (error: any) {
+    } catch (error) {
       toast.error("Error al cargar empleados");
       console.error(error);
     } finally {
@@ -218,14 +234,7 @@ const Employees = () => {
         {/* Header */}
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("/")}
-              className="hover-scale"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
+            <BackButton to="/" />
             <div>
               <h1 className="text-2xl font-bold">Gestión de Empleados</h1>
               <p className="text-sm text-muted-foreground">
@@ -382,4 +391,3 @@ const Employees = () => {
 };
 
 export default Employees;
-import { useSuperadmin } from "@/hooks/useSuperadmin";

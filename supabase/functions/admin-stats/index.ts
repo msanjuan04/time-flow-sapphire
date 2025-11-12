@@ -77,11 +77,13 @@ serve(async (req) => {
         recent_logs: recentLogs || [],
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Admin stats error:", error);
 
-    if (error.message.includes("Unauthorized") || error.message.includes("Forbidden")) {
-      return createErrorResponse(error.message, 403);
+    const message = error instanceof Error ? error.message : "Failed to fetch admin stats";
+
+    if (message.includes("Unauthorized") || message.includes("Forbidden")) {
+      return createErrorResponse(message, 403);
     }
 
     return createErrorResponse("Failed to fetch admin stats", 500);

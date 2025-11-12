@@ -83,7 +83,7 @@ export const useMembership = () => {
         return;
       }
 
-      const membershipsList = (data || []) as any[];
+      const membershipsList = (data || []) as Membership[];
       setMemberships(membershipsList);
 
       // Get stored company or use first one

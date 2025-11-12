@@ -17,7 +17,7 @@ export function handleCorsOptions(): Response {
  * Creates a JSON response with CORS headers
  */
 export function createJsonResponse(
-  data: any,
+  data: unknown,
   status: number = 200
 ): Response {
   return new Response(JSON.stringify(data), {
@@ -32,7 +32,7 @@ export function createJsonResponse(
 export function createErrorResponse(
   error: string,
   status: number = 500,
-  details?: any
+  details?: unknown
 ): Response {
   return new Response(
     JSON.stringify({ 

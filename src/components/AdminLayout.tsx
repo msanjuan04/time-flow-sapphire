@@ -3,6 +3,8 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Shield, Building2, Users, Activity, BarChart3 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "sonner";
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -18,6 +20,17 @@ const menuItems = [
 export const AdminLayout = ({ children }: AdminLayoutProps) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const { signOut } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      navigate("/auth");
+    } catch (error) {
+      console.error("Error signing out:", error);
+      toast.error("No se pudo cerrar sesión");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10">
@@ -50,13 +63,12 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
               })}
             </nav>
           </div>
-          <div className="absolute bottom-6 left-6 right-6">
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => navigate("/")}
-            >
+          <div className="absolute bottom-6 left-6 right-6 space-y-3">
+            <Button variant="outline" className="w-full" onClick={() => navigate("/")}>
               Volver a la app
+            </Button>
+            <Button className="w-full" onClick={handleLogout}>
+              Cerrar sesión
             </Button>
           </div>
         </aside>

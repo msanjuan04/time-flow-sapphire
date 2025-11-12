@@ -87,7 +87,7 @@ const Kiosk = () => {
       setDevice(data);
       setAuthenticated(true);
       toast.success(`Kiosko activado: ${data.name}`);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Login error:", error);
       toast.error("Error al autenticar dispositivo");
     } finally {
@@ -171,9 +171,10 @@ const Kiosk = () => {
 
       toast.success(messages[action]);
       setSearchQuery("");
-    } catch (error: any) {
+    } catch (error) {
       console.error("Clock action error:", error);
-      toast.error(error.message || "Error al registrar fichaje");
+      const message = error instanceof Error ? error.message : "Error al registrar fichaje";
+      toast.error(message);
     } finally {
       setLoading(false);
     }

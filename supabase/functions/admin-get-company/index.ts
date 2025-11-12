@@ -11,9 +11,16 @@ serve(async (req) => {
   try {
     const { supabase } = await requireSuperadmin(req);
 
-    // Get company_id from URL
+    // Get company_id from URL or request body for flexibility
     const url = new URL(req.url);
-    const companyId = url.searchParams.get("company_id");
+    let companyId = url.searchParams.get("company_id");
+
+    if (!companyId) {
+      const body = await req.json().catch(() => null);
+      if (body && typeof body.company_id === "string") {
+        companyId = body.company_id;
+      }
+    }
 
     const errors: ValidationError[] = [];
     validateUUID(companyId, "company_id", errors, true);
@@ -121,11 +128,13 @@ serve(async (req) => {
         recent_logs: recentLogs || [],
       },
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Admin get company error:", error);
 
-    if (error.message.includes("Unauthorized") || error.message.includes("Forbidden")) {
-      return createErrorResponse(error.message, 403);
+    const message = error instanceof Error ? error.message : "Failed to fetch company details";
+
+    if (message.includes("Unauthorized") || message.includes("Forbidden")) {
+      return createErrorResponse(message, 403);
     }
 
     return createErrorResponse("Failed to fetch company details", 500);

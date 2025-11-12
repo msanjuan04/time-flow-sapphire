@@ -143,12 +143,12 @@ serve(async (req) => {
     });
 
     return createJsonResponse({ success: true, invite });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Admin create invite error:", error);
-    if (error.message.includes("Unauthorized") || error.message.includes("Forbidden")) {
-      return createErrorResponse(error.message, 403);
+    const message = error instanceof Error ? error.message : "Failed to create invite";
+    if (message.includes("Unauthorized") || message.includes("Forbidden")) {
+      return createErrorResponse(message, 403);
     }
     return createErrorResponse("Failed to create invite", 500);
   }
 });
-

@@ -3,7 +3,7 @@ import { useMembership } from "@/hooks/useMembership";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
-import { Calendar as CalendarIcon, Clock, Users, Plus, AlertCircle, Trash2, Pencil, ArrowLeft } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, Users, Plus, AlertCircle, Trash2, Pencil } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { format, parseISO, startOfMonth, endOfMonth, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
@@ -26,11 +26,33 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { BackButton } from "@/components/BackButton";
 
 interface Employee {
   id: string;
   full_name: string;
   email: string;
+}
+
+interface ManagerTimeEvent {
+  id: string;
+  event_type: string;
+  event_time: string;
+  notes: string | null;
+}
+
+interface ScheduledHour {
+  id: string;
+  date: string;
+  expected_hours: number;
+}
+
+interface AbsenceRecord {
+  id: string;
+  start_date: string;
+  end_date: string;
+  absence_type: string;
+  status: string;
 }
 
 const ManagerCalendar = () => {
@@ -41,15 +63,15 @@ const ManagerCalendar = () => {
   const [selectedEmployee, setSelectedEmployee] = useState<string>("");
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [isAbsenceDialogOpen, setIsAbsenceDialogOpen] = useState(false);
-  const [timeEvents, setTimeEvents] = useState<any[]>([]);
-  const [scheduledHours, setScheduledHours] = useState<any[]>([]);
-  const [absences, setAbsences] = useState<any[]>([]);
-  const [selectedDayEvents, setSelectedDayEvents] = useState<any[]>([]);
+  const [timeEvents, setTimeEvents] = useState<ManagerTimeEvent[]>([]);
+  const [scheduledHours, setScheduledHours] = useState<ScheduledHour[]>([]);
+  const [absences, setAbsences] = useState<AbsenceRecord[]>([]);
+  const [selectedDayEvents, setSelectedDayEvents] = useState<ManagerTimeEvent[]>([]);
   const [eventType, setEventType] = useState<string>("clock_in");
   const [eventTime, setEventTime] = useState<string>("");
   const [search, setSearch] = useState("");
   const [editDialogOpen, setEditDialogOpen] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<any | null>(null);
+  const [editingEvent, setEditingEvent] = useState<ManagerTimeEvent | null>(null);
   const [editEventType, setEditEventType] = useState<string>("clock_in");
   const [editEventTime, setEditEventTime] = useState<string>("");
 
@@ -87,11 +109,9 @@ const ManagerCalendar = () => {
         .lte("event_time", monthEnd.toISOString())
         .order("event_time", { ascending: true });
       if (!error) {
-        setTimeEvents(data || []);
-        // Also update day events for the currently selected date
-        setSelectedDayEvents(
-          (data || []).filter((e: any) => isSameDay(parseISO(e.event_time), date!))
-        );
+        const events = (data as ManagerTimeEvent[]) || [];
+        setTimeEvents(events);
+        setSelectedDayEvents(events.filter((event) => isSameDay(parseISO(event.event_time), date!)));
       }
       // Fetch scheduled hours for the month
       const { data: sh } = await supabase
@@ -100,7 +120,7 @@ const ManagerCalendar = () => {
         .eq("user_id", selectedEmployee)
         .gte("date", format(monthStart, "yyyy-MM-dd"))
         .lte("date", format(monthEnd, "yyyy-MM-dd"));
-      setScheduledHours(sh || []);
+      setScheduledHours((sh as ScheduledHour[]) || []);
 
       // Fetch absences for the month overlap
       const { data: abs } = await supabase
@@ -110,7 +130,7 @@ const ManagerCalendar = () => {
         .or(
           `and(start_date.lte.${format(monthEnd, "yyyy-MM-dd")},end_date.gte.${format(monthStart, "yyyy-MM-dd")})`
         );
-      setAbsences(abs || []);
+      setAbsences((abs as AbsenceRecord[]) || []);
     };
 
     fetchEvents();
@@ -138,7 +158,7 @@ const ManagerCalendar = () => {
         if (profilesError) throw profilesError;
         setEmployees(profiles || []);
       }
-    } catch (error: any) {
+    } catch (error) {
       toast.error("Error al cargar empleados");
       console.error(error);
     }
@@ -186,7 +206,7 @@ const ManagerCalendar = () => {
       setScheduleDate("");
       setExpectedHours("8");
       setScheduleNotes("");
-    } catch (error: any) {
+    } catch (error) {
       toast.error("Error al programar horas");
       console.error(error);
     }
@@ -220,7 +240,7 @@ const ManagerCalendar = () => {
       setStartDate("");
       setEndDate("");
       setAbsenceReason("");
-    } catch (error: any) {
+    } catch (error) {
       toast.error("Error al registrar ausencia");
       console.error(error);
     }
@@ -228,9 +248,7 @@ const ManagerCalendar = () => {
 
   const refreshSelectedDayEvents = () => {
     if (!date) return;
-    setSelectedDayEvents(
-      timeEvents.filter((e) => isSameDay(parseISO(e.event_time), date))
-    );
+    setSelectedDayEvents(timeEvents.filter((event) => isSameDay(parseISO(event.event_time), date)));
   };
 
   const handleAddEvent = async () => {
@@ -261,7 +279,7 @@ const ManagerCalendar = () => {
         .gte("event_time", startOfMonth(date).toISOString())
         .lte("event_time", endOfMonth(date).toISOString())
         .order("event_time", { ascending: true });
-      setTimeEvents(data || []);
+      setTimeEvents((data as ManagerTimeEvent[]) || []);
       refreshSelectedDayEvents();
     } catch (error) {
       console.error(error);
@@ -282,7 +300,7 @@ const ManagerCalendar = () => {
     }
   };
 
-  const openEdit = (event: any) => {
+  const openEdit = (event: ManagerTimeEvent) => {
     setEditingEvent(event);
     setEditEventType(event.event_type);
     setEditEventTime(format(parseISO(event.event_time), "HH:mm"));
@@ -363,17 +381,20 @@ const ManagerCalendar = () => {
     <div className="container mx-auto p-4 space-y-6">
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
+          <BackButton />
           <CalendarIcon className="h-8 w-8 text-primary" />
           <div>
-          <h1 className="text-3xl font-bold">Calendario de Equipo</h1>
-          <p className="text-muted-foreground">
-            Gestiona las horas y ausencias de tu equipo
-          </p>
+            <h1 className="text-3xl font-bold">Calendario de Equipo</h1>
+            <p className="text-muted-foreground">
+              Gestiona las horas y ausencias de tu equipo
+            </p>
           </div>
         </div>
-        <Button variant="ghost" onClick={() => navigate(-1)} className="hover-scale">
-          <ArrowLeft className="w-5 h-5 mr-2" /> Volver
-        </Button>
+        <div className="flex-1 flex justify-end">
+          <Button variant="secondary" onClick={handleCompanyHoliday} className="hover-scale">
+            Marcar festivo de empresa
+          </Button>
+        </div>
       </div>
 
       {/* Diálogo de edición de evento */}
@@ -541,12 +562,14 @@ const ManagerCalendar = () => {
                 locale={es}
                 modifiers={{
                   hasWork: (day: Date) => timeEvents.some((e) => isSameDay(parseISO(e.event_time), day)),
-                  hasAbsence: (day: Date) => absences.some((a: any) => {
-                    const s = parseISO(a.start_date);
-                    const e = parseISO(a.end_date);
-                    return day >= s && day <= e;
-                  }),
-                  hasScheduled: (day: Date) => scheduledHours.some((sh: any) => isSameDay(parseISO(sh.date), day)),
+                  hasAbsence: (day: Date) =>
+                    absences.some((absence) => {
+                      const start = parseISO(absence.start_date);
+                      const end = parseISO(absence.end_date);
+                      return day >= start && day <= end;
+                    }),
+                  hasScheduled: (day: Date) =>
+                    scheduledHours.some((scheduled) => isSameDay(parseISO(scheduled.date), day)),
                 }}
                 modifiersStyles={{
                   hasWork: { backgroundColor: "hsl(var(--primary))", color: "white" },

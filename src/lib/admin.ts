@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 
 /**
  * Client-side helpers for admin operations
@@ -6,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 
 export interface AdminCallOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
-  body?: any;
+  body?: unknown;
 }
 
 /**
@@ -14,7 +15,7 @@ export interface AdminCallOptions {
  * @param functionName - Name of the edge function (without /functions/ prefix)
  * @param options - Request options
  */
-export async function callAdminFunction<T = any>(
+export async function callAdminFunction<T = unknown>(
   functionName: string,
   options: AdminCallOptions = {}
 ): Promise<{ data: T | null; error: Error | null }> {
@@ -36,7 +37,7 @@ export async function callAdminFunction<T = any>(
     }
 
     return { data, error: null };
-  } catch (error: any) {
+  } catch (error) {
     console.error(`Failed to call admin function ${functionName}:`, error);
     return { data: null, error };
   }
@@ -65,13 +66,15 @@ export async function checkSuperadmin(): Promise<boolean> {
  * Creates an audit log entry (client-side wrapper)
  * Note: This should typically be called from edge functions, not client-side
  */
+type AuditLogInsert = Database["public"]["Tables"]["audit_logs"]["Insert"];
+
 export async function logAuditEvent(payload: {
   action: string;
   entity_type?: string;
   entity_id?: string;
   reason?: string;
   company_id?: string;
-}): Promise<{ success: boolean; error?: any }> {
+}): Promise<{ success: boolean; error?: unknown }> {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -79,14 +82,16 @@ export async function logAuditEvent(payload: {
       return { success: false, error: "No authenticated user" };
     }
 
-    const { error } = await supabase.from("audit_logs").insert({
+    const logEntry: AuditLogInsert = {
       company_id: payload.company_id || null,
       actor_user_id: user.id,
       action: payload.action,
       entity_type: payload.entity_type || null,
       entity_id: payload.entity_id || null,
       reason: payload.reason || null,
-    } as any);
+    };
+
+    const { error } = await supabase.from("audit_logs").insert(logEntry);
 
     if (error) {
       console.error("Failed to log audit event:", error);

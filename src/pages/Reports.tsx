@@ -26,7 +26,6 @@ import {
   TrendingUp,
   Clock,
   Users,
-  ArrowLeft,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -34,6 +33,7 @@ import { useMembership } from "@/hooks/useMembership";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+import { BackButton } from "@/components/BackButton";
 import {
   BarChart,
   Bar,
@@ -69,6 +69,27 @@ interface Employee {
   id: string;
   full_name: string;
   email: string;
+}
+
+interface ReportSession {
+  user_id: string;
+  clock_in_time: string | null;
+  clock_out_time: string | null;
+  profiles: {
+    full_name: string | null;
+    email: string;
+  };
+}
+
+interface ReportEvent {
+  user_id: string;
+  event_type: string;
+  event_time: string;
+}
+
+interface ReportIncident {
+  user_id: string;
+  status: string;
 }
 
 const CHART_COLORS = ["hsl(var(--primary))", "hsl(var(--secondary))", "#10b981", "#f59e0b", "#ef4444"];
@@ -207,7 +228,8 @@ const Reports = () => {
       // Process data by user
       const userStatsMap = new Map<string, EmployeeStats>();
 
-      sessions?.forEach((session: any) => {
+      const sessionRows: ReportSession[] = (sessions as ReportSession[]) || [];
+      sessionRows.forEach((session) => {
         const userId = session.user_id;
         if (!userStatsMap.has(userId)) {
           userStatsMap.set(userId, {
@@ -234,7 +256,8 @@ const Reports = () => {
       });
 
       // Calculate punctuality (delay from 9:00 AM)
-      events?.forEach((event: any) => {
+      const eventRows: ReportEvent[] = (events as ReportEvent[]) || [];
+      eventRows.forEach((event) => {
         if (event.event_type === 'clock_in') {
           const stats = userStatsMap.get(event.user_id);
           if (stats) {
@@ -256,7 +279,8 @@ const Reports = () => {
       });
 
       // Add incidents
-      incidents?.forEach((incident: any) => {
+      const incidentRows: ReportIncident[] = (incidents as ReportIncident[]) || [];
+      incidentRows.forEach((incident) => {
         const stats = userStatsMap.get(incident.user_id);
         if (stats) {
           stats.incidents += 1;
@@ -370,14 +394,7 @@ const Reports = () => {
           className="flex justify-between items-center"
         >
           <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("/")}
-              className="hover-scale"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
+            <BackButton to="/" />
             <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
               <BarChart3 className="w-6 h-6 text-primary-foreground" />
             </div>

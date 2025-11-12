@@ -81,11 +81,13 @@ serve(async (req) => {
       data: impersonationData,
       message: `Impersonating ${company.name}`,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Impersonate error:", error);
 
-    if (error.message.includes("Unauthorized") || error.message.includes("Forbidden")) {
-      return createErrorResponse(error.message, 403);
+    const message = error instanceof Error ? error.message : "Failed to start impersonation";
+
+    if (message.includes("Unauthorized") || message.includes("Forbidden")) {
+      return createErrorResponse(message, 403);
     }
 
     return createErrorResponse("Failed to start impersonation", 500);

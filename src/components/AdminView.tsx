@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Clock, Users, TrendingUp, LogOut, AlertCircle, BarChart3, Calendar, Settings, Tablet } from "lucide-react";
@@ -18,6 +18,31 @@ interface DailyStats {
   checkIns: number;
 }
 
+interface WorkSessionRecord {
+  clock_in_time: string | null;
+  clock_out_time: string | null;
+  total_pause_duration?: number | null;
+}
+
+interface RecentEventProfile {
+  full_name: string | null;
+  email: string | null;
+}
+
+interface RecentEvent {
+  id: string;
+  event_type: string;
+  event_time: string;
+  profile: RecentEventProfile | null;
+}
+
+interface RawRecentEvent extends Partial<RecentEvent> {
+  id: string;
+  event_type: string;
+  event_time: string;
+  profile?: RecentEventProfile | null;
+}
+
 const AdminView = () => {
   const { signOut } = useAuth();
   const { companyId, membership } = useMembership();
@@ -29,19 +54,13 @@ const AdminView = () => {
     totalHoursToday: 0,
     totalHoursWeek: 0,
   });
-  const [recentEvents, setRecentEvents] = useState<any[]>([]);
+  const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]);
   const [weeklyData, setWeeklyData] = useState<DailyStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [companyStatus, setCompanyStatus] = useState<string>("active");
 
-  useEffect(() => {
-    if (companyId) {
-      fetchAllData();
-      fetchCompanyStatus();
-    }
-  }, [companyId]);
-
-  const fetchCompanyStatus = async () => {
+  const fetchCompanyStatus = useCallback(async () => {
+    if (!companyId) return;
     const { data } = await supabase
       .from("companies")
       .select("status")
@@ -51,31 +70,33 @@ const AdminView = () => {
     if (data) {
       setCompanyStatus(data.status || "active");
     }
+  }, [companyId]);
+
+  const calculateTotalHours = (sessions: WorkSessionRecord[]) => {
+    return sessions.reduce((total, session) => {
+      if (!session.clock_in_time) return total;
+
+      const clockIn = new Date(session.clock_in_time).getTime();
+      const clockOut = session.clock_out_time ? new Date(session.clock_out_time).getTime() : Date.now();
+      const pauseDuration = Number(session.total_pause_duration ?? 0);
+      const duration = Math.max(0, clockOut - clockIn - pauseDuration);
+
+      return total + duration / (1000 * 60 * 60);
+    }, 0);
   };
 
-  const fetchAllData = async () => {
-    setLoading(true);
-    await Promise.all([
-      fetchStats(),
-      fetchRecentEvents(),
-      fetchWeeklyData(),
-    ]);
-    setLoading(false);
-  };
-
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
+    if (!companyId) return;
     const today = new Date();
     const startOfToday = new Date(today.setHours(0, 0, 0, 0)).toISOString();
     const startOfWeek = new Date(today.setDate(today.getDate() - today.getDay())).toISOString();
 
-    // Active users (open work sessions)
     const { count: activeCount } = await supabase
       .from("work_sessions")
       .select("*", { count: "exact", head: true })
       .eq("company_id", companyId)
       .eq("is_active", true);
 
-    // Today's check-ins
     const { count: checkInsCount } = await supabase
       .from("time_events")
       .select("*", { count: "exact", head: true })
@@ -83,30 +104,27 @@ const AdminView = () => {
       .eq("event_type", "clock_in")
       .gte("event_time", startOfToday);
 
-    // Pending incidents
     const { count: incidentsCount } = await supabase
       .from("incidents")
       .select("*", { count: "exact", head: true })
       .eq("company_id", companyId)
       .eq("status", "pending");
 
-    // Total hours today
     const { data: todaySessions } = await supabase
       .from("work_sessions")
       .select("clock_in_time, clock_out_time, total_pause_duration")
       .eq("company_id", companyId)
       .gte("clock_in_time", startOfToday);
 
-    const totalHoursToday = calculateTotalHours(todaySessions || []);
+    const totalHoursToday = calculateTotalHours((todaySessions || []) as WorkSessionRecord[]);
 
-    // Total hours this week
     const { data: weekSessions } = await supabase
       .from("work_sessions")
       .select("clock_in_time, clock_out_time, total_pause_duration")
       .eq("company_id", companyId)
       .gte("clock_in_time", startOfWeek);
 
-    const totalHoursWeek = calculateTotalHours(weekSessions || []);
+    const totalHoursWeek = calculateTotalHours((weekSessions || []) as WorkSessionRecord[]);
 
     setStats({
       activeUsers: activeCount || 0,
@@ -115,25 +133,10 @@ const AdminView = () => {
       totalHoursToday,
       totalHoursWeek,
     });
-  };
+  }, [companyId]);
 
-  const calculateTotalHours = (sessions: any[]) => {
-    return sessions.reduce((total, session) => {
-      if (!session.clock_in_time) return total;
-      
-      const clockIn = new Date(session.clock_in_time).getTime();
-      const clockOut = session.clock_out_time 
-        ? new Date(session.clock_out_time).getTime() 
-        : Date.now();
-      
-      const diffMs = clockOut - clockIn;
-      const hours = diffMs / (1000 * 60 * 60);
-      
-      return total + hours;
-    }, 0);
-  };
-
-  const fetchWeeklyData = async () => {
+  const fetchWeeklyData = useCallback(async () => {
+    if (!companyId) return;
     const today = new Date();
     const startOfWeek = new Date(today);
     startOfWeek.setDate(today.getDate() - 6);
@@ -144,13 +147,12 @@ const AdminView = () => {
     for (let i = 0; i < 7; i++) {
       const date = new Date(startOfWeek);
       date.setDate(startOfWeek.getDate() + i);
-      const dateStr = date.toISOString().split('T')[0];
       const nextDay = new Date(date);
       nextDay.setDate(date.getDate() + 1);
 
       const { data: sessions } = await supabase
         .from("work_sessions")
-        .select("clock_in_time, clock_out_time")
+        .select("clock_in_time, clock_out_time, total_pause_duration")
         .eq("company_id", companyId)
         .gte("clock_in_time", date.toISOString())
         .lt("clock_in_time", nextDay.toISOString());
@@ -163,31 +165,55 @@ const AdminView = () => {
         .gte("event_time", date.toISOString())
         .lt("event_time", nextDay.toISOString());
 
-      const hours = calculateTotalHours(sessions || []);
+      const hours = calculateTotalHours((sessions || []) as WorkSessionRecord[]);
 
       dailyData.push({
-        date: date.toLocaleDateString('es-ES', { weekday: 'short' }),
+        date: date.toLocaleDateString("es-ES", { weekday: "short" }),
         hours: Math.round(hours * 10) / 10,
         checkIns: checkInsCount || 0,
       });
     }
 
     setWeeklyData(dailyData);
-  };
+  }, [companyId]);
 
-  const fetchRecentEvents = async () => {
+  const fetchRecentEvents = useCallback(async () => {
+    if (!companyId) return;
     const { data } = await supabase
       .from("time_events")
       .select(`
-        *,
+        id,
+        event_type,
+        event_time,
         profile:profiles(full_name, email)
       `)
       .eq("company_id", companyId)
       .order("event_time", { ascending: false })
       .limit(8);
 
-    setRecentEvents(data || []);
-  };
+    const events: RecentEvent[] = (data || []).map((event: RawRecentEvent) => ({
+      id: event.id,
+      event_type: event.event_type,
+      event_time: event.event_time,
+      profile: event.profile ?? null,
+    }));
+
+    setRecentEvents(events);
+  }, [companyId]);
+
+  const fetchAllData = useCallback(async () => {
+    if (!companyId) return;
+    setLoading(true);
+    await Promise.all([fetchStats(), fetchRecentEvents(), fetchWeeklyData()]);
+    setLoading(false);
+  }, [companyId, fetchStats, fetchRecentEvents, fetchWeeklyData]);
+
+  useEffect(() => {
+    if (companyId) {
+      fetchAllData();
+      fetchCompanyStatus();
+    }
+  }, [companyId, fetchAllData, fetchCompanyStatus]);
 
   const formatEventType = (type: string) => {
     const types: Record<string, string> = {

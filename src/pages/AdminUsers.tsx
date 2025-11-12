@@ -158,7 +158,7 @@ const AdminUsers = () => {
                         <TableCell>
                           <div className="flex flex-wrap gap-1">
                             {user.memberships && user.memberships.length > 0 ? (
-                              user.memberships.map((m: any, idx: number) => (
+                              user.memberships.map((m, idx) => (
                                 <Badge
                                   key={idx}
                                   className={getRoleBadgeColor(m.role)}

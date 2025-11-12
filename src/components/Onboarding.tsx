@@ -71,9 +71,10 @@ const Onboarding = ({ onComplete }: OnboardingProps) => {
         window.location.reload();
       }, 500);
       
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error creating company:", error);
-      toast.error(error.message || "Error al crear empresa");
+      const message = error instanceof Error ? error.message : "Error al crear empresa";
+      toast.error(message);
       setLoading(false);
     }
   };

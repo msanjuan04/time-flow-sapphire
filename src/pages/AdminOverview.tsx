@@ -23,7 +23,17 @@ interface AdminStats {
   };
   users_total: number;
   events_today: number;
-  recent_logs: any[];
+  recent_logs: AdminAuditLog[];
+}
+
+interface AdminAuditLog {
+  id: string;
+  action: string;
+  entity_type: string | null;
+  created_at: string;
+  companies?: {
+    name: string;
+  } | null;
 }
 
 const AdminOverview = () => {
@@ -165,7 +175,7 @@ const AdminOverview = () => {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {stats.recent_logs.map((log: any) => (
+                  {stats.recent_logs.map((log: AdminAuditLog) => (
                     <TableRow key={log.id}>
                       <TableCell className="font-medium">{log.action}</TableCell>
                       <TableCell>

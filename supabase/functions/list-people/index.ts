@@ -6,6 +6,20 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+interface MemberRow {
+  user_id: string;
+  role: string;
+  profiles: {
+    email: string;
+    full_name: string | null;
+    center_id: string | null;
+    team_id: string | null;
+    is_active: boolean;
+    centers?: { name: string | null } | null;
+    teams?: { name: string | null } | null;
+  };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -93,7 +107,7 @@ serve(async (req) => {
     }
 
     // Format response
-    const formattedMembers = members?.map((m: any) => ({
+    const formattedMembers = (members as MemberRow[] | null)?.map((m) => ({
       id: m.user_id,
       email: m.profiles.email,
       full_name: m.profiles.full_name,

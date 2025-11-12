@@ -49,8 +49,9 @@ const Auth = () => {
           navigate("/");
         }
       }
-    } catch (error: any) {
-      toast.error(error.message || "Error inesperado");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error inesperado";
+      toast.error(message);
     } finally {
       setLoading(false);
     }

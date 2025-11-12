@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Clock, Users, TrendingUp, LogOut, BarChart3, Calendar, UserCog, MapPin, AlertCircle } from "lucide-react";
@@ -34,6 +34,34 @@ interface DailyStats {
   checkIns: number;
 }
 
+interface ManagerProfileDetails {
+  center_id: string | null;
+  team_id: string | null;
+}
+
+interface MembershipWithProfile {
+  user_id: string;
+  profiles: {
+    id: string;
+    full_name: string | null;
+    email: string | null;
+    is_active: boolean;
+    center_id: string | null;
+    team_id: string | null;
+  };
+}
+
+interface LastEvent {
+  user_id: string;
+  event_type: string | null;
+  event_time: string | null;
+}
+
+interface WorkSessionSummary {
+  clock_in_time: string | null;
+  clock_out_time: string | null;
+}
+
 const ManagerView = () => {
   const { signOut } = useAuth();
   const { companyId, membership } = useMembership();
@@ -46,23 +74,15 @@ const ManagerView = () => {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [weeklyData, setWeeklyData] = useState<DailyStats[]>([]);
   const [loading, setLoading] = useState(true);
-  const [managerProfile, setManagerProfile] = useState<any>(null);
+  const [managerProfile, setManagerProfile] = useState<ManagerProfileDetails | null>(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
-  useEffect(() => {
-    if (companyId) {
-      fetchManagerProfile();
-    }
-  }, [companyId]);
-
-  useEffect(() => {
-    if (managerProfile) {
-      fetchAllData();
-    }
-  }, [managerProfile]);
-
-  const fetchManagerProfile = async () => {
+  const fetchManagerProfile = useCallback(async () => {
     const { data } = await supabase.auth.getUser();
-    if (!data.user) return;
+    if (!data.user) {
+      setProfileLoaded(true);
+      return;
+    }
 
     const { data: profile } = await supabase
       .from("profiles")
@@ -70,26 +90,26 @@ const ManagerView = () => {
       .eq("id", data.user.id)
       .single();
 
-    setManagerProfile(profile);
-  };
+    setManagerProfile(profile || null);
+    setProfileLoaded(true);
+  }, []);
 
-  const fetchAllData = async () => {
-    setLoading(true);
-    await Promise.all([fetchStats(), fetchTeamMembers(), fetchWeeklyData()]);
-    setLoading(false);
-  };
+  useEffect(() => {
+    if (companyId) {
+      fetchManagerProfile();
+    }
+  }, [companyId, fetchManagerProfile]);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
+    if (!companyId) return;
     const today = new Date();
     const startOfToday = new Date(today.setHours(0, 0, 0, 0)).toISOString();
 
-    // Build query for team members based on manager's center/team
     let membersQuery = supabase
       .from("memberships")
       .select("user_id, profiles!inner(center_id, team_id)")
       .eq("company_id", companyId);
 
-    // Filter by center or team
     if (managerProfile?.center_id) {
       membersQuery = membersQuery.eq("profiles.center_id", managerProfile.center_id);
     } else if (managerProfile?.team_id) {
@@ -97,14 +117,14 @@ const ManagerView = () => {
     }
 
     const { data: teamMembersData } = await membersQuery;
-    const userIds = teamMembersData?.map((m: any) => m.user_id) || [];
+    const memberRows: MembershipWithProfile[] = (teamMembersData || []) as MembershipWithProfile[];
+    const userIds = memberRows.map((m) => m.user_id);
 
     if (userIds.length === 0) {
       setStats({ activeTeamMembers: 0, todayCheckIns: 0, totalHoursToday: 0 });
       return;
     }
 
-    // Active team members (open work sessions)
     const { count: activeCount } = await supabase
       .from("work_sessions")
       .select("*", { count: "exact", head: true })
@@ -112,7 +132,6 @@ const ManagerView = () => {
       .in("user_id", userIds)
       .eq("is_active", true);
 
-    // Today's check-ins
     const { count: checkInsCount } = await supabase
       .from("time_events")
       .select("*", { count: "exact", head: true })
@@ -121,7 +140,6 @@ const ManagerView = () => {
       .eq("event_type", "clock_in")
       .gte("event_time", startOfToday);
 
-    // Total hours today
     const { data: todaySessions } = await supabase
       .from("work_sessions")
       .select("clock_in_time, clock_out_time")
@@ -129,33 +147,17 @@ const ManagerView = () => {
       .in("user_id", userIds)
       .gte("clock_in_time", startOfToday);
 
-    const totalHoursToday = calculateTotalHours(todaySessions || []);
+    const totalHoursToday = calculateTotalHours((todaySessions || []) as WorkSessionSummary[]);
 
     setStats({
       activeTeamMembers: activeCount || 0,
       todayCheckIns: checkInsCount || 0,
       totalHoursToday,
     });
-  };
+  }, [companyId, managerProfile]);
 
-  const calculateTotalHours = (sessions: any[]) => {
-    return sessions.reduce((total, session) => {
-      if (!session.clock_in_time) return total;
-
-      const clockIn = new Date(session.clock_in_time).getTime();
-      const clockOut = session.clock_out_time
-        ? new Date(session.clock_out_time).getTime()
-        : Date.now();
-
-      const diffMs = clockOut - clockIn;
-      const hours = diffMs / (1000 * 60 * 60);
-
-      return total + hours;
-    }, 0);
-  };
-
-  const fetchTeamMembers = async () => {
-    // Build query for team members
+  const fetchTeamMembers = useCallback(async () => {
+    if (!companyId) return;
     let query = supabase
       .from("memberships")
       .select(`
@@ -172,7 +174,6 @@ const ManagerView = () => {
       .eq("company_id", companyId)
       .eq("role", "worker");
 
-    // Filter by center or team
     if (managerProfile?.center_id) {
       query = query.eq("profiles.center_id", managerProfile.center_id);
     } else if (managerProfile?.team_id) {
@@ -181,14 +182,15 @@ const ManagerView = () => {
 
     const { data: members } = await query;
 
-    if (!members || members.length === 0) {
+    const membersList: MembershipWithProfile[] = (members || []) as MembershipWithProfile[];
+
+    if (membersList.length === 0) {
       setTeamMembers([]);
       return;
     }
 
-    const userIds = members.map((m: any) => m.user_id);
+    const userIds = membersList.map((m) => m.user_id);
 
-    // Get last event for each member
     const { data: lastEvents } = await supabase
       .from("time_events")
       .select("user_id, event_type, event_time")
@@ -196,29 +198,30 @@ const ManagerView = () => {
       .in("user_id", userIds)
       .order("event_time", { ascending: false });
 
-    // Map last event to each member
-    const membersWithEvents = members.map((m: any) => {
-      const lastEvent = lastEvents?.find((e) => e.user_id === m.user_id);
+    const eventList: LastEvent[] = (lastEvents || []) as LastEvent[];
+
+    const membersWithEvents = membersList.map((m) => {
+      const lastEvent = eventList.find((e) => e.user_id === m.user_id);
       return {
         id: m.user_id,
         full_name: m.profiles.full_name || "Sin nombre",
-        email: m.profiles.email,
-        is_active: m.profiles.is_active,
+        email: m.profiles.email || "—",
+        is_active: Boolean(m.profiles.is_active),
         last_event_type: lastEvent?.event_type || null,
         last_event_time: lastEvent?.event_time || null,
       };
     });
 
     setTeamMembers(membersWithEvents);
-  };
+  }, [companyId, managerProfile]);
 
-  const fetchWeeklyData = async () => {
+  const fetchWeeklyData = useCallback(async () => {
+    if (!companyId) return;
     const today = new Date();
     const startOfWeek = new Date(today);
     startOfWeek.setDate(today.getDate() - 6);
     startOfWeek.setHours(0, 0, 0, 0);
 
-    // Get team member IDs
     let membersQuery = supabase
       .from("memberships")
       .select("user_id, profiles!inner(center_id, team_id)")
@@ -231,7 +234,8 @@ const ManagerView = () => {
     }
 
     const { data: teamMembersData } = await membersQuery;
-    const userIds = teamMembersData?.map((m: any) => m.user_id) || [];
+    const memberRows: MembershipWithProfile[] = (teamMembersData || []) as MembershipWithProfile[];
+    const userIds = memberRows.map((m) => m.user_id);
 
     if (userIds.length === 0) {
       setWeeklyData([]);
@@ -243,7 +247,6 @@ const ManagerView = () => {
     for (let i = 0; i < 7; i++) {
       const date = new Date(startOfWeek);
       date.setDate(startOfWeek.getDate() + i);
-      const dateStr = date.toISOString().split("T")[0];
       const nextDay = new Date(date);
       nextDay.setDate(date.getDate() + 1);
 
@@ -264,7 +267,7 @@ const ManagerView = () => {
         .gte("event_time", date.toISOString())
         .lt("event_time", nextDay.toISOString());
 
-      const hours = calculateTotalHours(sessions || []);
+      const hours = calculateTotalHours((sessions || []) as WorkSessionSummary[]);
 
       dailyData.push({
         date: date.toLocaleDateString("es-ES", { weekday: "short" }),
@@ -274,6 +277,31 @@ const ManagerView = () => {
     }
 
     setWeeklyData(dailyData);
+  }, [companyId, managerProfile]);
+
+  const fetchAllData = useCallback(async () => {
+    if (!companyId) return;
+    setLoading(true);
+    await Promise.all([fetchStats(), fetchTeamMembers(), fetchWeeklyData()]);
+    setLoading(false);
+  }, [companyId, fetchStats, fetchTeamMembers, fetchWeeklyData]);
+
+  useEffect(() => {
+    if (companyId && profileLoaded) {
+      fetchAllData();
+    }
+  }, [companyId, profileLoaded, fetchAllData]);
+
+  const calculateTotalHours = (sessions: WorkSessionSummary[]) => {
+    return sessions.reduce((total, session) => {
+      if (!session.clock_in_time) return total;
+
+      const clockIn = new Date(session.clock_in_time).getTime();
+      const clockOut = session.clock_out_time ? new Date(session.clock_out_time).getTime() : Date.now();
+      const hours = (clockOut - clockIn) / (1000 * 60 * 60);
+
+      return total + hours;
+    }, 0);
   };
 
   const formatEventType = (type: string | null) => {

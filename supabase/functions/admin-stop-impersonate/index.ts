@@ -36,11 +36,13 @@ serve(async (req) => {
       success: true,
       message: "Impersonation stopped",
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Stop impersonate error:", error);
 
-    if (error.message.includes("Unauthorized") || error.message.includes("Forbidden")) {
-      return createErrorResponse(error.message, 403);
+    const message = error instanceof Error ? error.message : "Failed to stop impersonation";
+
+    if (message.includes("Unauthorized") || message.includes("Forbidden")) {
+      return createErrorResponse(message, 403);
     }
 
     return createErrorResponse("Failed to stop impersonation", 500);

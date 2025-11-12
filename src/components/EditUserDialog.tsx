@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Dialog,
   DialogContent,
@@ -55,6 +55,28 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
   const [centers, setCenters] = useState<Center[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
 
+  const fetchCenters = useCallback(async () => {
+    if (!companyId) return;
+    const { data } = await supabase
+      .from("centers")
+      .select("id, name")
+      .eq("company_id", companyId)
+      .order("name");
+
+    if (data) setCenters(data);
+  }, [companyId]);
+
+  const fetchTeams = useCallback(async () => {
+    if (!companyId) return;
+    const { data } = await supabase
+      .from("teams")
+      .select("id, name")
+      .eq("company_id", companyId)
+      .order("name");
+
+    if (data) setTeams(data);
+  }, [companyId]);
+
   useEffect(() => {
     if (open && companyId) {
       setFullName(employee.full_name || "");
@@ -64,27 +86,7 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
       fetchCenters();
       fetchTeams();
     }
-  }, [open, companyId, employee]);
-
-  const fetchCenters = async () => {
-    const { data } = await supabase
-      .from("centers")
-      .select("id, name")
-      .eq("company_id", companyId)
-      .order("name");
-
-    if (data) setCenters(data);
-  };
-
-  const fetchTeams = async () => {
-    const { data } = await supabase
-      .from("teams")
-      .select("id, name")
-      .eq("company_id", companyId)
-      .order("name");
-
-    if (data) setTeams(data);
-  };
+  }, [open, companyId, employee, fetchCenters, fetchTeams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,9 +117,10 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
       toast.success("Usuario actualizado correctamente");
       onSuccess();
       onOpenChange(false);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Error updating user:", error);
-      toast.error(error.message || "Error al actualizar usuario");
+      const message = error instanceof Error ? error.message : "Error al actualizar usuario";
+      toast.error(message);
     } finally {
       setLoading(false);
     }

@@ -65,7 +65,7 @@ interface AuditLogPayload {
   action: string;
   entity_type?: string | null;
   entity_id?: string | null;
-  diff?: Record<string, any> | null;
+  diff?: Record<string, unknown> | null;
   ip?: string | null;
   user_agent?: string | null;
   reason?: string | null;

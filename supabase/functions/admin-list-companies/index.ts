@@ -72,11 +72,13 @@ serve(async (req) => {
       success: true,
       data: enhancedCompanies,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Admin list companies error:", error);
 
-    if (error.message.includes("Unauthorized") || error.message.includes("Forbidden")) {
-      return createErrorResponse(error.message, 403);
+    const message = error instanceof Error ? error.message : "Failed to fetch companies";
+
+    if (message.includes("Unauthorized") || message.includes("Forbidden")) {
+      return createErrorResponse(message, 403);
     }
 
     return createErrorResponse("Failed to fetch companies", 500);

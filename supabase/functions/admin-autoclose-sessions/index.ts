@@ -74,11 +74,13 @@ serve(async (req) => {
       closed_count: sessionIds.length,
       session_ids: sessionIds,
     });
-  } catch (error: any) {
+  } catch (error) {
     console.error("Admin autoclose sessions error:", error);
 
-    if (error.message.includes("Unauthorized") || error.message.includes("Forbidden")) {
-      return createErrorResponse(error.message, 403);
+    const message = error instanceof Error ? error.message : "Failed to close sessions";
+
+    if (message.includes("Unauthorized") || message.includes("Forbidden")) {
+      return createErrorResponse(message, 403);
     }
 
     return createErrorResponse("Failed to close sessions", 500);
