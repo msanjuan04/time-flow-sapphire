@@ -46,13 +46,20 @@ export async function requireSuperadmin(req: Request): Promise<SuperadminContext
   }
 
   // After verifying superadmin, use service role client to bypass RLS for admin operations
-  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+  const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!serviceKey) {
-    console.warn("SUPABASE_SERVICE_ROLE_KEY not set; admin functions may be limited by RLS");
+    throw new Error("SUPABASE_SERVICE_ROLE_KEY not configured");
   }
+  
   const serviceClient = createClient(
     Deno.env.get("SUPABASE_URL") ?? "",
-    serviceKey || (Deno.env.get("SUPABASE_ANON_KEY") ?? "")
+    serviceKey,
+    {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false
+      }
+    }
   );
 
   return { supabase: serviceClient, user };

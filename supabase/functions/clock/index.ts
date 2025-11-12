@@ -94,10 +94,10 @@ Deno.serve(async (req) => {
     }
 
     // Use the first membership (or the one matching company_id if provided)
-    const membership = memberships[0] as MembershipResult;
+    const membership = memberships[0] as any;
 
     const companyId = membership.company_id;
-    const company = membership.company;
+    const company = membership.company?.[0];
 
     // Check if company is active
     if (company?.status === 'suspended') {

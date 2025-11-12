@@ -80,8 +80,8 @@ serve(async (req) => {
         .limit(1)
         .maybeSingle();
 
-      recipientEmail = ownerMembership?.profiles?.email ?? null;
-      recipientName = ownerMembership?.profiles?.full_name ?? null;
+      recipientEmail = (ownerMembership?.profiles as any)?.[0]?.email ?? null;
+      recipientName = (ownerMembership?.profiles as any)?.[0]?.full_name ?? null;
     }
 
     if (!recipientEmail) {
@@ -94,8 +94,8 @@ serve(async (req) => {
       return createJsonResponse({ success: true, skipped: true, reason: "Resend API key missing" });
     }
 
-    const workerName = request.profiles?.full_name || request.profiles?.email || "Trabajador";
-    const workerEmail = request.profiles?.email || "sin correo";
+    const workerName = (request.profiles as any)?.[0]?.full_name || (request.profiles as any)?.[0]?.email || "Trabajador";
+    const workerEmail = (request.profiles as any)?.[0]?.email || "sin correo";
     const payload = request.payload as Record<string, string>;
     const eventTime = payload?.event_time ? new Date(payload.event_time).toLocaleString("es-ES") : "Sin fecha";
     const eventType = payload?.event_type ?? "evento";

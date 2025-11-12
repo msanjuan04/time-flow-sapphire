@@ -50,15 +50,15 @@ serve(async (req) => {
       return createErrorResponse("Failed to fetch users", 500);
     }
 
-    const memberRows: MembershipRow[] = (data || []) as MembershipRow[];
-    const members = memberRows.map((m) => ({
+    const memberRows = (data || []) as any[];
+    const members = memberRows.map((m: any) => ({
       id: m.user_id,
-      email: m.profiles.email,
-      full_name: m.profiles.full_name,
+      email: m.profiles?.[0]?.email || '',
+      full_name: m.profiles?.[0]?.full_name || null,
       role: m.role,
-      is_active: m.profiles.is_active,
-      center_name: m.profiles.centers?.name || null,
-      team_name: m.profiles.teams?.name || null,
+      is_active: m.profiles?.[0]?.is_active || false,
+      center_name: m.profiles?.[0]?.centers?.[0]?.name || null,
+      team_name: m.profiles?.[0]?.teams?.[0]?.name || null,
     }));
 
     return createJsonResponse({ success: true, members });

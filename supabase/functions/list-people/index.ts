@@ -107,16 +107,16 @@ serve(async (req) => {
     }
 
     // Format response
-    const formattedMembers = (members as MemberRow[] | null)?.map((m) => ({
+    const formattedMembers = (members as any[] | null)?.map((m: any) => ({
       id: m.user_id,
-      email: m.profiles.email,
-      full_name: m.profiles.full_name,
+      email: m.profiles?.[0]?.email || '',
+      full_name: m.profiles?.[0]?.full_name || null,
       role: m.role,
-      center_id: m.profiles.center_id,
-      team_id: m.profiles.team_id,
-      center_name: m.profiles.centers?.name || null,
-      team_name: m.profiles.teams?.name || null,
-      is_active: m.profiles.is_active,
+      center_id: m.profiles?.[0]?.center_id || null,
+      team_id: m.profiles?.[0]?.team_id || null,
+      center_name: m.profiles?.[0]?.centers?.[0]?.name || null,
+      team_name: m.profiles?.[0]?.teams?.[0]?.name || null,
+      is_active: m.profiles?.[0]?.is_active || false,
     })) || [];
 
     console.log(`Fetched ${formattedMembers.length} members for company ${membership.company_id}`);

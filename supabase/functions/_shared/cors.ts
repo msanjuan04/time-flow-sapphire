@@ -34,11 +34,13 @@ export function createErrorResponse(
   status: number = 500,
   details?: unknown
 ): Response {
+  const body: { error: string; details?: unknown } = { error };
+  if (details) {
+    body.details = details;
+  }
+  
   return new Response(
-    JSON.stringify({ 
-      error,
-      ...(details && { details })
-    }),
+    JSON.stringify(body),
     {
       status,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
