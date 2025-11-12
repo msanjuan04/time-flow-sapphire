@@ -2,9 +2,9 @@ import { useState, useEffect } from "react";
 import { useMembership } from "@/hooks/useMembership";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
-import { Calendar as CalendarIcon, Clock, Users, Plus } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, Users, Plus, AlertCircle, Trash2, Pencil } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, startOfMonth, endOfMonth, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import {
@@ -39,6 +39,15 @@ const ManagerCalendar = () => {
   const [selectedEmployee, setSelectedEmployee] = useState<string>("");
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [isAbsenceDialogOpen, setIsAbsenceDialogOpen] = useState(false);
+  const [timeEvents, setTimeEvents] = useState<any[]>([]);
+  const [selectedDayEvents, setSelectedDayEvents] = useState<any[]>([]);
+  const [eventType, setEventType] = useState<string>("clock_in");
+  const [eventTime, setEventTime] = useState<string>("");
+  const [search, setSearch] = useState("");
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<any | null>(null);
+  const [editEventType, setEditEventType] = useState<string>("clock_in");
+  const [editEventTime, setEditEventTime] = useState<string>("");
 
   // Schedule hours form
   const [scheduleDate, setScheduleDate] = useState("");
@@ -56,6 +65,34 @@ const ManagerCalendar = () => {
       fetchEmployees();
     }
   }, [membership]);
+
+  // Load month events for selected employee
+  useEffect(() => {
+    if (!membership || !selectedEmployee || !date) return;
+
+    const monthStart = startOfMonth(date);
+    const monthEnd = endOfMonth(date);
+
+    const fetchEvents = async () => {
+      const { data, error } = await supabase
+        .from("time_events")
+        .select("id, event_type, event_time, notes")
+        .eq("company_id", membership.company_id)
+        .eq("user_id", selectedEmployee)
+        .gte("event_time", monthStart.toISOString())
+        .lte("event_time", monthEnd.toISOString())
+        .order("event_time", { ascending: true });
+      if (!error) {
+        setTimeEvents(data || []);
+        // Also update day events for the currently selected date
+        setSelectedDayEvents(
+          (data || []).filter((e: any) => isSameDay(parseISO(e.event_time), date!))
+        );
+      }
+    };
+
+    fetchEvents();
+  }, [membership, selectedEmployee, date]);
 
   const fetchEmployees = async () => {
     if (!membership) return;
@@ -167,6 +204,131 @@ const ManagerCalendar = () => {
     }
   };
 
+  const refreshSelectedDayEvents = () => {
+    if (!date) return;
+    setSelectedDayEvents(
+      timeEvents.filter((e) => isSameDay(parseISO(e.event_time), date))
+    );
+  };
+
+  const handleAddEvent = async () => {
+    if (!membership || !selectedEmployee || !date || !eventTime) {
+      toast.error("Selecciona empleado, día y hora");
+      return;
+    }
+    try {
+      const dateStr = format(date, "yyyy-MM-dd");
+      const eventTimestamp = `${dateStr}T${eventTime}:00`;
+      const { error } = await supabase.from("time_events").insert({
+        company_id: membership.company_id,
+        user_id: selectedEmployee,
+        event_type: eventType,
+        event_time: eventTimestamp,
+        source: "web",
+        notes: "Añadido por manager desde calendario",
+      });
+      if (error) throw error;
+      toast.success("Evento añadido");
+      // Refresh list
+      setEventTime("");
+      const { data } = await supabase
+        .from("time_events")
+        .select("id, event_type, event_time, notes")
+        .eq("company_id", membership.company_id)
+        .eq("user_id", selectedEmployee)
+        .gte("event_time", startOfMonth(date).toISOString())
+        .lte("event_time", endOfMonth(date).toISOString())
+        .order("event_time", { ascending: true });
+      setTimeEvents(data || []);
+      refreshSelectedDayEvents();
+    } catch (error) {
+      console.error(error);
+      toast.error("No se pudo añadir el evento");
+    }
+  };
+
+  const handleDeleteEvent = async (id: string) => {
+    try {
+      const { error } = await supabase.from("time_events").delete().eq("id", id);
+      if (error) throw error;
+      toast.success("Evento eliminado");
+      setTimeEvents((prev) => prev.filter((e) => e.id !== id));
+      setSelectedDayEvents((prev) => prev.filter((e) => e.id !== id));
+    } catch (error) {
+      console.error(error);
+      toast.error("No se pudo eliminar");
+    }
+  };
+
+  const openEdit = (event: any) => {
+    setEditingEvent(event);
+    setEditEventType(event.event_type);
+    setEditEventTime(format(parseISO(event.event_time), "HH:mm"));
+    setEditDialogOpen(true);
+  };
+
+  const handleUpdateEvent = async () => {
+    if (!editingEvent) return;
+    try {
+      const datePart = format(parseISO(editingEvent.event_time), "yyyy-MM-dd");
+      const newTimestamp = `${datePart}T${editEventTime}:00`;
+      const { error } = await supabase
+        .from("time_events")
+        .update({ event_type: editEventType, event_time: newTimestamp })
+        .eq("id", editingEvent.id);
+      if (error) throw error;
+      toast.success("Evento actualizado");
+      // Update local state
+      setTimeEvents((prev) =>
+        prev.map((e) =>
+          e.id === editingEvent.id
+            ? { ...e, event_type: editEventType, event_time: newTimestamp }
+            : e
+        )
+      );
+      setSelectedDayEvents((prev) =>
+        prev.map((e) =>
+          e.id === editingEvent.id
+            ? { ...e, event_type: editEventType, event_time: newTimestamp }
+            : e
+        )
+      );
+      setEditDialogOpen(false);
+      setEditingEvent(null);
+    } catch (error) {
+      console.error(error);
+      toast.error("No se pudo actualizar");
+    }
+  };
+
+  const handleCompanyHoliday = async () => {
+    if (!membership || !date) {
+      toast.error("Selecciona un día del calendario");
+      return;
+    }
+    try {
+      const dateStr = format(date, "yyyy-MM-dd");
+      const records = employees.map((emp) => ({
+        user_id: emp.id,
+        company_id: membership.company_id,
+        absence_type: "other" as const,
+        start_date: dateStr,
+        end_date: dateStr,
+        reason: "Festivo de empresa",
+        status: "approved" as const,
+        created_by: emp.id,
+        approved_by: emp.id,
+        approved_at: new Date().toISOString(),
+      }));
+      const { error } = await supabase.from("absences").insert(records);
+      if (error) throw error;
+      toast.success("Festivo de empresa registrado");
+    } catch (error) {
+      console.error(error);
+      toast.error("No se pudo crear el festivo");
+    }
+  };
+
   if (membershipLoading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -187,155 +349,362 @@ const ManagerCalendar = () => {
         </div>
       </div>
 
-      <Card className="p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Users className="h-5 w-5 text-primary" />
-          <Label htmlFor="employee-select" className="text-base font-semibold">
-            Seleccionar Empleado
-          </Label>
-        </div>
-        <Select value={selectedEmployee} onValueChange={setSelectedEmployee}>
-          <SelectTrigger id="employee-select">
-            <SelectValue placeholder="Selecciona un empleado" />
-          </SelectTrigger>
-          <SelectContent>
-            {employees.map((employee) => (
-              <SelectItem key={employee.id} value={employee.id}>
-                {employee.full_name || employee.email}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {selectedEmployee && (
-          <div className="mt-6 flex gap-3">
-            <Dialog
-              open={isScheduleDialogOpen}
-              onOpenChange={setIsScheduleDialogOpen}
-            >
-              <DialogTrigger asChild>
-                <Button className="flex-1">
-                  <Clock className="mr-2 h-4 w-4" />
-                  Programar Horas
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Programar Horas de Trabajo</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="schedule-date">Fecha</Label>
-                    <Input
-                      id="schedule-date"
-                      type="date"
-                      value={scheduleDate}
-                      onChange={(e) => setScheduleDate(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="expected-hours">Horas Esperadas</Label>
-                    <Input
-                      id="expected-hours"
-                      type="number"
-                      step="0.5"
-                      min="0"
-                      max="24"
-                      value={expectedHours}
-                      onChange={(e) => setExpectedHours(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="schedule-notes">Notas (opcional)</Label>
-                    <Textarea
-                      id="schedule-notes"
-                      value={scheduleNotes}
-                      onChange={(e) => setScheduleNotes(e.target.value)}
-                      placeholder="Añade notas sobre este turno..."
-                    />
-                  </div>
-                  <Button onClick={handleScheduleHours} className="w-full">
-                    Guardar
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <Dialog
-              open={isAbsenceDialogOpen}
-              onOpenChange={setIsAbsenceDialogOpen}
-            >
-              <DialogTrigger asChild>
-                <Button variant="outline" className="flex-1">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Registrar Ausencia
-                </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Registrar Ausencia</DialogTitle>
-                </DialogHeader>
-                <div className="space-y-4 py-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="absence-type">Tipo de Ausencia</Label>
-                    <Select value={absenceType} onValueChange={setAbsenceType}>
-                      <SelectTrigger id="absence-type">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="vacation">Vacaciones</SelectItem>
-                        <SelectItem value="sick_leave">Baja médica</SelectItem>
-                        <SelectItem value="personal">Personal</SelectItem>
-                        <SelectItem value="other">Otro</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="start-date">Fecha Inicio</Label>
-                    <Input
-                      id="start-date"
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="end-date">Fecha Fin</Label>
-                    <Input
-                      id="end-date"
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="absence-reason">Motivo (opcional)</Label>
-                    <Textarea
-                      id="absence-reason"
-                      value={absenceReason}
-                      onChange={(e) => setAbsenceReason(e.target.value)}
-                      placeholder="Añade un motivo..."
-                    />
-                  </div>
-                  <Button onClick={handleCreateAbsence} className="w-full">
-                    Registrar
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+      {/* Diálogo de edición de evento */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar evento</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <Label>Tipo</Label>
+              <Select value={editEventType} onValueChange={setEditEventType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="clock_in">Entrada</SelectItem>
+                  <SelectItem value="clock_out">Salida</SelectItem>
+                  <SelectItem value="pause_start">Inicio pausa</SelectItem>
+                  <SelectItem value="pause_end">Fin pausa</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Hora</Label>
+              <Input type="time" value={editEventTime} onChange={(e) => setEditEventTime(e.target.value)} />
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={handleUpdateEvent}>Guardar cambios</Button>
+            </div>
           </div>
-        )}
-      </Card>
+        </DialogContent>
+      </Dialog>
 
-      <Card className="p-6">
-        <Calendar
-          mode="single"
-          selected={date}
-          onSelect={setDate}
-          locale={es}
-          className="rounded-md border pointer-events-auto"
-        />
-      </Card>
+      <div className="grid md:grid-cols-3 gap-6">
+        {/* Sidebar empleados */}
+        <Card className="p-4 h-full">
+          <div className="flex items-center gap-2 mb-3">
+            <Users className="h-5 w-5 text-primary" />
+            <span className="text-base font-semibold">Empleados</span>
+          </div>
+          <Input
+            placeholder="Buscar..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="mb-3"
+          />
+          <div className="max-h-[480px] overflow-auto space-y-1 pr-2">
+            {employees
+              .filter((e) => {
+                const q = search.toLowerCase();
+                const name = (e.full_name || e.email || "").toLowerCase();
+                return name.includes(q);
+              })
+              .map((e) => (
+                <Button
+                  key={e.id}
+                  variant={selectedEmployee === e.id ? "default" : "outline"}
+                  className="w-full justify-start"
+                  onClick={() => setSelectedEmployee(e.id)}
+                >
+                  {e.full_name || e.email}
+                </Button>
+              ))}
+          </div>
+        </Card>
+
+        {/* Contenido principal */}
+        <div className="md:col-span-2 space-y-4">
+          {/* Acciones generales */}
+          <div className="flex flex-wrap gap-2">
+            {selectedEmployee && (
+              <>
+                <Dialog open={isScheduleDialogOpen} onOpenChange={setIsScheduleDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button>
+                      <Clock className="mr-2 h-4 w-4" /> Programar Horas
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Programar Horas de Trabajo</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="schedule-date">Fecha</Label>
+                        <Input id="schedule-date" type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="expected-hours">Horas Esperadas</Label>
+                        <Input id="expected-hours" type="number" step="0.5" min="0" max="24" value={expectedHours} onChange={(e) => setExpectedHours(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="schedule-notes">Notas (opcional)</Label>
+                        <Textarea id="schedule-notes" value={scheduleNotes} onChange={(e) => setScheduleNotes(e.target.value)} placeholder="Añade notas sobre este turno..." />
+                      </div>
+                      <Button onClick={handleScheduleHours} className="w-full">Guardar</Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                <Dialog open={isAbsenceDialogOpen} onOpenChange={setIsAbsenceDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline">
+                      <Plus className="mr-2 h-4 w-4" /> Registrar Ausencia
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Registrar Ausencia</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="absence-type">Tipo de Ausencia</Label>
+                        <Select value={absenceType} onValueChange={setAbsenceType}>
+                          <SelectTrigger id="absence-type">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="vacation">Vacaciones</SelectItem>
+                            <SelectItem value="sick_leave">Baja médica</SelectItem>
+                            <SelectItem value="personal">Personal</SelectItem>
+                            <SelectItem value="other">Otro</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="start-date">Fecha Inicio</Label>
+                        <Input id="start-date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="end-date">Fecha Fin</Label>
+                        <Input id="end-date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="absence-reason">Motivo (opcional)</Label>
+                        <Textarea id="absence-reason" value={absenceReason} onChange={(e) => setAbsenceReason(e.target.value)} placeholder="Añade un motivo..." />
+                      </div>
+                      <Button onClick={handleCreateAbsence} className="w-full">Registrar</Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </>
+            )}
+
+            <Button variant="secondary" onClick={handleCompanyHoliday}>
+              Marcar festivo de empresa
+            </Button>
+          </div>
+
+          {/* Calendario + gestión del día */}
+          <div className="grid md:grid-cols-2 gap-6">
+            <Card className="p-6">
+              <Calendar
+                mode="single"
+                selected={date}
+                onSelect={(d) => {
+                  setDate(d);
+                  if (d) {
+                    setSelectedDayEvents(
+                      timeEvents.filter((e) => isSameDay(parseISO(e.event_time), d))
+                    );
+                  }
+                }}
+                locale={es}
+                className="rounded-md border pointer-events-auto"
+              />
+            </Card>
+
+            <Card className="p-6 space-y-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-primary" />
+                Gestión del día seleccionado
+              </h3>
+              {!selectedEmployee || !date ? (
+                <p className="text-sm text-muted-foreground">
+                  Selecciona un empleado y un día del calendario.
+                </p>
+              ) : (
+                <>
+                  <div className="flex gap-2 items-end">
+                    <div className="flex-1">
+                      <Label>Tipo de evento</Label>
+                      <Select value={eventType} onValueChange={setEventType}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="clock_in">Entrada</SelectItem>
+                          <SelectItem value="clock_out">Salida</SelectItem>
+                          <SelectItem value="pause_start">Inicio pausa</SelectItem>
+                          <SelectItem value="pause_end">Fin pausa</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="w-40">
+                      <Label>Hora</Label>
+                      <Input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} />
+                    </div>
+                    <Button onClick={handleAddEvent}>Añadir</Button>
+                  </div>
+
+                  <div className="pt-2">
+                    <h4 className="font-medium mb-2">Eventos del día</h4>
+                    {selectedDayEvents.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No hay eventos.</p>
+                    ) : (
+                      <ul className="space-y-2">
+                        {selectedDayEvents.map((e) => (
+                          <li key={e.id} className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+                            <span className="text-sm">
+                              {e.event_type === "clock_in"
+                                ? "Entrada"
+                                : e.event_type === "clock_out"
+                                ? "Salida"
+                                : e.event_type === "pause_start"
+                                ? "Inicio pausa"
+                                : "Fin pausa"}
+                              {" • "}
+                              {format(parseISO(e.event_time), "HH:mm")}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <Button size="icon" variant="ghost" onClick={() => openEdit(e)} title="Editar">
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                              <Button size="icon" variant="ghost" onClick={() => handleDeleteEvent(e.id)} title="Eliminar">
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  <div className="pt-4 border-t flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Otras acciones</span>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        if (!date) return;
+                        setAbsenceType("other");
+                        const d = format(date, "yyyy-MM-dd");
+                        setStartDate(d);
+                        setEndDate(d);
+                        setAbsenceReason("Festivo");
+                        setIsAbsenceDialogOpen(true);
+                      }}
+                    >
+                      Marcar festivo
+                    </Button>
+                  </div>
+                </>
+              )}
+            </Card>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <Card className="p-6">
+          <Calendar
+            mode="single"
+            selected={date}
+            onSelect={(d) => {
+              setDate(d);
+              if (d) {
+                setSelectedDayEvents(
+                  timeEvents.filter((e) => isSameDay(parseISO(e.event_time), d))
+                );
+              }
+            }}
+            locale={es}
+            className="rounded-md border pointer-events-auto"
+          />
+        </Card>
+
+        <Card className="p-6 space-y-4">
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-primary" />
+            Gestión del día seleccionado
+          </h3>
+          {!selectedEmployee || !date ? (
+            <p className="text-sm text-muted-foreground">
+              Selecciona un empleado y un día del calendario.
+            </p>
+          ) : (
+            <>
+              <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                  <Label>Tipo de evento</Label>
+                  <Select value={eventType} onValueChange={setEventType}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="clock_in">Entrada</SelectItem>
+                      <SelectItem value="clock_out">Salida</SelectItem>
+                      <SelectItem value="pause_start">Inicio pausa</SelectItem>
+                      <SelectItem value="pause_end">Fin pausa</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="w-40">
+                  <Label>Hora</Label>
+                  <Input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} />
+                </div>
+                <Button onClick={handleAddEvent}>Añadir</Button>
+              </div>
+
+              <div className="pt-2">
+                <h4 className="font-medium mb-2">Eventos del día</h4>
+                {selectedDayEvents.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No hay eventos.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {selectedDayEvents.map((e) => (
+                      <li key={e.id} className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+                        <span className="text-sm">
+                          {e.event_type === "clock_in"
+                            ? "Entrada"
+                            : e.event_type === "clock_out"
+                            ? "Salida"
+                            : e.event_type === "pause_start"
+                            ? "Inicio pausa"
+                            : "Fin pausa"}
+                          {" • "}
+                          {format(parseISO(e.event_time), "HH:mm")}
+                        </span>
+                        <Button size="icon" variant="ghost" onClick={() => handleDeleteEvent(e.id)} title="Eliminar">
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </li>) )}
+                  </ul>
+                )}
+              </div>
+
+              <div className="pt-4 border-t flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">Otras acciones</span>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    if (!date) return;
+                    setAbsenceType("other");
+                    const d = format(date, "yyyy-MM-dd");
+                    setStartDate(d);
+                    setEndDate(d);
+                    setAbsenceReason("Festivo");
+                    setIsAbsenceDialogOpen(true);
+                  }}
+                >
+                  Marcar festivo
+                </Button>
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
     </div>
   );
 };
