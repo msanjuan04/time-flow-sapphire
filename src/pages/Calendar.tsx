@@ -1,18 +1,17 @@
+// src/pages/Calendar.tsx
 import { useState, useEffect } from "react";
 import { useMembership } from "@/hooks/useMembership";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+
 import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Calendar as CalendarIcon, Clock, AlertCircle, MapPin, ExternalLink } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import { Calendar } from "@/components/ui/calendar";
 import { format, startOfMonth, endOfMonth, parseISO, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { BackButton } from "@/components/BackButton";
-// Dialog UI no backend: usaremos un overlay ligero para evitar dependencias
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -26,7 +25,7 @@ interface WorkSession {
 
 interface TimeEvent {
   id: string;
-  event_type: string;
+  event_type: "clock_in" | "clock_out" | "pause_start" | "pause_end" | string;
   event_time: string;
   latitude: number | null;
   longitude: number | null;
@@ -34,10 +33,10 @@ interface TimeEvent {
 
 interface Absence {
   id: string;
-  absence_type: string;
+  absence_type: "vacation" | "sick_leave" | "personal" | string;
   start_date: string;
   end_date: string;
-  status: string;
+  status: "approved" | "rejected" | "pending" | string;
   reason: string | null;
 }
 
@@ -49,8 +48,8 @@ interface ScheduledHours {
 
 const WorkerCalendar = () => {
   const { membership, loading: membershipLoading } = useMembership();
-  const navigate = useNavigate();
   const { user } = useAuth();
+
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
@@ -62,23 +61,32 @@ const WorkerCalendar = () => {
     absence: Absence | null;
     events: TimeEvent[];
   } | null>(null);
+
   const [miniMapsEnabled, setMiniMapsEnabled] = useState<boolean>(() => {
     try {
       const v = localStorage.getItem("calendarMiniMapsEnabled");
       return v === "1";
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   });
 
   useEffect(() => {
-    try { localStorage.setItem("calendarMiniMapsEnabled", miniMapsEnabled ? "1" : "0"); } catch {}
+    try {
+      localStorage.setItem("calendarMiniMapsEnabled", miniMapsEnabled ? "1" : "0");
+    } catch {
+      // noop
+    }
   }, [miniMapsEnabled]);
 
-  const mapSrc = (lat: number, lng: number, z = 15) => `https://maps.google.com/maps?q=${lat},${lng}&z=${z}&output=embed`;
+  const mapSrc = (lat: number, lng: number, z = 15) =>
+    `https://maps.google.com/maps?q=${lat},${lng}&z=${z}&output=embed`;
 
   useEffect(() => {
     if (membership && date) {
       fetchCalendarData();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [membership, date]);
 
   const fetchCalendarData = async () => {
@@ -88,7 +96,7 @@ const WorkerCalendar = () => {
     const monthEnd = endOfMonth(date || new Date());
 
     try {
-      // Fetch work sessions
+      // Work sessions
       const { data: sessions, error: sessionsError } = await supabase
         .from("work_sessions")
         .select("id, clock_in_time, clock_out_time, total_work_duration")
@@ -96,34 +104,34 @@ const WorkerCalendar = () => {
         .eq("user_id", user.id)
         .gte("clock_in_time", monthStart.toISOString())
         .lte("clock_in_time", monthEnd.toISOString());
-
       if (sessionsError) throw sessionsError;
       setWorkSessions((sessions as WorkSession[]) || []);
 
-      // Fetch absences
+      // Absences
       const { data: absencesData, error: absencesError } = await supabase
         .from("absences")
         .select("*")
         .eq("user_id", user.id)
         .or(
-          `and(start_date.lte.${format(monthEnd, "yyyy-MM-dd")},end_date.gte.${format(monthStart, "yyyy-MM-dd")})`
+          `and(start_date.lte.${format(monthEnd, "yyyy-MM-dd")},end_date.gte.${format(
+            monthStart,
+            "yyyy-MM-dd"
+          )})`
         );
-
       if (absencesError) throw absencesError;
       setAbsences((absencesData as Absence[]) || []);
 
-      // Fetch scheduled hours
+      // Scheduled hours
       const { data: scheduled, error: scheduledError } = await supabase
         .from("scheduled_hours")
         .select("*")
         .eq("user_id", user.id)
         .gte("date", format(monthStart, "yyyy-MM-dd"))
         .lte("date", format(monthEnd, "yyyy-MM-dd"));
-
       if (scheduledError) throw scheduledError;
       setScheduledHours((scheduled as ScheduledHours[]) || []);
 
-      // Fetch time events with geolocation
+      // Time events (with geo)
       const { data: events, error: eventsError } = await supabase
         .from("time_events")
         .select("id, event_type, event_time, latitude, longitude")
@@ -131,7 +139,6 @@ const WorkerCalendar = () => {
         .gte("event_time", monthStart.toISOString())
         .lte("event_time", monthEnd.toISOString())
         .order("event_time", { ascending: false });
-
       if (eventsError) throw eventsError;
       setTimeEvents((events as TimeEvent[]) || []);
     } catch (error) {
@@ -141,47 +148,35 @@ const WorkerCalendar = () => {
   };
 
   const getWorkedHours = (checkDate: Date): number => {
-    const sessions = workSessions.filter((session) =>
-      isSameDay(parseISO(session.clock_in_time), checkDate)
-    );
-
+    const sessions = workSessions.filter((s) => isSameDay(parseISO(s.clock_in_time), checkDate));
     let totalMinutes = 0;
-    sessions.forEach((session) => {
-      if (session.total_work_duration) {
-        const parts = session.total_work_duration.match(/(\d+):(\d+):(\d+)/);
+    sessions.forEach((s) => {
+      if (s.total_work_duration) {
+        const parts = s.total_work_duration.match(/(\d+):(\d+):(\d+)/);
         if (parts) {
-          const hours = parseInt(parts[1]);
-          const minutes = parseInt(parts[2]);
+          const hours = parseInt(parts[1], 10);
+          const minutes = parseInt(parts[2], 10);
           totalMinutes += hours * 60 + minutes;
         }
       }
     });
-
     return totalMinutes / 60;
   };
 
   const getExpectedHours = (checkDate: Date): number => {
-    const scheduled = scheduledHours.find((sh) =>
-      isSameDay(parseISO(sh.date), checkDate)
-    );
-    return scheduled ? Number(scheduled.expected_hours) : 0;
+    const sh = scheduledHours.find((x) => isSameDay(parseISO(x.date), checkDate));
+    return sh ? Number(sh.expected_hours) : 0;
   };
 
-  const getAbsenceForDate = (checkDate: Date): Absence | null => {
-    return (
-      absences.find((absence) => {
-        const start = parseISO(absence.start_date);
-        const end = parseISO(absence.end_date);
-        return checkDate >= start && checkDate <= end;
-      }) || null
-    );
-  };
+  const getAbsenceForDate = (checkDate: Date): Absence | null =>
+    absences.find((a) => {
+      const start = parseISO(a.start_date);
+      const end = parseISO(a.end_date);
+      return checkDate >= start && checkDate <= end;
+    }) || null;
 
-  const getEventsForDate = (checkDate: Date): TimeEvent[] => {
-    return timeEvents.filter((event) =>
-      isSameDay(parseISO(event.event_time), checkDate)
-    );
-  };
+  const getEventsForDate = (checkDate: Date): TimeEvent[] =>
+    timeEvents.filter((e) => isSameDay(parseISO(e.event_time), checkDate));
 
   const handleDateSelect = (selectedDate: Date | undefined) => {
     setDate(selectedDate);
@@ -222,9 +217,7 @@ const WorkerCalendar = () => {
           <CalendarIcon className="h-8 w-8 text-primary" />
           <div>
             <h1 className="text-3xl font-bold">Mi Calendario</h1>
-            <p className="text-muted-foreground">
-              Consulta tus horas trabajadas y programadas
-            </p>
+            <p className="text-muted-foreground">Consulta tus horas trabajadas y programadas</p>
           </div>
         </div>
       </div>
@@ -315,28 +308,18 @@ const WorkerCalendar = () => {
                 <div className="space-y-3">
                   <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
                     <span>Horas trabajadas:</span>
-                    <span className="font-bold text-lg">
-                      {selectedDateData.worked.toFixed(2)}h
-                    </span>
+                    <span className="font-bold text-lg">{(() => { const mins = Math.round(selectedDateData.worked * 60); const hh = String(Math.floor(mins/60)).padStart(2,'0'); const mm = String(mins%60).padStart(2,'0'); return `${hh}:${mm}h`; })()}</span>
                   </div>
                   {selectedDateData.expected > 0 && (
                     <>
                       <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
                         <span>Horas programadas:</span>
-                        <span className="font-bold text-lg">
-                          {selectedDateData.expected.toFixed(2)}h
-                        </span>
+                        <span className="font-bold text-lg">{(() => { const mins = Math.round(selectedDateData.expected * 60); const hh = String(Math.floor(mins/60)).padStart(2,'0'); const mm = String(mins%60).padStart(2,'0'); return `${hh}:${mm}h`; })()}</span>
                       </div>
                       <div className="flex justify-between items-center p-3 bg-muted rounded-lg">
                         <span>Diferencia:</span>
-                        <span
-                          className={`font-bold text-lg ${
-                            selectedDateData.worked >= selectedDateData.expected
-                              ? "text-green-600"
-                              : "text-orange-600"
-                          }`}
-                        >
-                          {(selectedDateData.worked - selectedDateData.expected).toFixed(2)}h
+                        <span className={`font-bold text-lg ${selectedDateData.worked >= selectedDateData.expected ? "text-green-600" : "text-orange-600"}`}>
+                          {(() => { const diff = selectedDateData.worked - selectedDateData.expected; const sign = diff < 0 ? '-' : ''; const mins = Math.round(Math.abs(diff) * 60); const hh = String(Math.floor(mins/60)).padStart(2,'0'); const mm = String(mins%60).padStart(2,'0'); return `${sign}${hh}:${mm}h`; })()}
                         </span>
                       </div>
                     </>
@@ -350,15 +333,15 @@ const WorkerCalendar = () => {
                       <h3 className="font-semibold">Ubicaciones de fichaje</h3>
                       <div className="ml-auto flex items-center gap-2">
                         <Switch id="mini-maps" checked={miniMapsEnabled} onCheckedChange={setMiniMapsEnabled} />
-                        <Label htmlFor="mini-maps" className="text-sm text-muted-foreground">Mini-mapas en tabla</Label>
+                        <Label htmlFor="mini-maps" className="text-sm text-muted-foreground">
+                          Mini-mapas en tabla
+                        </Label>
                       </div>
                     </div>
+
                     <div className="space-y-2">
                       {selectedDateData.events.map((event) => (
-                        <div
-                          key={event.id}
-                          className="p-3 bg-muted/50 rounded-lg space-y-1"
-                        >
+                        <div key={event.id} className="p-3 bg-muted/50 rounded-lg space-y-1">
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-medium">
                               {event.event_type === "clock_in"
@@ -373,11 +356,13 @@ const WorkerCalendar = () => {
                               {format(parseISO(event.event_time), "HH:mm")}
                             </span>
                           </div>
+
                           {event.latitude && event.longitude ? (
                             <div className="flex items-center gap-3 text-xs">
                               <span className="text-primary flex items-center gap-1">
                                 <MapPin className="h-3 w-3" /> Ver mapa
                               </span>
+
                               <HoverCard openDelay={100}>
                                 <HoverCardTrigger asChild>
                                   <a
@@ -405,9 +390,7 @@ const WorkerCalendar = () => {
                               </HoverCard>
                             </div>
                           ) : (
-                            <span className="text-xs text-muted-foreground">
-                              Sin ubicación registrada
-                            </span>
+                            <span className="text-xs text-muted-foreground">Sin ubicación registrada</span>
                           )}
 
                           {miniMapsEnabled && event.latitude && event.longitude && (
@@ -429,9 +412,12 @@ const WorkerCalendar = () => {
                       ))}
                     </div>
                   </div>
-                  </Card>
                 )}
-        </div>
+              </div>
+            )}
+          </Card>
+        )}
+      </div>
     </div>
   );
 };

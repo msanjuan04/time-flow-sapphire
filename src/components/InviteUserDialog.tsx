@@ -50,6 +50,9 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
   const [role, setRole] = useState<string>("worker");
   const [centerId, setCenterId] = useState<string>("");
   const [teamId, setTeamId] = useState<string>("");
+  const [fullName, setFullName] = useState<string>("");
+  const [dni, setDni] = useState<string>("");
+  const [phone, setPhone] = useState<string>("");
   const [centers, setCenters] = useState<Center[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
@@ -133,6 +136,10 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
           role: role as "owner" | "manager" | "worker",
           center_id: centerId,
           team_id: teamId,
+          // Campos adicionales informativos. El backend puede ignorarlos
+          full_name: fullName || undefined,
+          dni: dni || undefined,
+          phone: phone || undefined,
         },
       });
 
@@ -158,6 +165,9 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
       setRole("worker");
       setCenterId("");
       setTeamId("");
+      setFullName("");
+      setDni("");
+      setPhone("");
       onSuccess();
       onOpenChange(false);
     } catch (error) {
@@ -193,6 +203,20 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="full_name">Nombre y apellidos (opcional)</Label>
+              <Input id="full_name" value={fullName} onChange={(e) => setFullName(e.target.value)} placeholder="Nombre Apellidos" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="dni">DNI/NIF (opcional)</Label>
+              <Input id="dni" value={dni} onChange={(e) => setDni(e.target.value)} placeholder="12345678A" />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label htmlFor="phone">Teléfono (opcional)</Label>
+              <Input id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+34 600 000 000" />
+            </div>
+          </div>
           <div className="space-y-2">
             <Label htmlFor="email">Email *</Label>
             <Input

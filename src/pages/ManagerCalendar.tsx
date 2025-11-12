@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useMembership } from "@/hooks/useMembership";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Calendar as CalendarIcon, Clock, Users, Plus, AlertCircle, Trash2, Pencil } from "lucide-react";
@@ -59,6 +59,7 @@ const ManagerCalendar = () => {
   const { membership, loading: membershipLoading } = useMembership();
   const navigate = useNavigate();
   const [date, setDate] = useState<Date | undefined>(new Date());
+  const [searchParams] = useSearchParams();
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<string>("");
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
@@ -91,6 +92,12 @@ const ManagerCalendar = () => {
       fetchEmployees();
     }
   }, [membership]);
+
+  // Preseleccionar empleado desde ?user=<id>
+  useEffect(() => {
+    const uid = searchParams.get("user");
+    if (uid) setSelectedEmployee(uid);
+  }, [searchParams]);
 
   // Load month events for selected employee
   useEffect(() => {

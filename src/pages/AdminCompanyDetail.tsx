@@ -58,6 +58,9 @@ const AdminCompanyDetail = () => {
   const [inviteCenter, setInviteCenter] = useState<string>("");
   const [inviteTeam, setInviteTeam] = useState<string>("");
   const [sendingInvite, setSendingInvite] = useState(false);
+  const [inviteFullName, setInviteFullName] = useState("");
+  const [inviteDni, setInviteDni] = useState("");
+  const [invitePhone, setInvitePhone] = useState("");
   const [members, setMembers] = useState<Array<{id:string;email:string;full_name:string|null;role:string;is_active:boolean;center_name:string|null;team_name:string|null;}>>([]);
 
   useEffect(() => {
@@ -101,6 +104,9 @@ const AdminCompanyDetail = () => {
           role: inviteRole,
           center_id: inviteCenter,
           team_id: inviteTeam,
+          full_name: inviteFullName || undefined,
+          dni: inviteDni || undefined,
+          phone: invitePhone || undefined,
         },
       });
       if (error) throw error;
@@ -109,6 +115,9 @@ const AdminCompanyDetail = () => {
       setInviteRole("worker");
       setInviteCenter("");
       setInviteTeam("");
+      setInviteFullName("");
+      setInviteDni("");
+      setInvitePhone("");
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message || "Error al enviar invitación");
@@ -256,6 +265,7 @@ const AdminCompanyDetail = () => {
               value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)}
             />
+            <Input placeholder="Nombre y apellidos (opcional)" value={inviteFullName} onChange={(e) => setInviteFullName(e.target.value)} />
             <Select value={inviteRole} onValueChange={(v: any) => setInviteRole(v)}>
               <SelectTrigger>
                 <SelectValue placeholder="Rol" />
@@ -286,6 +296,8 @@ const AdminCompanyDetail = () => {
                 ))}
               </SelectContent>
             </Select>
+            <Input placeholder="DNI/NIF (opcional)" value={inviteDni} onChange={(e) => setInviteDni(e.target.value)} />
+            <Input placeholder="Teléfono (opcional)" value={invitePhone} onChange={(e) => setInvitePhone(e.target.value)} />
             <div className="flex justify-end">
               <Button onClick={handleInvite} disabled={sendingInvite}>
                 {sendingInvite && <Loader2 className="w-4 h-4 mr-2 animate-spin"/>}
