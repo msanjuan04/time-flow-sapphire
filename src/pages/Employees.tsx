@@ -1,29 +1,13 @@
+// === Employees.tsx (sin dependencias opcionales) ===
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-<<<<<<< HEAD
-import { UserPlus, Search, Filter, Edit, UserX } from "lucide-react";
-=======
-import { ArrowLeft, UserPlus, Search, Filter, Edit, UserX, Download, FileText, Users as UsersIcon } from "lucide-react";
->>>>>>> b85c716 (Mensaje explicando el cambio)
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { UserPlus, Search, Filter, Edit, Download, FileText, Users as UsersIcon } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -31,49 +15,49 @@ import { toast } from "sonner";
 import InviteUserDialog from "@/components/InviteUserDialog";
 import EditUserDialog from "@/components/EditUserDialog";
 import { motion } from "framer-motion";
-<<<<<<< HEAD
 import { useSuperadmin } from "@/hooks/useSuperadmin";
 import { BackButton } from "@/components/BackButton";
-=======
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { exportCSV, printHTML } from "@/lib/exports";
->>>>>>> b85c716 (Mensaje explicando el cambio)
+
+// --- utilidades locales para exportar ---
+const exportCSV = (filename: string, headers: string[], rows: (string | number)[][]) => {
+  const csv = [headers.join(","), ...rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(","))].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `${filename}.csv`; a.click();
+  URL.revokeObjectURL(url);
+};
+const printHTML = (title: string, html: string) => {
+  const w = window.open("", "_blank");
+  if (!w) return;
+  w.document.write(`<html><head><title>${title}</title><meta charset="utf-8"/></head><body>${html}</body></html>`);
+  w.document.close();
+  w.focus();
+  w.print();
+  w.close();
+};
+// ----------------------------------------
 
 interface Employee {
-  id: string;
-  email: string;
-  full_name: string | null;
-  role: string;
-  center_id: string | null;
-  team_id: string | null;
-  center_name: string | null;
-  team_name: string | null;
-  last_event: string | null;
-  last_event_time: string | null;
+  id: string; email: string; full_name: string | null; role: string;
+  center_id: string | null; team_id: string | null; center_name: string | null; team_name: string | null;
+  last_event: string | null; last_event_time: string | null;
 }
-
 interface MembershipRow {
-  id: string;
-  role: string;
-  user_id: string;
-  profiles: {
-    id: string;
-    email: string;
-    full_name: string | null;
-    center_id: string | null;
-    team_id: string | null;
-  };
+  id: string; role: string; user_id: string;
+  profiles: { id: string; email: string; full_name: string | null; center_id: string | null; team_id: string | null; };
 }
 
 const Employees = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { companyId, role } = useMembership();
-  useDocumentTitle("Empleados • GTiQ");
+
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
+  const [totalEmployees, setTotalEmployees] = useState<number>(0);
   const [page, setPage] = useState(1);
   const pageSize = 20;
   const [loading, setLoading] = useState(true);
@@ -84,61 +68,28 @@ const Employees = () => {
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const { isSuperadmin } = useSuperadmin();
 
-  // Export helpers
   const handleExportCSV = () => {
-    const headers = ["Nombre", "Email", "Rol", "Centro", "Equipo", "Último evento", "Hora último evento"];
-    const rows = filteredEmployees.map((e) => [
-      e.full_name || "",
-      e.email,
-      e.role,
-      e.center_name || "",
-      e.team_name || "",
-      e.last_event || "",
-      e.last_event_time || "",
+    const headers = ["Nombre","Email","Rol","Centro","Equipo","Último evento","Hora último evento"];
+    const rows = filteredEmployees.map(e => [
+      e.full_name || "", e.email, e.role, e.center_name || "", e.team_name || "", e.last_event || "", e.last_event_time || ""
     ]);
     exportCSV("empleados", headers, rows);
   };
-
   const handleExportPDF = () => {
     const header = `<h1>Listado de empleados</h1><div class='muted'>${new Date().toLocaleString("es-ES")} · ${filteredEmployees.length} registros</div>`;
-    const rows = filteredEmployees
-      .map(
-        (e) => `<tr>
-          <td>${e.full_name || ""}</td>
-          <td>${e.email}</td>
-          <td>${e.role}</td>
-          <td>${e.center_name || ""}</td>
-          <td>${e.team_name || ""}</td>
-          <td>${e.last_event || ""}</td>
-          <td>${e.last_event_time || ""}</td>
-        </tr>`
-      )
-      .join("");
+    const rows = filteredEmployees.map(e => `<tr><td>${e.full_name || ""}</td><td>${e.email}</td><td>${e.role}</td><td>${e.center_name || ""}</td><td>${e.team_name || ""}</td><td>${e.last_event || ""}</td><td>${e.last_event_time || ""}</td></tr>`).join("");
     const table = `<table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Centro</th><th>Equipo</th><th>Último evento</th><th>Hora último evento</th></tr></thead><tbody>${rows}</tbody></table>`;
     printHTML("Empleados · GTiQ", `${header}${table}`);
   };
 
   useEffect(() => {
-    if (!user) {
-      navigate("/auth");
-      return;
-    }
-    if (role && role !== "owner" && role !== "admin") {
-      navigate("/");
-      return;
-    }
-    if (companyId) {
-      fetchEmployees();
-    }
+    if (!user) return void navigate("/auth");
+    if (role && role !== "owner" && role !== "admin") return void navigate("/");
+    if (companyId) fetchEmployees();
   }, [companyId, role, user, navigate]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [searchQuery, roleFilter]);
-
-  useEffect(() => {
-    if (companyId) fetchEmployees();
-  }, [companyId, page, searchQuery, roleFilter]);
+  useEffect(() => setPage(1), [searchQuery, roleFilter]);
+  useEffect(() => { if (companyId) fetchEmployees(); }, [companyId, page, searchQuery, roleFilter]);
 
   const totalPages = Math.max(1, Math.ceil(totalEmployees / pageSize));
   const currentPageEmployees = filteredEmployees;
@@ -148,199 +99,115 @@ const Employees = () => {
     try {
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
+
       let query = supabase
         .from("memberships")
         .select(`
-          id,
-          role,
-          user_id,
-          profiles!inner(
-            id,
-            email,
-            full_name,
-            center_id,
-            team_id
-          )
-        `, { count: 'exact' })
+          id, role, user_id,
+          profiles!inner(id, email, full_name, center_id, team_id)
+        `, { count: "exact" })
         .eq("company_id", companyId);
 
-      if (roleFilter !== 'all') query = query.eq('role', roleFilter);
+      if (roleFilter !== "all") query = query.eq("role", roleFilter);
       if (searchQuery.trim()) {
         const term = `%${searchQuery.trim()}%`;
         query = query.or(`profiles.full_name.ilike.${term},profiles.email.ilike.${term}`);
       }
 
-      const { data, error, count } = await query
-        .order('user_id')
-        .range(from, to);
-
+      const { data, error, count } = await query.order("user_id").range(from, to);
       if (error) throw error;
 
-      // Get last event for each user
       const membershipRows: MembershipRow[] = (data || []) as MembershipRow[];
       const employeesWithEvents = await Promise.all(
-<<<<<<< HEAD
-        membershipRows.map(async (membership) => {
-=======
-        (data || []).map(async (membership: any) => {
->>>>>>> b85c716 (Mensaje explicando el cambio)
+        membershipRows.map(async (m) => {
           const { data: lastEvent } = await supabase
             .from("time_events")
             .select("event_type, event_time")
-            .eq("user_id", membership.profiles.id)
+            .eq("user_id", m.profiles.id)
             .eq("company_id", companyId)
             .order("event_time", { ascending: false })
             .limit(1)
             .maybeSingle();
 
-          // Get center name
-          let centerName = null;
-          if (membership.profiles.center_id) {
-            const { data: center } = await supabase
-              .from("centers")
-              .select("name")
-              .eq("id", membership.profiles.center_id)
-              .maybeSingle();
-            centerName = center?.name;
+          let centerName: string | null = null;
+          if (m.profiles.center_id) {
+            const { data: center } = await supabase.from("centers").select("name").eq("id", m.profiles.center_id).maybeSingle();
+            centerName = center?.name || null;
           }
-
-          // Get team name
-          let teamName = null;
-          if (membership.profiles.team_id) {
-            const { data: team } = await supabase
-              .from("teams")
-              .select("name")
-              .eq("id", membership.profiles.team_id)
-              .maybeSingle();
-            teamName = team?.name;
+          let teamName: string | null = null;
+          if (m.profiles.team_id) {
+            const { data: team } = await supabase.from("teams").select("name").eq("id", m.profiles.team_id).maybeSingle();
+            teamName = team?.name || null;
           }
 
           return {
-            id: membership.profiles.id,
-            email: membership.profiles.email,
-            full_name: membership.profiles.full_name,
-            role: membership.role,
-            center_id: membership.profiles.center_id,
-            team_id: membership.profiles.team_id,
+            id: m.profiles.id,
+            email: m.profiles.email,
+            full_name: m.profiles.full_name,
+            role: m.role,
+            center_id: m.profiles.center_id,
+            team_id: m.profiles.team_id,
             center_name: centerName,
             team_name: teamName,
             last_event: lastEvent?.event_type || null,
             last_event_time: lastEvent?.event_time || null,
-          };
+          } as Employee;
         })
       );
 
       setEmployees(employeesWithEvents);
-<<<<<<< HEAD
-    } catch (error) {
-=======
       setFilteredEmployees(employeesWithEvents);
       setTotalEmployees(count || 0);
-    } catch (error: any) {
->>>>>>> b85c716 (Mensaje explicando el cambio)
+    } catch (e) {
       toast.error("Error al cargar empleados");
-      console.error(error);
+      console.error(e);
     } finally {
       setLoading(false);
     }
   };
 
-  const filterEmployees = () => {
-    let filtered = [...employees];
+  const getRoleBadgeColor = (role: string) =>
+    ({ owner: "bg-primary text-primary-foreground", admin: "bg-blue-500 text-white", manager: "bg-amber-500 text-white", worker: "bg-secondary text-secondary-foreground" }[role] || "bg-secondary");
 
-    // Search filter
-    if (searchQuery) {
-      filtered = filtered.filter(
-        (emp) =>
-          emp.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          emp.full_name?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
+  const formatEventType = (t: string | null) => (!t ? "-" : ({ clock_in: "Entrada", clock_out: "Salida", pause_start: "Pausa", pause_end: "Reanudar" } as Record<string, string>)[t] || t);
 
-    // Role filter
-    if (roleFilter !== "all") {
-      filtered = filtered.filter((emp) => emp.role === roleFilter);
-    }
-
-    setFilteredEmployees(filtered);
+  const formatLastSeen = (ts: string | null) => {
+    if (!ts) return "Nunca";
+    const d = new Date(ts);
+    const mins = Math.floor((Date.now() - d.getTime()) / 60000);
+    if (mins < 60) return `Hace ${mins}m`;
+    const h = Math.floor(mins / 60);
+    if (h < 24) return `Hace ${h}h`;
+    const days = Math.floor(h / 24);
+    return `Hace ${days}d`;
   };
 
-  const getRoleBadgeColor = (role: string) => {
-    const colors: Record<string, string> = {
-      owner: "bg-primary text-primary-foreground",
-      admin: "bg-blue-500 text-white",
-      manager: "bg-amber-500 text-white",
-      worker: "bg-secondary text-secondary-foreground",
-    };
-    return colors[role] || "bg-secondary";
-  };
-
-  const formatEventType = (type: string | null) => {
-    if (!type) return "-";
-    const types: Record<string, string> = {
-      clock_in: "Entrada",
-      clock_out: "Salida",
-      pause_start: "Pausa",
-      pause_end: "Reanudar",
-    };
-    return types[type] || type;
-  };
-
-  const formatLastSeen = (timestamp: string | null) => {
-    if (!timestamp) return "Nunca";
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffMs = now.getTime() - date.getTime();
-    const diffMins = Math.floor(diffMs / 60000);
-
-    if (diffMins < 60) return `Hace ${diffMins}m`;
-    const diffHours = Math.floor(diffMins / 60);
-    if (diffHours < 24) return `Hace ${diffHours}h`;
-    const diffDays = Math.floor(diffHours / 24);
-    return `Hace ${diffDays}d`;
-  };
-
-  const handleEdit = (employee: Employee) => {
-    setSelectedEmployee(employee);
-    setEditDialogOpen(true);
-  };
+  const handleEdit = (employee: Employee) => { setSelectedEmployee(employee); setEditDialogOpen(true); };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
       <div className="max-w-7xl mx-auto space-y-6 pt-8 animate-fade-in">
-        {/* Header */}
         <div className="flex justify-between items-center">
           <div className="flex items-center gap-3">
             <BackButton to="/" />
             <div>
               <h1 className="text-2xl font-bold">Gestión de Empleados</h1>
-              <p className="text-sm text-muted-foreground">
-                {totalEmployees} empleados en total
-              </p>
+              <p className="text-sm text-muted-foreground">{totalEmployees} empleados en total</p>
             </div>
           </div>
           {isSuperadmin && (
-            <Button
-              onClick={() => setInviteDialogOpen(true)}
-              className="hover-scale"
-            >
+            <Button onClick={() => setInviteDialogOpen(true)} className="hover-scale">
               <UserPlus className="w-4 h-4 mr-2" />
               Invitar Usuario
             </Button>
           )}
         </div>
 
-        {/* Filters */}
         <Card className="glass-card p-4">
           <div className="flex flex-col md:flex-row gap-4">
             <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por nombre o email..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input placeholder="Buscar por nombre o email..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" />
             </div>
             <Select value={roleFilter} onValueChange={setRoleFilter}>
               <SelectTrigger className="w-full md:w-[200px]">
@@ -357,7 +224,6 @@ const Employees = () => {
           </div>
         </Card>
 
-        {/* Table */}
         <Card className="glass-card">
           <div className="flex justify-end p-4 pb-0">
             <DropdownMenu>
@@ -370,12 +236,18 @@ const Employees = () => {
                 <DropdownMenuItem onClick={handleExportCSV}>
                   <Download className="w-4 h-4 mr-2" /> CSV
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportPDF}>
+                <DropdownMenuItem onClick={() => {
+                  const header = `<h1>Listado de empleados</h1><div class='muted'>${new Date().toLocaleString("es-ES")} · ${filteredEmployees.length} registros</div>`;
+                  const rows = filteredEmployees.map(e => `<tr><td>${e.full_name || ""}</td><td>${e.email}</td><td>${e.role}</td><td>${e.center_name || ""}</td><td>${e.team_name || ""}</td><td>${e.last_event || ""}</td><td>${e.last_event_time || ""}</td></tr>`).join("");
+                  const table = `<table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Centro</th><th>Equipo</th><th>Último evento</th><th>Hora último evento</th></tr></thead><tbody>${rows}</tbody></table>`;
+                  printHTML("Empleados · GTiQ", `${header}${table}`);
+                }}>
                   <FileText className="w-4 h-4 mr-2" /> PDF
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -429,53 +301,25 @@ const Employees = () => {
                   </TableRow>
                 ) : (
                   currentPageEmployees.map((employee, index) => (
-                    <motion.tr
-                      key={employee.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.05 }}
-                      className="hover:bg-secondary/50 smooth-transition"
-                    >
+                    <motion.tr key={employee.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} className="hover:bg-secondary/50 smooth-transition">
                       <TableCell>
                         <div>
-                          <div className="font-medium">
-                            {employee.full_name || "Sin nombre"}
-                          </div>
-                          <div className="text-sm text-muted-foreground">
-                            {employee.email}
-                          </div>
+                          <div className="font-medium">{employee.full_name || "Sin nombre"}</div>
+                          <div className="text-sm text-muted-foreground">{employee.email}</div>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <Badge className={getRoleBadgeColor(employee.role)}>
-                          {employee.role}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        {employee.center_name || (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {employee.team_name || (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
+                      <TableCell><Badge className={getRoleBadgeColor(employee.role)}>{employee.role}</Badge></TableCell>
+                      <TableCell>{employee.center_name || <span className="text-muted-foreground">-</span>}</TableCell>
+                      <TableCell>{employee.team_name || <span className="text-muted-foreground">-</span>}</TableCell>
                       <TableCell>
                         <div className="text-sm">
                           <div>{formatEventType(employee.last_event)}</div>
-                          <div className="text-muted-foreground">
-                            {formatLastSeen(employee.last_event_time)}
-                          </div>
+                          <div className="text-muted-foreground">{formatLastSeen(employee.last_event_time)}</div>
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleEdit(employee)}
-                          >
+                          <Button variant="ghost" size="sm" onClick={() => handleEdit(employee)}>
                             <Edit className="w-4 h-4" />
                           </Button>
                         </div>
@@ -487,49 +331,21 @@ const Employees = () => {
             </Table>
           </div>
         </Card>
+
         <div className="flex items-center justify-between mt-4">
-          <p className="text-sm text-muted-foreground">
-            Mostrando {currentPageEmployees.length} de {filteredEmployees.length}
-          </p>
+          <p className="text-sm text-muted-foreground">Mostrando {currentPageEmployees.length} de {filteredEmployees.length}</p>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-            >
-              Anterior
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              Página {page} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-            >
-              Siguiente
-            </Button>
+            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>Anterior</Button>
+            <span className="text-sm text-muted-foreground">Página {page} / {totalPages}</span>
+            <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>Siguiente</Button>
           </div>
         </div>
       </div>
 
-      {isSuperadmin && (
-        <InviteUserDialog
-          open={inviteDialogOpen}
-          onOpenChange={setInviteDialogOpen}
-          onSuccess={fetchEmployees}
-        />
-      )}
+      {isSuperadmin && <InviteUserDialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen} onSuccess={fetchEmployees} />}
 
       {selectedEmployee && (
-        <EditUserDialog
-          open={editDialogOpen}
-          onOpenChange={setEditDialogOpen}
-          employee={selectedEmployee}
-          onSuccess={fetchEmployees}
-        />
+        <EditUserDialog open={editDialogOpen} onOpenChange={setEditDialogOpen} employee={selectedEmployee} onSuccess={fetchEmployees} />
       )}
     </div>
   );
