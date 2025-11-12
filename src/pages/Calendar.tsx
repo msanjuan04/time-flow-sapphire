@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar as CalendarIcon, Clock, AlertCircle, MapPin } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, AlertCircle, MapPin, ExternalLink } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Calendar } from "@/components/ui/calendar";
 import { format, startOfMonth, endOfMonth, parseISO, isSameDay } from "date-fns";
@@ -12,6 +12,10 @@ import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { BackButton } from "@/components/BackButton";
+// Dialog UI no backend: usaremos un overlay ligero para evitar dependencias
+import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 interface WorkSession {
   id: string;
@@ -58,6 +62,18 @@ const WorkerCalendar = () => {
     absence: Absence | null;
     events: TimeEvent[];
   } | null>(null);
+  const [miniMapsEnabled, setMiniMapsEnabled] = useState<boolean>(() => {
+    try {
+      const v = localStorage.getItem("calendarMiniMapsEnabled");
+      return v === "1";
+    } catch { return false; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem("calendarMiniMapsEnabled", miniMapsEnabled ? "1" : "0"); } catch {}
+  }, [miniMapsEnabled]);
+
+  const mapSrc = (lat: number, lng: number, z = 15) => `https://maps.google.com/maps?q=${lat},${lng}&z=${z}&output=embed`;
 
   useEffect(() => {
     if (membership && date) {
@@ -329,9 +345,13 @@ const WorkerCalendar = () => {
 
                 {selectedDateData.events.length > 0 && (
                   <div className="mt-6 pt-4 border-t">
-                    <div className="flex items-center gap-2 mb-3">
+                    <div className="flex items-center gap-4 mb-3">
                       <MapPin className="h-5 w-5 text-primary" />
                       <h3 className="font-semibold">Ubicaciones de fichaje</h3>
+                      <div className="ml-auto flex items-center gap-2">
+                        <Switch id="mini-maps" checked={miniMapsEnabled} onCheckedChange={setMiniMapsEnabled} />
+                        <Label htmlFor="mini-maps" className="text-sm text-muted-foreground">Mini-mapas en tabla</Label>
+                      </div>
                     </div>
                     <div className="space-y-2">
                       {selectedDateData.events.map((event) => (
@@ -354,30 +374,64 @@ const WorkerCalendar = () => {
                             </span>
                           </div>
                           {event.latitude && event.longitude ? (
-                            <a
-                              href={`https://www.google.com/maps?q=${event.latitude},${event.longitude}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-primary hover:underline flex items-center gap-1"
-                            >
-                              <MapPin className="h-3 w-3" />
-                              Ver ubicación en mapa
-                            </a>
+                            <div className="flex items-center gap-3 text-xs">
+                              <span className="text-primary flex items-center gap-1">
+                                <MapPin className="h-3 w-3" /> Ver mapa
+                              </span>
+                              <HoverCard openDelay={100}>
+                                <HoverCardTrigger asChild>
+                                  <a
+                                    href={`https://www.google.com/maps?q=${event.latitude},${event.longitude}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-muted-foreground hover:text-primary flex items-center gap-1"
+                                  >
+                                    <ExternalLink className="h-3 w-3" /> Abrir Google Maps
+                                  </a>
+                                </HoverCardTrigger>
+                                <HoverCardContent className="w-[220px] p-2">
+                                  <div className="rounded-md overflow-hidden">
+                                    <iframe
+                                      title="map-preview"
+                                      src={mapSrc(event.latitude, event.longitude, 14)}
+                                      width="216"
+                                      height="140"
+                                      style={{ border: 0 }}
+                                      loading="lazy"
+                                      referrerPolicy="no-referrer-when-downgrade"
+                                    />
+                                  </div>
+                                </HoverCardContent>
+                              </HoverCard>
+                            </div>
                           ) : (
                             <span className="text-xs text-muted-foreground">
                               Sin ubicación registrada
                             </span>
                           )}
+
+                          {miniMapsEnabled && event.latitude && event.longitude && (
+                            <div className="pt-2">
+                              <div className="rounded-md overflow-hidden border">
+                                <iframe
+                                  title={`mini-map-${event.id}`}
+                                  src={mapSrc(event.latitude, event.longitude, 14)}
+                                  width="100%"
+                                  height="140"
+                                  style={{ border: 0 }}
+                                  loading="lazy"
+                                  referrerPolicy="no-referrer-when-downgrade"
+                                />
+                              </div>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
                   </div>
+                  </Card>
                 )}
-              </div>
-            )}
-          </Card>
-        )}
-      </div>
+        </div>
     </div>
   );
 };

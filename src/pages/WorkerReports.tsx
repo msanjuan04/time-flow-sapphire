@@ -317,9 +317,15 @@ const WorkerReports = () => {
               </p>
             ) : (
               sessions.slice(0, 10).map((session, index) => {
+                const fmtHM = (ms: number) => {
+                  const mins = Math.max(0, Math.round(ms / 60000));
+                  const h = Math.floor(mins / 60).toString().padStart(2, '0');
+                  const m = (mins % 60).toString().padStart(2, '0');
+                  return `${h}:${m}`;
+                };
                 const date = new Date(session.clock_in_time);
-                const hours = session.clock_out_time
-                  ? ((new Date(session.clock_out_time).getTime() - date.getTime()) / (1000 * 60 * 60)).toFixed(1)
+                const durationLabel = session.clock_out_time
+                  ? fmtHM(new Date(session.clock_out_time).getTime() - date.getTime())
                   : "En curso";
 
                 return (
@@ -344,7 +350,7 @@ const WorkerReports = () => {
                       </p>
                     </div>
                     <div className="text-right">
-                      <p className="text-lg font-bold text-primary">{hours}h</p>
+                      <p className="text-lg font-bold text-primary">{typeof durationLabel === 'string' ? durationLabel : `${durationLabel}`} {durationLabel !== 'En curso' ? 'h' : ''}</p>
                     </div>
                   </div>
                 );

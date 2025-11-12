@@ -28,6 +28,7 @@ import {
   Download,
   FileText,
   Users as UsersIcon,
+  MapPin,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -39,12 +40,10 @@ import { motion } from "framer-motion";
 import { useSuperadmin } from "@/hooks/useSuperadmin";
 import { BackButton } from "@/components/BackButton";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 
 /* --------------------------- utilidades locales --------------------------- */
 const exportCSV = (
@@ -125,6 +124,32 @@ const Employees = () => {
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [miniMapsEnabled, setMiniMapsEnabled] = useState<boolean>(() => {
+    try { return localStorage.getItem("employeesMiniMaps") === "1"; } catch { return false; }
+  });
+  const [locCache, setLocCache] = useState<Record<string, { lat: number; lng: number } | null>>({});
+
+  const mapSrc = (lat: number, lng: number, z = 15) => `https://maps.google.com/maps?q=${lat},${lng}&z=${z}&output=embed`;
+
+  const fetchLastLocation = async (empId: string) => {
+    if (!companyId) return null;
+    if (locCache[empId] !== undefined) return locCache[empId];
+    const { data } = await supabase
+      .from("time_events")
+      .select("latitude, longitude")
+      .eq("company_id", companyId)
+      .eq("user_id", empId)
+      .not("latitude", "is", null)
+      .not("longitude", "is", null)
+      .order("event_time", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const value = data?.latitude && data?.longitude ? { lat: data.latitude as number, lng: data.longitude as number } : null;
+    setLocCache((prev) => ({ ...prev, [empId]: value }));
+    return value;
+  };
+
+  useEffect(() => { try { localStorage.setItem("employeesMiniMaps", miniMapsEnabled ? "1" : "0"); } catch {} }, [miniMapsEnabled]);
 
   /* ------------------------------ export helpers ------------------------------ */
   const handleExportCSV = () => {
@@ -392,6 +417,11 @@ const Employees = () => {
             </DropdownMenu>
           </div>
 
+          <div className="flex items-center justify-end px-4 pb-2 gap-2">
+            <Switch id="mini-maps" checked={miniMapsEnabled} onCheckedChange={setMiniMapsEnabled} />
+            <Label htmlFor="mini-maps" className="text-sm text-muted-foreground">Mini‑mapas en filas</Label>
+          </div>
+
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -400,6 +430,7 @@ const Employees = () => {
                   <TableHead>Rol</TableHead>
                   <TableHead>Centro</TableHead>
                   <TableHead>Equipo</TableHead>
+                  <TableHead>Ubicación</TableHead>
                   <TableHead>Último fichaje</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
@@ -499,6 +530,49 @@ const Employees = () => {
                             {formatLastSeen(employee.last_event_time)}
                           </div>
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        <HoverCard openDelay={150} onOpenChange={async (o) => { if (o) await fetchLastLocation(employee.id); }}>
+                          <HoverCardTrigger asChild>
+                            <button
+                              className="text-primary hover:underline flex items-center gap-1"
+                              onClick={async () => { const loc = await fetchLastLocation(employee.id); if (loc) window.open(`https://www.google.com/maps?q=${loc.lat},${loc.lng}`, "_blank"); }}
+                              title="Ver en mapa"
+                            >
+                              <MapPin className="w-4 h-4" /> Ver mapa
+                            </button>
+                          </HoverCardTrigger>
+                          <HoverCardContent className="w-[240px]">
+                            {locCache[employee.id] ? (
+                              <div className="rounded-md overflow-hidden">
+                                <iframe
+                                  title={`map-${employee.id}`}
+                                  src={mapSrc(locCache[employee.id]!.lat, locCache[employee.id]!.lng, 14)}
+                                  width="232"
+                                  height="150"
+                                  style={{ border: 0 }}
+                                  loading="lazy"
+                                  referrerPolicy="no-referrer-when-downgrade"
+                                />
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Sin ubicación registrada</span>
+                            )}
+                          </HoverCardContent>
+                        </HoverCard>
+                        {miniMapsEnabled && locCache[employee.id] && (
+                          <div className="mt-2 rounded-md overflow-hidden border">
+                            <iframe
+                              title={`row-map-${employee.id}`}
+                              src={mapSrc(locCache[employee.id]!.lat, locCache[employee.id]!.lng, 13)}
+                              width="220"
+                              height="140"
+                              style={{ border: 0 }}
+                              loading="lazy"
+                              referrerPolicy="no-referrer-when-downgrade"
+                            />
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
