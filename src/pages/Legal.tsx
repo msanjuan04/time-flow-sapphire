@@ -219,7 +219,7 @@ const Legal = () => {
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  const html = `<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\" /><title>Plantilla Legal</title></head><body>
+                  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8" /><title>Plantilla Legal</title></head><body>
                   <h1>Información legal y privacidad</h1>
                   <div>Plantilla para empresa responsable · ${new Date().toLocaleString('es-ES')}</div>
                   <h2>Aviso legal</h2>
