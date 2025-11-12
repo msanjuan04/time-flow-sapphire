@@ -87,14 +87,6 @@ const AdminCompanyDetail = () => {
       toast.error("Email requerido");
       return;
     }
-    if (!inviteCenter) {
-      toast.error("Debes seleccionar un centro válido");
-      return;
-    }
-    if (!inviteTeam) {
-      toast.error("Debes seleccionar un equipo válido");
-      return;
-    }
     setSendingInvite(true);
     try {
       const { error } = await (supabase as any).functions.invoke("admin-create-invite", {
@@ -102,8 +94,8 @@ const AdminCompanyDetail = () => {
           company_id: id,
           email: inviteEmail.trim(),
           role: inviteRole,
-          center_id: inviteCenter,
-          team_id: inviteTeam,
+          center_id: inviteCenter || null,
+          team_id: inviteTeam || null,
           full_name: inviteFullName || undefined,
           dni: inviteDni || undefined,
           phone: invitePhone || undefined,
@@ -124,6 +116,42 @@ const AdminCompanyDetail = () => {
     } finally {
       setSendingInvite(false);
     }
+  };
+
+  const handleCreateCenter = async () => {
+    if (!id) return;
+    const name = window.prompt("Nombre del nuevo centro");
+    if (!name || !name.trim()) return;
+    const { data, error } = await supabase
+      .from("centers")
+      .insert({ company_id: id, name: name.trim() })
+      .select("id, name")
+      .single();
+    if (error) {
+      toast.error("No se pudo crear el centro");
+      return;
+    }
+    await fetchAux();
+    if (data?.id) setInviteCenter(data.id);
+    toast.success("Centro creado");
+  };
+
+  const handleCreateTeam = async () => {
+    if (!id) return;
+    const name = window.prompt("Nombre del nuevo equipo");
+    if (!name || !name.trim()) return;
+    const { data, error } = await supabase
+      .from("teams")
+      .insert({ company_id: id, name: name.trim() })
+      .select("id, name")
+      .single();
+    if (error) {
+      toast.error("No se pudo crear el equipo");
+      return;
+    }
+    await fetchAux();
+    if (data?.id) setInviteTeam(data.id);
+    toast.success("Equipo creado");
   };
 
   const fetchMembers = async () => {
@@ -276,26 +304,36 @@ const AdminCompanyDetail = () => {
                 <SelectItem value="worker">Worker</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={inviteCenter} onValueChange={setInviteCenter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Centro" />
-              </SelectTrigger>
-              <SelectContent>
-                {centers.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={inviteTeam} onValueChange={setInviteTeam}>
-              <SelectTrigger>
-                <SelectValue placeholder="Equipo" />
-              </SelectTrigger>
-              <SelectContent>
-                {teams.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <Select value={inviteCenter} onValueChange={setInviteCenter}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={centers.length ? "Centro (opcional)" : "No hay centros"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {centers.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="button" variant="ghost" onClick={handleCreateCenter}>Crear</Button>
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <Select value={inviteTeam} onValueChange={setInviteTeam}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={teams.length ? "Equipo (opcional)" : "No hay equipos"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teams.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button type="button" variant="ghost" onClick={handleCreateTeam}>Crear</Button>
+            </div>
             <Input placeholder="DNI/NIF (opcional)" value={inviteDni} onChange={(e) => setInviteDni(e.target.value)} />
             <Input placeholder="Teléfono (opcional)" value={invitePhone} onChange={(e) => setInvitePhone(e.target.value)} />
             <div className="flex justify-end">

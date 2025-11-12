@@ -54,6 +54,40 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
   const [teamId, setTeamId] = useState(employee.team_id || "");
   const [centers, setCenters] = useState<Center[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
+  
+  const handleCreateCenter = useCallback(async () => {
+    if (!companyId) return;
+    const name = window.prompt("Nombre del nuevo centro");
+    if (!name || !name.trim()) return;
+    const { data, error } = await supabase
+      .from("centers")
+      .insert({ company_id: companyId, name: name.trim() })
+      .select("id, name")
+      .single();
+    if (error) {
+      console.error(error);
+      return;
+    }
+    await fetchCenters();
+    if (data?.id) setCenterId(data.id);
+  }, [companyId, fetchCenters]);
+
+  const handleCreateTeam = useCallback(async () => {
+    if (!companyId) return;
+    const name = window.prompt("Nombre del nuevo equipo");
+    if (!name || !name.trim()) return;
+    const { data, error } = await supabase
+      .from("teams")
+      .insert({ company_id: companyId, name: name.trim() })
+      .select("id, name")
+      .single();
+    if (error) {
+      console.error(error);
+      return;
+    }
+    await fetchTeams();
+    if (data?.id) setTeamId(data.id);
+  }, [companyId, fetchTeams]);
 
   const fetchCenters = useCallback(async () => {
     if (!companyId) return;
@@ -93,23 +127,13 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
     setLoading(true);
 
     try {
-      if (!centerId) {
-        toast.error("Debes seleccionar un centro válido");
-        setLoading(false);
-        return;
-      }
-      if (!teamId) {
-        toast.error("Debes seleccionar un equipo válido");
-        setLoading(false);
-        return;
-      }
       // Update profile
       const { error: profileError } = await supabase
         .from("profiles")
         .update({
           full_name: fullName.trim(),
-          center_id: centerId,
-          team_id: teamId,
+          center_id: centerId || null,
+          team_id: teamId || null,
         })
         .eq("id", employee.id);
 
@@ -173,10 +197,18 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="center">Centro</Label>
-            <Select value={centerId} onValueChange={(val) => setCenterId(val)} required>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="center">Centro (opcional)</Label>
+              <div className="flex items-center gap-2">
+                {centerId && (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setCenterId("")}>Quitar</Button>
+                )}
+                <Button type="button" variant="ghost" size="sm" onClick={handleCreateCenter}>Crear centro</Button>
+              </div>
+            </div>
+            <Select value={centerId} onValueChange={(val) => setCenterId(val)}>
               <SelectTrigger>
-                <SelectValue placeholder="Seleccionar centro" />
+                <SelectValue placeholder={centers.length ? "Seleccionar centro" : "No hay centros"} />
               </SelectTrigger>
               <SelectContent>
                 {centers.map((center) => (
@@ -189,10 +221,18 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="team">Equipo</Label>
-            <Select value={teamId} onValueChange={(val) => setTeamId(val)} required>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="team">Equipo (opcional)</Label>
+              <div className="flex items-center gap-2">
+                {teamId && (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setTeamId("")}>Quitar</Button>
+                )}
+                <Button type="button" variant="ghost" size="sm" onClick={handleCreateTeam}>Crear equipo</Button>
+              </div>
+            </div>
+            <Select value={teamId} onValueChange={(val) => setTeamId(val)}>
               <SelectTrigger>
-                <SelectValue placeholder="Seleccionar equipo" />
+                <SelectValue placeholder={teams.length ? "Seleccionar equipo" : "No hay equipos"} />
               </SelectTrigger>
               <SelectContent>
                 {teams.map((team) => (

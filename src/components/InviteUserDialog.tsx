@@ -57,6 +57,42 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
   const [teams, setTeams] = useState<Team[]>([]);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
+  const handleCreateCenter = useCallback(async () => {
+    if (!companyId) return;
+    const name = window.prompt("Nombre del nuevo centro");
+    if (!name || !name.trim()) return;
+    const { data, error } = await supabase
+      .from("centers")
+      .insert({ company_id: companyId, name: name.trim() })
+      .select("id, name")
+      .single();
+    if (error) {
+      toast.error("No se pudo crear el centro");
+      return;
+    }
+    await fetchCenters();
+    if (data?.id) setCenterId(data.id);
+    toast.success("Centro creado");
+  }, [companyId, fetchCenters]);
+
+  const handleCreateTeam = useCallback(async () => {
+    if (!companyId) return;
+    const name = window.prompt("Nombre del nuevo equipo");
+    if (!name || !name.trim()) return;
+    const { data, error } = await supabase
+      .from("teams")
+      .insert({ company_id: companyId, name: name.trim() })
+      .select("id, name")
+      .single();
+    if (error) {
+      toast.error("No se pudo crear el equipo");
+      return;
+    }
+    await fetchTeams();
+    if (data?.id) setTeamId(data.id);
+    toast.success("Equipo creado");
+  }, [companyId, fetchTeams]);
+
   const fetchCenters = useCallback(async () => {
     if (!companyId) return;
 
@@ -113,17 +149,7 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
       }
     }
 
-    // Additional required validations for center/team
-    if (!centerId) {
-      setErrors((prev) => ({ ...prev, center: "Debes seleccionar un centro válido" }));
-      toast.error("Debes seleccionar un centro válido");
-      return;
-    }
-    if (!teamId) {
-      setErrors((prev) => ({ ...prev, team: "Debes seleccionar un equipo válido" }));
-      toast.error("Debes seleccionar un equipo válido");
-      return;
-    }
+    // Centro y equipo ahora son opcionales en UI
 
     setLoading(true);
 
@@ -134,8 +160,8 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
           company_id: companyId,
           email: email.toLowerCase().trim(),
           role: role as "owner" | "manager" | "worker",
-          center_id: centerId,
-          team_id: teamId,
+          center_id: centerId || null,
+          team_id: teamId || null,
           // Campos adicionales informativos. El backend puede ignorarlos
           full_name: fullName || undefined,
           dni: dni || undefined,
@@ -247,10 +273,13 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="center">Centro *</Label>
-            <Select value={centerId} onValueChange={(val) => setCenterId(val)} required>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="center">Centro (opcional)</Label>
+              <Button type="button" variant="ghost" size="sm" onClick={handleCreateCenter}>Crear centro</Button>
+            </div>
+            <Select value={centerId} onValueChange={(val) => setCenterId(val)}>
               <SelectTrigger>
-                <SelectValue placeholder="Seleccionar centro" />
+                <SelectValue placeholder={centers.length ? "Seleccionar centro" : "No hay centros"} />
               </SelectTrigger>
               <SelectContent>
                 {centers.map((center) => (
@@ -263,10 +292,13 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="team">Equipo *</Label>
-            <Select value={teamId} onValueChange={(val) => setTeamId(val)} required>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="team">Equipo (opcional)</Label>
+              <Button type="button" variant="ghost" size="sm" onClick={handleCreateTeam}>Crear equipo</Button>
+            </div>
+            <Select value={teamId} onValueChange={(val) => setTeamId(val)}>
               <SelectTrigger>
-                <SelectValue placeholder="Seleccionar equipo" />
+                <SelectValue placeholder={teams.length ? "Seleccionar equipo" : "No hay equipos"} />
               </SelectTrigger>
               <SelectContent>
                 {teams.map((team) => (
