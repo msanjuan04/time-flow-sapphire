@@ -259,6 +259,18 @@ const ManagerCalendar = () => {
     try {
       const dateStr = format(date, "yyyy-MM-dd");
       const eventTimestamp = `${dateStr}T${eventTime}:00`;
+      // Try to capture current location for traceability (optional)
+      let latitude: number | undefined;
+      let longitude: number | undefined;
+      if ("geolocation" in navigator) {
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+            navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 7000 })
+          );
+          latitude = pos.coords.latitude;
+          longitude = pos.coords.longitude;
+        } catch {}
+      }
       const { error } = await supabase.from("time_events").insert({
         user_id: selectedEmployee,
         event_type: eventType as "clock_in" | "clock_out" | "pause_start" | "pause_end",
@@ -266,6 +278,8 @@ const ManagerCalendar = () => {
         source: "web",
         notes: "Añadido por manager desde calendario",
         company_id: membership.company_id,
+        latitude,
+        longitude,
       } as any);
       if (error) throw error;
       toast.success("Evento añadido");

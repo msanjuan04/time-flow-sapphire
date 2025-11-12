@@ -116,16 +116,44 @@ const WorkerView = () => {
     return () => clearInterval(interval);
   }, [activeSession, status]);
 
+  const getFreshLocation = async (): Promise<{latitude?: number; longitude?: number}> => {
+    if ("geolocation" in navigator) {
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 7000,
+            maximumAge: 0,
+          })
+        );
+        return { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      } catch (e) {
+        return {};
+      }
+    }
+    return {};
+  };
+
   const callClockAPI = async (action: ClockAction) => {
     setLoading(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      
+      // Ensure we have a location right before sending
+      let loc = location;
+      if (!loc?.latitude || !loc?.longitude) {
+        const fresh = await getFreshLocation();
+        if (fresh.latitude && fresh.longitude) {
+          setLocation({ latitude: fresh.latitude, longitude: fresh.longitude });
+          loc = { latitude: fresh.latitude, longitude: fresh.longitude } as any;
+          setGpsEnabled(true);
+        }
+      }
+
       const response = await supabase.functions.invoke('clock', {
         body: {
           action,
-          latitude: location?.latitude,
-          longitude: location?.longitude,
+          latitude: loc?.latitude,
+          longitude: loc?.longitude,
           source: 'web',
           company_id: companyId,
         },

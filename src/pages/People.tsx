@@ -75,3 +75,21 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+// --- al final de src/pages/People.tsx ---
+const People: React.FC = () => {
+  useDocumentTitle("Personas • GTiQ");
+  // deja el contenido que ya tenías; esto es un stub seguro para compilar
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
+      <div className="max-w-7xl mx-auto space-y-6 pt-8">
+        <div className="flex items-center gap-3">
+          <BackButton to="/" />
+          <h1 className="text-2xl font-bold">Gestión de Personas</h1>
+        </div>
+        {/* aquí va tu UI real (tabs, tablas, etc.) */}
+      </div>
+    </div>
+  );
+};
+
+export default People;
