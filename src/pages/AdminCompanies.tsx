@@ -19,16 +19,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { UserCog, Search, Loader2, Plus } from "lucide-react";
+import { ArrowLeft, UserCog, Search, Loader2, Plus } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useImpersonation } from "@/hooks/useImpersonation";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-<<<<<<< HEAD
-import { BackButton } from "@/components/BackButton";
-=======
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
->>>>>>> b85c716 (Mensaje explicando el cambio)
 
 interface Company {
   id: string;
@@ -82,7 +78,7 @@ const AdminCompanies = () => {
     if (!name) return;
     setCreating(true);
     try {
-      const { error } = await supabase.functions.invoke("admin-create-company", {
+      const { error } = await (supabase as any).functions.invoke("admin-create-company", {
         body: { name },
       });
       if (error) throw error;
@@ -90,10 +86,9 @@ const AdminCompanies = () => {
       setNewCompanyName("");
       fetchCompanies();
       toast.success("Empresa creada correctamente");
-    } catch (error) {
-      console.error(error);
-      const message = error instanceof Error ? error.message : "Error al crear empresa";
-      toast.error(message);
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || "Error al crear empresa");
     } finally {
       setCreating(false);
     }
@@ -131,7 +126,14 @@ const AdminCompanies = () => {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <BackButton to="/admin" />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate("/admin")}
+              className="hover-scale"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
             <div>
               <h1 className="text-2xl font-bold">Gestión de Empresas</h1>
               <p className="text-sm text-muted-foreground">
@@ -156,7 +158,7 @@ const AdminCompanies = () => {
                 className="pl-10"
               />
             </div>
-            <Select value={selectedRole} onValueChange={(value: "admin" | "manager" | "worker") => setSelectedRole(value)}>
+            <Select value={selectedRole} onValueChange={(v: any) => setSelectedRole(v)}>
               <SelectTrigger className="w-[180px]">
                 <SelectValue placeholder="Rol de impersonación" />
               </SelectTrigger>

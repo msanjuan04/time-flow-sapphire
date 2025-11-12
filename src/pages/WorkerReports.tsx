@@ -1,22 +1,15 @@
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-<<<<<<< HEAD
-import { Download, Calendar, Clock, TrendingUp } from "lucide-react";
-=======
 import { ArrowLeft, Download, Calendar, Clock, TrendingUp, FileText } from "lucide-react";
->>>>>>> b85c716 (Mensaje explicando el cambio)
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
-<<<<<<< HEAD
-import { BackButton } from "@/components/BackButton";
-=======
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { exportCSV, printHTML } from "@/lib/exports";
->>>>>>> b85c716 (Mensaje explicando el cambio)
 import {
   Select,
   SelectContent,
@@ -33,12 +26,8 @@ interface WorkSession {
 
 const WorkerReports = () => {
   const { user } = useAuth();
-<<<<<<< HEAD
-  const { companyId } = useMembership();
-=======
   const { companyId, membership } = useMembership();
   const navigate = useNavigate();
->>>>>>> b85c716 (Mensaje explicando el cambio)
   
   const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState<"week" | "month">("week");
@@ -197,7 +186,14 @@ const WorkerReports = () => {
           className="flex justify-between items-center"
         >
           <div className="flex items-center gap-3">
-            <BackButton to="/" />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate("/")}
+              className="hover-scale"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
             <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
               <Calendar className="w-6 h-6 text-primary-foreground" />
             </div>
