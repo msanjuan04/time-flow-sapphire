@@ -6,15 +6,15 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 
 const Auth = () => {
-  const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
   const [loading, setLoading] = useState(false);
-  const { signIn, signUp, user } = useAuth();
+  const { signIn, user } = useAuth();
   const navigate = useNavigate();
+  useDocumentTitle("Iniciar sesión • GTiQ");
 
   useEffect(() => {
     if (user) {
@@ -27,27 +27,12 @@ const Auth = () => {
     setLoading(true);
 
     try {
-      if (isLogin) {
-        const { error } = await signIn(email, password);
-        if (error) {
-          toast.error(error.message || "Error al iniciar sesión");
-        } else {
-          toast.success("¡Sesión iniciada con éxito!");
-          navigate("/");
-        }
+      const { error } = await signIn(email, password);
+      if (error) {
+        toast.error(error.message || "Error al iniciar sesión");
       } else {
-        if (!fullName.trim()) {
-          toast.error("Por favor ingresa tu nombre completo");
-          setLoading(false);
-          return;
-        }
-        const { error } = await signUp(email, password, fullName);
-        if (error) {
-          toast.error(error.message || "Error al registrarse");
-        } else {
-          toast.success("¡Cuenta creada! Iniciando sesión...");
-          navigate("/");
-        }
+        toast.success("¡Sesión iniciada con éxito!");
+        navigate("/");
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error inesperado";
@@ -71,26 +56,11 @@ const Auth = () => {
             </div>
             <h1 className="text-3xl font-bold">GTiQ</h1>
             <p className="text-muted-foreground">
-              {isLogin ? "Inicia sesión en tu cuenta" : "Crea tu cuenta"}
+              Inicia sesión en tu cuenta
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {!isLogin && (
-              <div className="space-y-2">
-                <Label htmlFor="fullName">Nombre completo</Label>
-                <Input
-                  id="fullName"
-                  type="text"
-                  placeholder="Tu nombre"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  required={!isLogin}
-                  className="glass-card"
-                />
-              </div>
-            )}
-
             <div className="space-y-2">
               <Label htmlFor="email">Correo electrónico</Label>
               <Input
@@ -123,21 +93,13 @@ const Auth = () => {
               disabled={loading}
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              {isLogin ? "Iniciar sesión" : "Crear cuenta"}
+              Iniciar sesión
             </Button>
           </form>
-
-          <div className="text-center">
-            <button
-              type="button"
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-sm text-muted-foreground hover:text-primary smooth-transition"
-            >
-              {isLogin
-                ? "¿No tienes cuenta? Regístrate"
-                : "¿Ya tienes cuenta? Inicia sesión"}
-            </button>
-          </div>
+          <p className="text-xs text-center text-muted-foreground">
+            Al iniciar sesión aceptas nuestras políticas. Más info en
+            <a href="/legal" className="ml-1 underline hover:text-primary">Legal y privacidad</a>.
+          </p>
         </div>
       </div>
     </div>

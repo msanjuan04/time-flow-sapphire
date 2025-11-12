@@ -24,7 +24,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useImpersonation } from "@/hooks/useImpersonation";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+<<<<<<< HEAD
 import { BackButton } from "@/components/BackButton";
+=======
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+>>>>>>> b85c716 (Mensaje explicando el cambio)
 
 interface Company {
   id: string;
@@ -40,6 +44,7 @@ interface Company {
 const AdminCompanies = () => {
   const navigate = useNavigate();
   const { startImpersonation, loading: impersonationLoading } = useImpersonation();
+  useDocumentTitle("Empresas • GTiQ");
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");

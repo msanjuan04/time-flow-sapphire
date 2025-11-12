@@ -33,7 +33,12 @@ import { useMembership } from "@/hooks/useMembership";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+<<<<<<< HEAD
 import { BackButton } from "@/components/BackButton";
+=======
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { exportCSV, printHTML } from "@/lib/exports";
+>>>>>>> b85c716 (Mensaje explicando el cambio)
 import {
   BarChart,
   Bar,
@@ -103,6 +108,7 @@ const Reports = () => {
   const [employeeStats, setEmployeeStats] = useState<EmployeeStats[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [sessionsRaw, setSessionsRaw] = useState<any[]>([]);
   
   // Filters
   const [startDate, setStartDate] = useState(() => {
@@ -187,6 +193,7 @@ const Reports = () => {
       }
 
       const { data: sessions } = await query;
+      setSessionsRaw(sessions || []);
 
       // Get time events for punctuality analysis
       let eventsQuery = supabase
@@ -320,7 +327,6 @@ const Reports = () => {
       "Incidencias",
       "Puntuación Puntualidad",
     ];
-
     const rows = employeeStats.map((stat) => [
       stat.full_name,
       stat.email,
@@ -331,23 +337,108 @@ const Reports = () => {
       stat.incidents,
       stat.punctuality_score.toFixed(1),
     ]);
-
-    const csvContent = [
-      headers.join(","),
-      ...rows.map((row) => row.join(",")),
-    ].join("\n");
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement("a");
-    const url = URL.createObjectURL(blob);
-    link.setAttribute("href", url);
-    link.setAttribute("download", `reporte_${startDate}_${endDate}.csv`);
-    link.style.visibility = "hidden";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
+    exportCSV(`reporte_${startDate}_${endDate}`, headers, rows);
     toast.success("Reporte exportado correctamente");
+  };
+
+  const exportToPDF = () => {
+    const centerLabel = selectedCenter === "all" ? "Todos los centros" : (centers.find(c => c.id === selectedCenter)?.name || "Centro");
+    const header = `<h1>Registro de jornada (${startDate} a ${endDate})</h1>
+      <div class='muted'>${membership?.company.name || "Empresa"} · ${centerLabel} · ${new Date().toLocaleString("es-ES")} · ${employeeStats.length} empleados</div>`;
+    const rows = employeeStats.map((s) => `<tr>
+      <td>${s.full_name}</td>
+      <td>${s.email}</td>
+      <td>${s.total_hours.toFixed(2)}</td>
+      <td>${s.total_days}</td>
+      <td>${s.avg_delay.toFixed(0)}</td>
+      <td>${s.correct_checks}</td>
+      <td>${s.incidents}</td>
+      <td>${s.punctuality_score.toFixed(1)}</td>
+    </tr>`).join("");
+    const table = `<table><thead><tr><th>Empleado</th><th>Email</th><th>Horas</th><th>Días</th><th>Retraso (min)</th><th>Correctos</th><th>Incidencias</th><th>Puntualidad</th></tr></thead><tbody>${rows}</tbody></table>`;
+    const signatures = `
+      <div style="display:flex;gap:32px;justify-content:space-between;margin-top:24px">
+        <div style="flex:1;text-align:center">
+          <div style="border-top:1px solid #cbd5e1; padding-top:6px;">Firma y sello de la empresa</div>
+        </div>
+        <div style="flex:1;text-align:center">
+          <div style="border-top:1px solid #cbd5e1; padding-top:6px;">Visto por representación legal de las personas trabajadoras</div>
+        </div>
+      </div>`;
+    printHTML("Registro de jornada · GTiQ", `${header}${table}${signatures}`);
+  };
+
+  // Paquete legal mensual (requiere centro seleccionado y mes completo)
+  const isMonthlyRange = () => {
+    const s = new Date(startDate);
+    const e = new Date(endDate);
+    if (isNaN(s.getTime()) || isNaN(e.getTime())) return false;
+    const first = new Date(s.getFullYear(), s.getMonth(), 1);
+    const last = new Date(s.getFullYear(), s.getMonth() + 1, 0);
+    const sd = s.toISOString().slice(0, 10);
+    const ed = e.toISOString().slice(0, 10);
+    const fd = first.toISOString().slice(0, 10);
+    const ld = last.toISOString().slice(0, 10);
+    return sd === fd && ed === ld && s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear();
+  };
+
+  const exportMonthlyCSV = () => {
+    const center = centers.find((c) => c.id === selectedCenter);
+    const headers = ["Fecha", "Empleado", "Email", "Entrada", "Salida", "Horas"];
+    const rows = sessionsRaw.map((s: any) => {
+      const start = s.clock_in_time ? new Date(s.clock_in_time) : null;
+      const end = s.clock_out_time ? new Date(s.clock_out_time) : null;
+      const hours = start && end ? ((end.getTime() - start.getTime()) / (1000 * 60 * 60)).toFixed(2) : "";
+      return [
+        start ? start.toISOString().slice(0, 10) : end ? end.toISOString().slice(0, 10) : "",
+        s.profiles?.full_name || s.profiles?.email || "",
+        s.profiles?.email || "",
+        start ? start.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "",
+        end ? end.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "",
+        hours,
+      ];
+    });
+    const label = center?.name ? center.name.replace(/\s+/g, "_") : "centro";
+    const ym = startDate.slice(0, 7);
+    exportCSV(`paquete_${label}_${ym}`, headers, rows);
+  };
+
+  const exportMonthlyPDF = () => {
+    const center = centers.find((c) => c.id === selectedCenter);
+    const ym = startDate.slice(0, 7);
+    const header = `<h1>Resumen mensual · ${center?.name || "Centro"} (${ym})</h1>
+      <div class='muted'>${membership?.company.name || "Empresa"} · ${new Date().toLocaleString("es-ES")} · ${employeeStats.length} empleados</div>`;
+    const rows = employeeStats.map((s) => `<tr>
+      <td>${s.full_name}</td>
+      <td>${s.email}</td>
+      <td>${s.total_days}</td>
+      <td>${s.total_hours.toFixed(2)}</td>
+    </tr>`).join("");
+    const table = `<table><thead><tr><th>Empleado</th><th>Email</th><th>Días</th><th>Horas</th></tr></thead><tbody>${rows}</tbody></table>`;
+    const signatures = `
+      <div style="display:flex;gap:32px;justify-content:space-between;margin-top:24px">
+        <div style="flex:1;text-align:center">
+          <div style="border-top:1px solid #cbd5e1; padding-top:6px;">Firma y sello de la empresa</div>
+        </div>
+        <div style="flex:1;text-align:center">
+          <div style="border-top:1px solid #cbd5e1; padding-top:6px;">Visto por representación legal de las personas trabajadoras</div>
+        </div>
+      </div>`;
+    printHTML(`Resumen mensual ${ym} · GTiQ`, `${header}${table}${signatures}`);
+  };
+
+  const exportMonthlyPackage = () => {
+    if (selectedCenter === "all") {
+      toast.error("Selecciona un centro para generar el paquete mensual");
+      return;
+    }
+    if (!isMonthlyRange()) {
+      toast.error("Ajusta el intervalo al mes completo (1º al último día)");
+      return;
+    }
+    exportMonthlyCSV();
+    exportMonthlyPDF();
+    toast.success("Paquete mensual generado (CSV + PDF)");
   };
 
   // Prepare chart data
@@ -405,10 +496,25 @@ const Reports = () => {
               </p>
             </div>
           </div>
-          <Button onClick={exportToCSV} className="hover-scale">
-            <Download className="w-4 h-4 mr-2" />
-            Exportar CSV
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="hover-scale">
+                <Download className="w-4 h-4 mr-2" /> Exportar
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={exportToCSV}>
+                <Download className="w-4 h-4 mr-2" /> CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={exportToPDF}>
+                <FileText className="w-4 h-4 mr-2" /> PDF
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={exportMonthlyPackage}>
+                <FileText className="w-4 h-4 mr-2" /> Paquete legal mensual (CSV + PDF)
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </motion.div>
 
         {/* Filters */}

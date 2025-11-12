@@ -1,0 +1,16 @@
+{
+  "name": "GTiQ",
+  "short_name": "GTiQ",
+  "start_url": "/auth",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0ea5e9",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+

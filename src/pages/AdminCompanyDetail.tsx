@@ -18,6 +18,7 @@ import { useImpersonation } from "@/hooks/useImpersonation";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+<<<<<<< HEAD
 import { BackButton } from "@/components/BackButton";
 type JsonRecord = Record<string, unknown>;
 
@@ -30,6 +31,10 @@ interface AuditLogEntry {
   actor_user_id: string | null;
   reason: string | null;
 }
+=======
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+ 
+>>>>>>> b85c716 (Mensaje explicando el cambio)
 
 interface CompanyDetail {
   id: string;
@@ -99,14 +104,23 @@ const AdminCompanyDetail = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { startImpersonation, loading: impersonationLoading } = useImpersonation();
+  useDocumentTitle("Empresa • GTiQ");
   const [company, setCompany] = useState<CompanyDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
+<<<<<<< HEAD
   const [inviteRole, setInviteRole] = useState<InviteRole>("worker");
   const [centers, setCenters] = useState<CenterOption[]>([]);
   const [teams, setTeams] = useState<TeamOption[]>([]);
   const [inviteCenter, setInviteCenter] = useState<string>("none");
   const [inviteTeam, setInviteTeam] = useState<string>("none");
+=======
+  const [inviteRole, setInviteRole] = useState<"owner" | "manager" | "worker">("worker");
+  const [centers, setCenters] = useState<{ id: string; name: string }[]>([]);
+  const [teams, setTeams] = useState<{ id: string; name: string }[]>([]);
+  const [inviteCenter, setInviteCenter] = useState<string>("");
+  const [inviteTeam, setInviteTeam] = useState<string>("");
+>>>>>>> b85c716 (Mensaje explicando el cambio)
   const [sendingInvite, setSendingInvite] = useState(false);
   const [members, setMembers] = useState<CompanyMember[]>([]);
 
@@ -190,6 +204,14 @@ const AdminCompanyDetail = () => {
       toast.error("Email requerido");
       return;
     }
+    if (!inviteCenter) {
+      toast.error("Debes seleccionar un centro válido");
+      return;
+    }
+    if (!inviteTeam) {
+      toast.error("Debes seleccionar un equipo válido");
+      return;
+    }
     setSendingInvite(true);
     try {
       const { error } = await supabase.functions.invoke("admin-create-invite", {
@@ -197,20 +219,28 @@ const AdminCompanyDetail = () => {
           company_id: id,
           email: inviteEmail.trim(),
           role: inviteRole,
-          center_id: inviteCenter === "none" ? null : inviteCenter,
-          team_id: inviteTeam === "none" ? null : inviteTeam,
+          center_id: inviteCenter,
+          team_id: inviteTeam,
         },
       });
       if (error) throw error;
       toast.success("Invitación enviada");
       setInviteEmail("");
       setInviteRole("worker");
+<<<<<<< HEAD
       setInviteCenter("none");
       setInviteTeam("none");
     } catch (error) {
       console.error(error);
       const message = error instanceof Error ? error.message : "Error al enviar invitación";
       toast.error(message);
+=======
+      setInviteCenter("");
+      setInviteTeam("");
+    } catch (e: any) {
+      console.error(e);
+      toast.error(e?.message || "Error al enviar invitación");
+>>>>>>> b85c716 (Mensaje explicando el cambio)
     } finally {
       setSendingInvite(false);
     }
@@ -530,7 +560,7 @@ const AdminCompanyDetail = () => {
                 <SelectValue placeholder="Rol" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="owner">Owner</SelectItem>
                 <SelectItem value="manager">Manager</SelectItem>
                 <SelectItem value="worker">Worker</SelectItem>
               </SelectContent>
@@ -540,7 +570,6 @@ const AdminCompanyDetail = () => {
                 <SelectValue placeholder="Centro" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Sin centro</SelectItem>
                 {centers.map((c) => (
                   <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                 ))}
@@ -551,7 +580,6 @@ const AdminCompanyDetail = () => {
                 <SelectValue placeholder="Equipo" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Sin equipo</SelectItem>
                 {teams.map((t) => (
                   <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                 ))}

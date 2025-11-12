@@ -39,7 +39,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+<<<<<<< HEAD
 import { UserPlus, Search, Edit, Mail, XCircle, RefreshCw, Power, Crown } from "lucide-react";
+=======
+import { ArrowLeft, UserPlus, Search, Edit, Mail, XCircle, RefreshCw, Power, Crown, Download, FileText, Users as UsersIcon } from "lucide-react";
+>>>>>>> b85c716 (Mensaje explicando el cambio)
 import { supabase } from "@/integrations/supabase/client";
 import { useMembership } from "@/hooks/useMembership";
 import { usePlanLimits } from "@/hooks/usePlanLimits";
@@ -48,7 +52,14 @@ import { toast } from "sonner";
 import InviteUserDialog from "@/components/InviteUserDialog";
 import EditUserDialog from "@/components/EditUserDialog";
 import { motion } from "framer-motion";
+<<<<<<< HEAD
 import { BackButton } from "@/components/BackButton";
+=======
+import { Skeleton } from "@/components/ui/skeleton";
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+import { exportCSV, printHTML } from "@/lib/exports";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+>>>>>>> b85c716 (Mensaje explicando el cambio)
 
 interface Member {
   id: string;
@@ -111,6 +122,9 @@ const People = () => {
   const [members, setMembers] = useState<Member[]>([]);
   const [invites, setInvites] = useState<Invite[]>([]);
   const [filteredMembers, setFilteredMembers] = useState<Member[]>([]);
+  const [totalMembers, setTotalMembers] = useState(0);
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
@@ -122,6 +136,7 @@ const People = () => {
     show: false,
     member: null,
   });
+  useDocumentTitle("Personas • GTiQ");
 
   useEffect(() => {
     if (!membershipLoading) {
@@ -143,8 +158,17 @@ const People = () => {
   }, [companyId]);
 
   useEffect(() => {
-    filterMembers();
-  }, [searchQuery, roleFilter, members]);
+    if (!companyId) return;
+    setPage(1);
+  }, [searchQuery, roleFilter, companyId]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    fetchMembers();
+  }, [page, searchQuery, roleFilter, companyId]);
+
+  const totalPages = Math.max(1, Math.ceil(totalMembers / pageSize));
+  const currentPageMembers = filteredMembers;
 
   const fetchData = async () => {
     setLoading(true);
@@ -154,7 +178,9 @@ const People = () => {
   };
 
   const fetchMembers = async () => {
-    const { data, error } = await supabase
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    let query = supabase
       .from("memberships")
       .select(`
         user_id,
@@ -169,8 +195,20 @@ const People = () => {
           centers(name),
           teams(name)
         )
-      `)
+      `, { count: 'exact' })
       .eq("company_id", companyId);
+
+    if (roleFilter !== 'all') {
+      query = query.eq('role', roleFilter);
+    }
+    if (searchQuery.trim()) {
+      const term = `%${searchQuery.trim()}%`;
+      query = query.or(`profiles.full_name.ilike.${term},profiles.email.ilike.${term}`);
+    }
+
+    const { data, error, count } = await query
+      .order('user_id')
+      .range(from, to);
 
     if (error) {
       console.error("Error fetching members:", error);
@@ -192,6 +230,8 @@ const People = () => {
     }));
 
     setMembers(formattedMembers);
+    setFilteredMembers(formattedMembers);
+    setTotalMembers(count || 0);
   };
 
   const fetchInvites = async () => {
@@ -235,23 +275,7 @@ const People = () => {
     setInvites(formattedInvites);
   };
 
-  const filterMembers = () => {
-    let filtered = members;
-
-    if (searchQuery) {
-      filtered = filtered.filter(
-        (m) =>
-          m.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          m.email.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    if (roleFilter !== "all") {
-      filtered = filtered.filter((m) => m.role === roleFilter);
-    }
-
-    setFilteredMembers(filtered);
-  };
+  // Server-side filtered; keep current page dataset
 
   const getRoleBadgeColor = (role: string) => {
     const colors: Record<string, string> = {
@@ -293,6 +317,38 @@ const People = () => {
       enterprise: "bg-purple-500/10 text-purple-700 border-purple-500/20",
     };
     return colors[planType] || colors.free;
+  };
+
+  // Export helpers
+  const handleExportCSV = () => {
+    const headers = ["Nombre", "Email", "Rol", "Centro", "Equipo", "Estado"];
+    const rows = filteredMembers.map((m) => [
+      m.full_name || "",
+      m.email,
+      m.role,
+      m.center_name || "",
+      m.team_name || "",
+      m.is_active ? "Activo" : "Inactivo",
+    ]);
+    exportCSV("personas", headers, rows);
+  };
+
+  const handleExportPDF = () => {
+    const header = `<h1>Listado de personas</h1><div class='muted'>${new Date().toLocaleString("es-ES")} · ${filteredMembers.length} registros</div>`;
+    const rows = filteredMembers
+      .map(
+        (m) => `<tr>
+          <td>${m.full_name || ""}</td>
+          <td>${m.email}</td>
+          <td>${m.role}</td>
+          <td>${m.center_name || ""}</td>
+          <td>${m.team_name || ""}</td>
+          <td>${m.is_active ? "Activo" : "Inactivo"}</td>
+        </tr>`
+      )
+      .join("");
+    const table = `<table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Centro</th><th>Equipo</th><th>Estado</th></tr></thead><tbody>${rows}</tbody></table>`;
+    printHTML("Personas · GTiQ", `${header}${table}`);
   };
 
   const handleToggleUser = async (member: Member) => {
@@ -373,19 +429,36 @@ const People = () => {
               {/* Plan y límites ocultos por nueva política */}
             </div>
           </div>
-          {isSuperadmin && (
-          <Button onClick={handleInviteClick} className="hover-scale">
-            <UserPlus className="w-4 h-4 mr-2" />
-            Invitar Usuario
-          </Button>
-          )}
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="hover-scale">
+                  <Download className="w-4 h-4 mr-2" /> Exportar
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportCSV}>
+                  <Download className="w-4 h-4 mr-2" /> CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportPDF}>
+                  <FileText className="w-4 h-4 mr-2" /> PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            {isSuperadmin && (
+              <Button onClick={handleInviteClick} className="hover-scale">
+                <UserPlus className="w-4 h-4 mr-2" />
+                Invitar Usuario
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Tabs */}
         <Tabs defaultValue="members" className="w-full">
           <TabsList className="grid w-full max-w-md grid-cols-2">
             <TabsTrigger value="members">
-              Miembros ({filteredMembers.length})
+              Miembros ({totalMembers})
             </TabsTrigger>
             <TabsTrigger value="invites">
               Invitaciones ({invites.filter((i) => i.status === "pending").length})
@@ -410,23 +483,41 @@ const People = () => {
                   <SelectTrigger className="w-[180px]">
                     <SelectValue placeholder="Filtrar por rol" />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos los roles</SelectItem>
-                    <SelectItem value="owner">Owner</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="manager">Manager</SelectItem>
-                    <SelectItem value="worker">Worker</SelectItem>
-                  </SelectContent>
-                </Select>
+                <SelectContent>
+                  <SelectItem value="all">Todos los roles</SelectItem>
+                  <SelectItem value="owner">Owner</SelectItem>
+                  <SelectItem value="manager">Manager</SelectItem>
+                  <SelectItem value="worker">Worker</SelectItem>
+                </SelectContent>
+              </Select>
               </div>
 
               {/* Members Table */}
               {loading ? (
-                <p className="text-center py-8 text-muted-foreground">Cargando...</p>
+                <div className="space-y-2">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <div key={`skeleton-m-${i}`} className="flex items-center justify-between py-3">
+                      <Skeleton className="h-4 w-40" />
+                      <Skeleton className="h-4 w-56" />
+                      <Skeleton className="h-5 w-20" />
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-5 w-20" />
+                      <Skeleton className="h-8 w-8" />
+                    </div>
+                  ))}
+                </div>
               ) : filteredMembers.length === 0 ? (
-                <p className="text-center py-8 text-muted-foreground">
-                  No se encontraron miembros
-                </p>
+                <Card className="glass-card p-10 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <UsersIcon className="w-8 h-8 text-primary" />
+                    <h3 className="text-lg font-semibold">Aún no hay miembros</h3>
+                    <p className="text-sm text-muted-foreground">Cuando haya personas en tu empresa aparecerán aquí.</p>
+                    {isSuperadmin && (
+                      <Button onClick={handleInviteClick} className="mt-2">Invitar usuario</Button>
+                    )}
+                  </div>
+                </Card>
               ) : (
                 <div className="rounded-lg border overflow-hidden">
                   <Table>
@@ -442,7 +533,7 @@ const People = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredMembers.map((member, index) => (
+                      {currentPageMembers.map((member, index) => (
                         <motion.tr
                           key={member.id}
                           initial={{ opacity: 0, y: 20 }}
@@ -514,17 +605,62 @@ const People = () => {
                 </div>
               )}
             </Card>
+            <div className="flex items-center justify-between mt-4">
+              <p className="text-sm text-muted-foreground">
+                Mostrando {currentPageMembers.length} de {totalMembers}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1}
+                >
+                  Anterior
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Página {page} / {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                >
+                  Siguiente
+                </Button>
+              </div>
+            </div>
           </TabsContent>
 
           {/* Invites Tab */}
           <TabsContent value="invites" className="space-y-4">
             <Card className="glass-card p-6">
               {loading ? (
-                <p className="text-center py-8 text-muted-foreground">Cargando...</p>
+                <div className="space-y-2">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <div key={`skeleton-i-${i}`} className="flex items-center justify-between py-3">
+                      <Skeleton className="h-4 w-56" />
+                      <Skeleton className="h-5 w-20" />
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-4 w-28" />
+                      <Skeleton className="h-5 w-20" />
+                      <Skeleton className="h-4 w-24" />
+                      <Skeleton className="h-8 w-8" />
+                    </div>
+                  ))}
+                </div>
               ) : invites.length === 0 ? (
-                <p className="text-center py-8 text-muted-foreground">
-                  No hay invitaciones pendientes
-                </p>
+                <Card className="glass-card p-10 text-center">
+                  <div className="flex flex-col items-center gap-2">
+                    <Mail className="w-8 h-8 text-primary" />
+                    <h3 className="text-lg font-semibold">No hay invitaciones</h3>
+                    <p className="text-sm text-muted-foreground">Crea una invitación para incorporar a alguien al equipo.</p>
+                    {isSuperadmin && (
+                      <Button onClick={handleInviteClick} className="mt-2">Crear invitación</Button>
+                    )}
+                  </div>
+                </Card>
               ) : (
                 <div className="rounded-lg border overflow-hidden">
                   <Table>

@@ -1,10 +1,13 @@
 import { ReactNode } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Shield, Building2, Users, Activity, BarChart3 } from "lucide-react";
+import { Shield, Building2, Users, Activity, BarChart3, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+<<<<<<< HEAD
 import { toast } from "sonner";
+=======
+>>>>>>> b85c716 (Mensaje explicando el cambio)
 
 interface AdminLayoutProps {
   children: ReactNode;
@@ -21,6 +24,7 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { signOut } = useAuth();
+<<<<<<< HEAD
 
   const handleLogout = async () => {
     try {
@@ -31,6 +35,8 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
       toast.error("No se pudo cerrar sesión");
     }
   };
+=======
+>>>>>>> b85c716 (Mensaje explicando el cambio)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10">
@@ -63,12 +69,32 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
               })}
             </nav>
           </div>
+<<<<<<< HEAD
           <div className="absolute bottom-6 left-6 right-6 space-y-3">
             <Button variant="outline" className="w-full" onClick={() => navigate("/")}>
               Volver a la app
             </Button>
             <Button className="w-full" onClick={handleLogout}>
               Cerrar sesión
+=======
+          <div className="absolute bottom-6 left-6 right-6 space-y-2">
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => navigate("/")}
+            >
+              Volver a la app
+            </Button>
+            <Button
+              variant="destructive"
+              className="w-full"
+              onClick={async () => {
+                await signOut();
+                navigate("/auth", { replace: true });
+              }}
+            >
+              <LogOut className="w-4 h-4 mr-2" /> Cerrar sesión
+>>>>>>> b85c716 (Mensaje explicando el cambio)
             </Button>
           </div>
         </aside>

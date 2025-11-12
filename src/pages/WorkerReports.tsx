@@ -1,13 +1,22 @@
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+<<<<<<< HEAD
 import { Download, Calendar, Clock, TrendingUp } from "lucide-react";
+=======
+import { ArrowLeft, Download, Calendar, Clock, TrendingUp, FileText } from "lucide-react";
+>>>>>>> b85c716 (Mensaje explicando el cambio)
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+<<<<<<< HEAD
 import { BackButton } from "@/components/BackButton";
+=======
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { exportCSV, printHTML } from "@/lib/exports";
+>>>>>>> b85c716 (Mensaje explicando el cambio)
 import {
   Select,
   SelectContent,
@@ -24,7 +33,12 @@ interface WorkSession {
 
 const WorkerReports = () => {
   const { user } = useAuth();
+<<<<<<< HEAD
   const { companyId } = useMembership();
+=======
+  const { companyId, membership } = useMembership();
+  const navigate = useNavigate();
+>>>>>>> b85c716 (Mensaje explicando el cambio)
   
   const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState<"week" | "month">("week");
@@ -87,6 +101,51 @@ const WorkerReports = () => {
     }
   };
 
+  // Export helpers (cliente, no tocan backend)
+  const exportCSVLocal = () => {
+    const headers = ["Fecha", "Entrada", "Salida", "Horas"];
+    const rows = sessions.map((s) => {
+      const start = s.clock_in_time ? new Date(s.clock_in_time) : null;
+      const end = s.clock_out_time ? new Date(s.clock_out_time) : null;
+      const hours = start && end ? ((end.getTime() - start.getTime()) / (1000 * 60 * 60)).toFixed(2) : "";
+      return [
+        start ? start.toISOString().slice(0, 10) : "",
+        start ? start.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "",
+        end ? end.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "",
+        hours,
+      ];
+    });
+    exportCSV(`mis_horas_${period}`, headers, rows);
+    toast.success("CSV exportado");
+  };
+
+  const exportPDFLocal = () => {
+    const header = `<h1>Mis horas (${period === 'week' ? 'semanal' : 'mensual'})</h1>
+      <div class='muted'>${membership?.company.name || 'Empresa'} · ${user?.email || ''} · ${new Date().toLocaleString("es-ES")} · ${sessions.length} fichajes</div>`;
+    const rows = sessions.map((s) => {
+      const start = s.clock_in_time ? new Date(s.clock_in_time) : null;
+      const end = s.clock_out_time ? new Date(s.clock_out_time) : null;
+      const hours = start && end ? ((end.getTime() - start.getTime()) / (1000 * 60 * 60)).toFixed(2) : "";
+      return `<tr>
+        <td>${start ? start.toISOString().slice(0, 10) : ""}</td>
+        <td>${start ? start.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : ""}</td>
+        <td>${end ? end.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : ""}</td>
+        <td>${hours}</td>
+      </tr>`;
+    }).join("");
+    const table = `<table><thead><tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Horas</th></tr></thead><tbody>${rows}</tbody></table>`;
+    const signatures = `
+      <div style="display:flex;gap:32px;justify-content:space-between;margin-top:24px">
+        <div style="flex:1;text-align:center">
+          <div style="border-top:1px solid #cbd5e1; padding-top:6px;">Firma del trabajador</div>
+        </div>
+        <div style="flex:1;text-align:center">
+          <div style="border-top:1px solid #cbd5e1; padding-top:6px;">Firma y sello de la empresa</div>
+        </div>
+      </div>`;
+    printHTML("Mis horas · GTiQ", `${header}${table}${signatures}`);
+  };
+
   const exportPDF = async () => {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -147,10 +206,26 @@ const WorkerReports = () => {
               <p className="text-sm text-muted-foreground">Control de horas trabajadas</p>
             </div>
           </div>
-          <Button onClick={exportPDF} disabled={loading} className="hover-scale">
-            <Download className="w-4 h-4 mr-2" />
-            Exportar PDF
-          </Button>
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="hover-scale">
+                  <Download className="w-4 h-4 mr-2" /> Exportar
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={exportCSVLocal}>
+                  <Download className="w-4 h-4 mr-2" /> CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={exportPDFLocal}>
+                  <FileText className="w-4 h-4 mr-2" /> PDF simple
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={exportPDF}>
+                  <FileText className="w-4 h-4 mr-2" /> PDF avanzado
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </motion.div>
 
         {/* Period Selector */}

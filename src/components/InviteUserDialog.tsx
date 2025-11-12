@@ -24,7 +24,7 @@ import { z } from "zod";
 
 const inviteSchema = z.object({
   email: z.string().email("Email inválido").max(255, "Email demasiado largo"),
-  role: z.enum(["admin", "manager", "worker"]),
+  role: z.enum(["owner", "manager", "worker"]),
 });
 
 interface InviteUserDialogProps {
@@ -110,6 +110,18 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
       }
     }
 
+    // Additional required validations for center/team
+    if (!centerId) {
+      setErrors((prev) => ({ ...prev, center: "Debes seleccionar un centro válido" }));
+      toast.error("Debes seleccionar un centro válido");
+      return;
+    }
+    if (!teamId) {
+      setErrors((prev) => ({ ...prev, team: "Debes seleccionar un equipo válido" }));
+      toast.error("Debes seleccionar un equipo válido");
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -118,9 +130,9 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
         body: {
           company_id: companyId,
           email: email.toLowerCase().trim(),
-          role: role as "admin" | "manager" | "worker",
-          center_id: centerId || null,
-          team_id: teamId || null,
+          role: role as "owner" | "manager" | "worker",
+          center_id: centerId,
+          team_id: teamId,
         },
       });
 
@@ -203,7 +215,7 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="admin">Admin</SelectItem>
+                <SelectItem value="owner">Owner</SelectItem>
                 <SelectItem value="manager">Manager</SelectItem>
                 <SelectItem value="worker">Worker</SelectItem>
               </SelectContent>
@@ -211,13 +223,12 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="center">Centro (opcional)</Label>
-            <Select value={centerId || "none"} onValueChange={(val) => setCenterId(val === "none" ? "" : val)}>
+            <Label htmlFor="center">Centro *</Label>
+            <Select value={centerId} onValueChange={(val) => setCenterId(val)} required>
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar centro" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Sin centro</SelectItem>
                 {centers.map((center) => (
                   <SelectItem key={center.id} value={center.id}>
                     {center.name}
@@ -228,13 +239,12 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="team">Equipo (opcional)</Label>
-            <Select value={teamId || "none"} onValueChange={(val) => setTeamId(val === "none" ? "" : val)}>
+            <Label htmlFor="team">Equipo *</Label>
+            <Select value={teamId} onValueChange={(val) => setTeamId(val)} required>
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar equipo" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Sin equipo</SelectItem>
                 {teams.map((team) => (
                   <SelectItem key={team.id} value={team.id}>
                     {team.name}

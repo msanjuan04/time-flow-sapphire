@@ -19,7 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+<<<<<<< HEAD
 import { UserPlus, Search, Filter, Edit, UserX } from "lucide-react";
+=======
+import { ArrowLeft, UserPlus, Search, Filter, Edit, UserX, Download, FileText, Users as UsersIcon } from "lucide-react";
+>>>>>>> b85c716 (Mensaje explicando el cambio)
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -27,8 +31,15 @@ import { toast } from "sonner";
 import InviteUserDialog from "@/components/InviteUserDialog";
 import EditUserDialog from "@/components/EditUserDialog";
 import { motion } from "framer-motion";
+<<<<<<< HEAD
 import { useSuperadmin } from "@/hooks/useSuperadmin";
 import { BackButton } from "@/components/BackButton";
+=======
+import { Skeleton } from "@/components/ui/skeleton";
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { exportCSV, printHTML } from "@/lib/exports";
+>>>>>>> b85c716 (Mensaje explicando el cambio)
 
 interface Employee {
   id: string;
@@ -60,8 +71,11 @@ const Employees = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { companyId, role } = useMembership();
+  useDocumentTitle("Empleados • GTiQ");
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
+  const [page, setPage] = useState(1);
+  const pageSize = 20;
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("all");
@@ -69,6 +83,40 @@ const Employees = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const { isSuperadmin } = useSuperadmin();
+
+  // Export helpers
+  const handleExportCSV = () => {
+    const headers = ["Nombre", "Email", "Rol", "Centro", "Equipo", "Último evento", "Hora último evento"];
+    const rows = filteredEmployees.map((e) => [
+      e.full_name || "",
+      e.email,
+      e.role,
+      e.center_name || "",
+      e.team_name || "",
+      e.last_event || "",
+      e.last_event_time || "",
+    ]);
+    exportCSV("empleados", headers, rows);
+  };
+
+  const handleExportPDF = () => {
+    const header = `<h1>Listado de empleados</h1><div class='muted'>${new Date().toLocaleString("es-ES")} · ${filteredEmployees.length} registros</div>`;
+    const rows = filteredEmployees
+      .map(
+        (e) => `<tr>
+          <td>${e.full_name || ""}</td>
+          <td>${e.email}</td>
+          <td>${e.role}</td>
+          <td>${e.center_name || ""}</td>
+          <td>${e.team_name || ""}</td>
+          <td>${e.last_event || ""}</td>
+          <td>${e.last_event_time || ""}</td>
+        </tr>`
+      )
+      .join("");
+    const table = `<table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Centro</th><th>Equipo</th><th>Último evento</th><th>Hora último evento</th></tr></thead><tbody>${rows}</tbody></table>`;
+    printHTML("Empleados · GTiQ", `${header}${table}`);
+  };
 
   useEffect(() => {
     if (!user) {
@@ -85,13 +133,22 @@ const Employees = () => {
   }, [companyId, role, user, navigate]);
 
   useEffect(() => {
-    filterEmployees();
-  }, [employees, searchQuery, roleFilter]);
+    setPage(1);
+  }, [searchQuery, roleFilter]);
+
+  useEffect(() => {
+    if (companyId) fetchEmployees();
+  }, [companyId, page, searchQuery, roleFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(totalEmployees / pageSize));
+  const currentPageEmployees = filteredEmployees;
 
   const fetchEmployees = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+      let query = supabase
         .from("memberships")
         .select(`
           id,
@@ -104,15 +161,29 @@ const Employees = () => {
             center_id,
             team_id
           )
-        `)
+        `, { count: 'exact' })
         .eq("company_id", companyId);
+
+      if (roleFilter !== 'all') query = query.eq('role', roleFilter);
+      if (searchQuery.trim()) {
+        const term = `%${searchQuery.trim()}%`;
+        query = query.or(`profiles.full_name.ilike.${term},profiles.email.ilike.${term}`);
+      }
+
+      const { data, error, count } = await query
+        .order('user_id')
+        .range(from, to);
 
       if (error) throw error;
 
       // Get last event for each user
       const membershipRows: MembershipRow[] = (data || []) as MembershipRow[];
       const employeesWithEvents = await Promise.all(
+<<<<<<< HEAD
         membershipRows.map(async (membership) => {
+=======
+        (data || []).map(async (membership: any) => {
+>>>>>>> b85c716 (Mensaje explicando el cambio)
           const { data: lastEvent } = await supabase
             .from("time_events")
             .select("event_type, event_time")
@@ -160,7 +231,13 @@ const Employees = () => {
       );
 
       setEmployees(employeesWithEvents);
+<<<<<<< HEAD
     } catch (error) {
+=======
+      setFilteredEmployees(employeesWithEvents);
+      setTotalEmployees(count || 0);
+    } catch (error: any) {
+>>>>>>> b85c716 (Mensaje explicando el cambio)
       toast.error("Error al cargar empleados");
       console.error(error);
     } finally {
@@ -238,7 +315,7 @@ const Employees = () => {
             <div>
               <h1 className="text-2xl font-bold">Gestión de Empleados</h1>
               <p className="text-sm text-muted-foreground">
-                {employees.length} empleados en total
+                {totalEmployees} empleados en total
               </p>
             </div>
           </div>
@@ -273,7 +350,6 @@ const Employees = () => {
               <SelectContent>
                 <SelectItem value="all">Todos los roles</SelectItem>
                 <SelectItem value="owner">Owner</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
                 <SelectItem value="manager">Manager</SelectItem>
                 <SelectItem value="worker">Worker</SelectItem>
               </SelectContent>
@@ -283,6 +359,23 @@ const Employees = () => {
 
         {/* Table */}
         <Card className="glass-card">
+          <div className="flex justify-end p-4 pb-0">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="hover-scale">
+                  <Download className="w-4 h-4 mr-2" /> Exportar
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={handleExportCSV}>
+                  <Download className="w-4 h-4 mr-2" /> CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleExportPDF}>
+                  <FileText className="w-4 h-4 mr-2" /> PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -297,19 +390,45 @@ const Employees = () => {
               </TableHeader>
               <TableBody>
                 {loading ? (
-                  <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">
-                      Cargando empleados...
-                    </TableCell>
-                  </TableRow>
+                  Array.from({ length: 6 }).map((_, i) => (
+                    <TableRow key={`skeleton-${i}`}>
+                      <TableCell>
+                        <div className="space-y-2">
+                          <Skeleton className="h-4 w-40" />
+                          <Skeleton className="h-3 w-56" />
+                        </div>
+                      </TableCell>
+                      <TableCell><Skeleton className="h-5 w-20" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-28" /></TableCell>
+                      <TableCell>
+                        <div className="space-y-1">
+                          <Skeleton className="h-4 w-24" />
+                          <Skeleton className="h-3 w-32" />
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Skeleton className="h-8 w-8 ml-auto" />
+                      </TableCell>
+                    </TableRow>
+                  ))
                 ) : filteredEmployees.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center py-8">
-                      No se encontraron empleados
+                    <TableCell colSpan={6} className="py-8">
+                      <Card className="glass-card p-10 text-center">
+                        <div className="flex flex-col items-center gap-2">
+                          <UsersIcon className="w-8 h-8 text-primary" />
+                          <h3 className="text-lg font-semibold">Aún no hay empleados</h3>
+                          <p className="text-sm text-muted-foreground">Cuando haya empleados en tu empresa aparecerán aquí.</p>
+                          <div className="mt-2">
+                            <Button variant="outline" onClick={() => navigate("/people")}>Gestionar personas</Button>
+                          </div>
+                        </div>
+                      </Card>
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredEmployees.map((employee, index) => (
+                  currentPageEmployees.map((employee, index) => (
                     <motion.tr
                       key={employee.id}
                       initial={{ opacity: 0, y: 10 }}
@@ -368,6 +487,32 @@ const Employees = () => {
             </Table>
           </div>
         </Card>
+        <div className="flex items-center justify-between mt-4">
+          <p className="text-sm text-muted-foreground">
+            Mostrando {currentPageEmployees.length} de {filteredEmployees.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+            >
+              Anterior
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Página {page} / {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+            >
+              Siguiente
+            </Button>
+          </div>
+        </div>
       </div>
 
       {isSuperadmin && (

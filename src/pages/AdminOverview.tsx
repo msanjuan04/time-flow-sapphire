@@ -18,10 +18,15 @@ import {
 } from "lucide-react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
+<<<<<<< HEAD
 import { StatsCard } from "@/components/admin/StatsCard";
 import { QuickActionCard } from "@/components/admin/QuickActionCard";
 import { CompanyAlerts } from "@/components/admin/CompanyAlerts";
 import { RecentActivity } from "@/components/admin/RecentActivity";
+=======
+import { toast } from "sonner";
+import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+>>>>>>> b85c716 (Mensaje explicando el cambio)
 
 interface AdminStats {
   companies: {
@@ -52,10 +57,15 @@ interface CompanySummary {
 const AdminOverview = () => {
   const navigate = useNavigate();
   const [stats, setStats] = useState<AdminStats | null>(null);
+<<<<<<< HEAD
   const [statsLoading, setStatsLoading] = useState(true);
   const [companies, setCompanies] = useState<CompanySummary[]>([]);
   const [companiesLoading, setCompaniesLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+=======
+  const [loading, setLoading] = useState(true);
+  useDocumentTitle("Admin • GTiQ");
+>>>>>>> b85c716 (Mensaje explicando el cambio)
 
   useEffect(() => {
     fetchStats();

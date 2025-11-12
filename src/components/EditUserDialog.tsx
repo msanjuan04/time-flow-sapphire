@@ -93,13 +93,23 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
     setLoading(true);
 
     try {
+      if (!centerId) {
+        toast.error("Debes seleccionar un centro válido");
+        setLoading(false);
+        return;
+      }
+      if (!teamId) {
+        toast.error("Debes seleccionar un equipo válido");
+        setLoading(false);
+        return;
+      }
       // Update profile
       const { error: profileError } = await supabase
         .from("profiles")
         .update({
           full_name: fullName.trim(),
-          center_id: centerId || null,
-          team_id: teamId || null,
+          center_id: centerId,
+          team_id: teamId,
         })
         .eq("id", employee.id);
 
@@ -108,7 +118,7 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
       // Update membership role
       const { error: membershipError } = await supabase
         .from("memberships")
-        .update({ role: role as "owner" | "admin" | "manager" | "worker" })
+        .update({ role: role as "owner" | "manager" | "worker" })
         .eq("user_id", employee.id)
         .eq("company_id", companyId);
 
@@ -156,7 +166,6 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="owner">Owner</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
                 <SelectItem value="manager">Manager</SelectItem>
                 <SelectItem value="worker">Worker</SelectItem>
               </SelectContent>
@@ -165,12 +174,11 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
 
           <div className="space-y-2">
             <Label htmlFor="center">Centro</Label>
-            <Select value={centerId || "none"} onValueChange={(val) => setCenterId(val === "none" ? "" : val)}>
+            <Select value={centerId} onValueChange={(val) => setCenterId(val)} required>
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar centro" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Sin centro</SelectItem>
                 {centers.map((center) => (
                   <SelectItem key={center.id} value={center.id}>
                     {center.name}
@@ -182,12 +190,11 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
 
           <div className="space-y-2">
             <Label htmlFor="team">Equipo</Label>
-            <Select value={teamId || "none"} onValueChange={(val) => setTeamId(val === "none" ? "" : val)}>
+            <Select value={teamId} onValueChange={(val) => setTeamId(val)} required>
               <SelectTrigger>
                 <SelectValue placeholder="Seleccionar equipo" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Sin equipo</SelectItem>
                 {teams.map((team) => (
                   <SelectItem key={team.id} value={team.id}>
                     {team.name}
