@@ -18,9 +18,16 @@ serve(async (req) => {
       return createErrorResponse("Company name is required", 400);
     }
 
+    // Service role client bypasses RLS but we need to set owner_user_id
+    // We'll set it to null initially and let the superadmin assign an owner later
     const { data: company, error } = await supabase
       .from("companies")
-      .insert({ name, status: "active", plan: "enterprise" })
+      .insert({ 
+        name, 
+        status: "active", 
+        plan: "enterprise",
+        owner_user_id: null 
+      })
       .select()
       .single();
 
