@@ -24,25 +24,33 @@ const Legal = () => {
             <div className="mt-4 flex items-center gap-3 flex-wrap">
               <Button
                 onClick={() => {
-                  const body = `
-                    <h1>Información legal y privacidad</h1>
-                    <div class='muted'>Plantilla para empresa responsable · ${new Date().toLocaleString('es-ES')}</div>
-                    <h2>Aviso legal</h2>
-                    <p>Responsable: [EMPRESA TITULAR], CIF/NIF [CIF], domicilio [DIRECCIÓN], email [EMAIL].</p>
-                    <h2>Política de privacidad</h2>
-                    <p>Finalidades: registro de jornada, gestión de incidencias, informes y opcionalmente geolocalización/foto.</p>
-                    <p>Base jurídica: obligación legal, contrato, interés legítimo y, en su caso, consentimiento.</p>
-                    <p>Conservación: al menos 4 años para registros de jornada.</p>
-                    <h2>Política de cookies</h2>
-                    <p>Cookies esenciales para sesión/preferencias. Sin publicidad salvo activación expresa de la empresa.</p>
-                    <h2>Consentimientos</h2>
-                    <p>Geolocalización/foto opcionales y revocables. Firma/acuse mensual disponible.</p>
-                    <h2>Conservación y auditoría</h2>
-                    <p>Revisiones y cambios quedan auditados (quién/cuándo/motivo).</p>
-                    <h2>Derechos</h2>
-                    <p>La persona trabajadora puede ejercer sus derechos ante la empresa responsable o la AEPD.</p>
-                  `;
-                  printHTML('Legal · Plantilla', body);
+                  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8" /><title>Plantilla Legal</title></head><body>
+                  <h1>Información legal y privacidad</h1>
+                  <div>Plantilla para empresa responsable · ${new Date().toLocaleString('es-ES')}</div>
+                  <h2>Aviso legal</h2>
+                  <p>Responsable: [EMPRESA TITULAR], CIF/NIF [CIF], domicilio [DIRECCIÓN], email [EMAIL].</p>
+                  <h2>Política de privacidad</h2>
+                  <p>Finalidades: registro de jornada, gestión de incidencias, informes y opcionalmente geolocalización/foto.</p>
+                  <p>Base jurídica: obligación legal, contrato, interés legítimo y, en su caso, consentimiento.</p>
+                  <p>Conservación: al menos 4 años para registros de jornada.</p>
+                  <h2>Política de cookies</h2>
+                  <p>Cookies esenciales para sesión/preferencias. Sin publicidad salvo activación expresa de la empresa.</p>
+                  <h2>Consentimientos</h2>
+                  <p>Geolocalización/foto opcionales y revocables. Firma/acuse mensual disponible.</p>
+                  <h2>Conservación y auditoría</h2>
+                  <p>Revisiones y cambios quedan auditados (quién/cuándo/motivo).</p>
+                  <h2>Derechos</h2>
+                  <p>La persona trabajadora puede ejercer sus derechos ante la empresa responsable o la AEPD.</p>
+                  </body></html>`;
+                  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'plantilla-legal.html';
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
                 }}
               >Descargar plantilla</Button>
               <span className="text-sm text-muted-foreground">
@@ -211,25 +219,33 @@ const Legal = () => {
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  const body = `
-                    <h1>Información legal y privacidad</h1>
-                    <div class='muted'>Plantilla para empresa responsable · ${new Date().toLocaleString('es-ES')}</div>
-                    <h2>Aviso legal</h2>
-                    <p>Responsable: [EMPRESA TITULAR], CIF/NIF [CIF], domicilio [DIRECCIÓN], email [EMAIL].</p>
-                    <h2>Política de privacidad</h2>
-                    <p>Finalidades: registro de jornada, gestión de incidencias, informes y opcionalmente geolocalización/foto.</p>
-                    <p>Base jurídica: obligación legal, contrato, interés legítimo y, en su caso, consentimiento.</p>
-                    <p>Conservación: al menos 4 años para registros de jornada.</p>
-                    <h2>Política de cookies</h2>
-                    <p>Cookies esenciales para sesión/preferencias. Sin publicidad salvo activación expresa de la empresa.</p>
-                    <h2>Consentimientos</h2>
-                    <p>Geolocalización/foto opcionales y revocables. Firma/acuse mensual disponible.</p>
-                    <h2>Conservación y auditoría</h2>
-                    <p>Revisiones y cambios quedan auditados (quién/cuándo/motivo).</p>
-                    <h2>Derechos</h2>
-                    <p>La persona trabajadora puede ejercer sus derechos ante la empresa responsable o la AEPD.</p>
-                  `;
-                  printHTML('Legal · Plantilla', body);
+                  const html = `<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\" /><title>Plantilla Legal</title></head><body>
+                  <h1>Información legal y privacidad</h1>
+                  <div>Plantilla para empresa responsable · ${new Date().toLocaleString('es-ES')}</div>
+                  <h2>Aviso legal</h2>
+                  <p>Responsable: [EMPRESA TITULAR], CIF/NIF [CIF], domicilio [DIRECCIÓN], email [EMAIL].</p>
+                  <h2>Política de privacidad</h2>
+                  <p>Finalidades: registro de jornada, gestión de incidencias, informes y opcionalmente geolocalización/foto.</p>
+                  <p>Base jurídica: obligación legal, contrato, interés legítimo y, en su caso, consentimiento.</p>
+                  <p>Conservación: al menos 4 años para registros de jornada.</p>
+                  <h2>Política de cookies</h2>
+                  <p>Cookies esenciales para sesión/preferencias. Sin publicidad salvo activación expresa de la empresa.</p>
+                  <h2>Consentimientos</h2>
+                  <p>Geolocalización/foto opcionales y revocables. Firma/acuse mensual disponible.</p>
+                  <h2>Conservación y auditoría</h2>
+                  <p>Revisiones y cambios quedan auditados (quién/cuándo/motivo).</p>
+                  <h2>Derechos</h2>
+                  <p>La persona trabajadora puede ejercer sus derechos ante la empresa responsable o la AEPD.</p>
+                  </body></html>`;
+                  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'plantilla-legal.html';
+                  document.body.appendChild(a);
+                  a.click();
+                  document.body.removeChild(a);
+                  URL.revokeObjectURL(url);
                 }}
               >Descargar plantilla</Button>
               <span>
