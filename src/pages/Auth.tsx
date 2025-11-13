@@ -9,10 +9,9 @@ import { Loader2 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 
 const Auth = () => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
-  const { signIn, user } = useAuth();
+  const { signInWithCode, user } = useAuth();
   const navigate = useNavigate();
   useDocumentTitle("Iniciar sesión • GTiQ");
 
@@ -24,16 +23,22 @@ const Auth = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!/^\d{6}$/.test(code)) {
+      toast.error("Introduce un código de 6 dígitos");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      const { error } = await signIn(email, password);
+      const { error } = await signInWithCode(code);
       if (error) {
-        toast.error(error.message || "Error al iniciar sesión");
-      } else {
-        toast.success("¡Sesión iniciada con éxito!");
-        navigate("/");
+        toast.error(error.message || "Código incorrecto o usuario no encontrado");
+        return;
       }
+      toast.success("¡Bienvenido de nuevo!");
+      navigate("/");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error inesperado";
       toast.error(message);
@@ -56,34 +61,25 @@ const Auth = () => {
             </div>
             <h1 className="text-3xl font-bold">GTiQ</h1>
             <p className="text-muted-foreground">
-              Inicia sesión en tu cuenta
+              Introduce tu código personal de 6 dígitos
             </p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="email">Correo electrónico</Label>
+              <Label htmlFor="code">Código de acceso</Label>
               <Input
-                id="email"
-                type="email"
-                placeholder="tu@empresa.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                id="code"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                placeholder="123456"
+                value={code}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
                 required
                 className="glass-card"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="password">Contraseña</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="glass-card"
+                autoFocus
               />
             </div>
 
@@ -93,7 +89,7 @@ const Auth = () => {
               disabled={loading}
             >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Iniciar sesión
+              Entrar
             </Button>
           </form>
           <p className="text-xs text-center text-muted-foreground">

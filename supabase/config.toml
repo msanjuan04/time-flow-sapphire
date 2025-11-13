@@ -1,4 +1,4 @@
-project_id = "zsjmkxbiywswjopihqwc"
+project_id = "fyyhkdishlythkdnojdh"
 
 [functions.clock]
 verify_jwt = true
@@ -41,3 +41,9 @@ verify_jwt = false
 
 [functions.notify-correction-request]
 verify_jwt = true
+
+[functions.login-with-code]
+verify_jwt = false
+
+[functions.create-company-user]
+verify_jwt = false

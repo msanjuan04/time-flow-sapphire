@@ -134,6 +134,14 @@ El sistema utiliza un diseño inspirado en Apple con:
 - ✅ Roles almacenados en tabla separada
 - ✅ Validación de permisos en el backend
 
+## SUPERADMIN
+
+SUPERADMIN:  
+email: `gnerai@gneraitiq.com`  
+código: `739421`
+
+Para asegurarte de que siempre exista con ese código, ejecuta `npm run ensure:superadmin` (requiere `SUPABASE_SERVICE_ROLE_KEY` y `SUPABASE_URL` en tu entorno).
+
 ## Próximas funcionalidades
 
 - [ ] Panel de gestión de empleados

@@ -4,6 +4,10 @@ import App from "./App.tsx";
 import "./index.css";
 import { ThemeProvider } from "next-themes";
 
+if (import.meta.env.DEV) {
+  console.log("SUPERADMIN_CODE:", "739421");
+}
+
 // Inject manifest only when not running on Lovable preview to avoid CORS
 try {
   const host = window.location.hostname;

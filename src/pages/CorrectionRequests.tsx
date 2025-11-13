@@ -116,7 +116,8 @@ const CorrectionRequests = () => {
 
       setRequests((data as any[])?.map(item => ({
         ...item,
-        payload: item.payload as CorrectionPayload
+        payload: item.payload as CorrectionPayload,
+        profile: item.profile || null
       })) as CorrectionRequest[] || []);
     } catch (error) {
       console.error("Error fetching requests:", error);

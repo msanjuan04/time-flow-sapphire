@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Test Conexión Supabase</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 50px auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    .test-section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      cursor: pointer;
+      margin: 5px;
+    }
+    button:hover {
+      background: #2563eb;
+    }
+    .success { color: #10b981; }
+    .error { color: #ef4444; }
+    .info { color: #3b82f6; }
+    pre {
+      background: #f3f4f6;
+      padding: 10px;
+      border-radius: 4px;
+      overflow-x: auto;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔍 Test de Conexión Supabase</h1>
+  
+  <div class="test-section">
+    <h2>1. Configuración</h2>
+    <div id="config"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>2. Conexión a Supabase</h2>
+    <button onclick="testConnection()">Probar Conexión</button>
+    <div id="connection-result"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>3. Autenticación</h2>
+    <input type="email" id="email" placeholder="Email" style="padding: 8px; margin: 5px; width: 200px;">
+    <input type="password" id="password" placeholder="Password" style="padding: 8px; margin: 5px; width: 200px;">
+    <br>
+    <button onclick="testSignUp()">Crear Cuenta</button>
+    <button onclick="testSignIn()">Iniciar Sesión</button>
+    <button onclick="testSignOut()">Cerrar Sesión</button>
+    <div id="auth-result"></div>
+  </div>
+
+  <div class="test-section">
+    <h2>4. Edge Functions</h2>
+    <button onclick="testClockFunction()">Probar Clock Function</button>
+    <button onclick="testListPeople()">Probar List People</button>
+    <div id="functions-result"></div>
+  </div>
+
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+    // Obtener variables de entorno (en producción vendrían de import.meta.env)
+    const SUPABASE_URL = 'https://fyyhkdishlythkdnojdh.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5eWhrZGlzaGx5dGhrZG5vamRoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI5ODIyNzksImV4cCI6MjA3ODU1ODI3OX0.1tAqRaA9hDl1wozBxYzA9Ms1mHVULtJbdAgoRLgy5jk';
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    window.supabase = supabase;
+
+    // Mostrar configuración
+    document.getElementById('config').innerHTML = `
+      <p><strong>URL:</strong> ${SUPABASE_URL}</p>
+      <p><strong>Anon Key:</strong> ${SUPABASE_ANON_KEY.substring(0, 30)}...</p>
+    `;
+
+    // Test de conexión
+    window.testConnection = async () => {
+      const resultDiv = document.getElementById('connection-result');
+      resultDiv.innerHTML = '<p class="info">Probando conexión...</p>';
+      
+      try {
+        const { data, error } = await supabase.from('profiles').select('count').limit(1);
+        if (error && error.code !== 'PGRST116') throw error;
+        resultDiv.innerHTML = '<p class="success">✅ Conexión exitosa a Supabase</p>';
+      } catch (error) {
+        resultDiv.innerHTML = `<p class="error">❌ Error: ${error.message}</p>`;
+      }
+    };
+
+    // Test de registro
+    window.testSignUp = async () => {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const resultDiv = document.getElementById('auth-result');
+      
+      if (!email || !password) {
+        resultDiv.innerHTML = '<p class="error">❌ Email y password requeridos</p>';
+        return;
+      }
+
+      resultDiv.innerHTML = '<p class="info">Creando cuenta...</p>';
+      
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+        
+        if (error) throw error;
+        resultDiv.innerHTML = `<p class="success">✅ Cuenta creada: ${data.user?.email}</p>`;
+      } catch (error) {
+        resultDiv.innerHTML = `<p class="error">❌ Error: ${error.message}</p>`;
+      }
+    };
+
+    // Test de inicio de sesión
+    window.testSignIn = async () => {
+      const email = document.getElementById('email').value;
+      const password = document.getElementById('password').value;
+      const resultDiv = document.getElementById('auth-result');
+      
+      if (!email || !password) {
+        resultDiv.innerHTML = '<p class="error">❌ Email y password requeridos</p>';
+        return;
+      }
+
+      resultDiv.innerHTML = '<p class="info">Iniciando sesión...</p>';
+      
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        
+        if (error) throw error;
+        resultDiv.innerHTML = `<p class="success">✅ Sesión iniciada: ${data.user?.email}</p>`;
+      } catch (error) {
+        resultDiv.innerHTML = `<p class="error">❌ Error: ${error.message}</p>`;
+      }
+    };
+
+    // Test de cierre de sesión
+    window.testSignOut = async () => {
+      const resultDiv = document.getElementById('auth-result');
+      resultDiv.innerHTML = '<p class="info">Cerrando sesión...</p>';
+      
+      try {
+        const { error } = await supabase.auth.signOut();
+        if (error) throw error;
+        resultDiv.innerHTML = '<p class="success">✅ Sesión cerrada</p>';
+      } catch (error) {
+        resultDiv.innerHTML = `<p class="error">❌ Error: ${error.message}</p>`;
+      }
+    };
+
+    // Test de función clock
+    window.testClockFunction = async () => {
+      const resultDiv = document.getElementById('functions-result');
+      resultDiv.innerHTML = '<p class="info">Probando función clock...</p>';
+      
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          resultDiv.innerHTML = '<p class="error">❌ Necesitas iniciar sesión primero</p>';
+          return;
+        }
+
+        const { data, error } = await supabase.functions.invoke('clock', {
+          body: {
+            action: 'in',
+            source: 'web',
+          },
+        });
+        
+        if (error) throw error;
+        resultDiv.innerHTML = `<p class="success">✅ Clock function funcionó</p><pre>${JSON.stringify(data, null, 2)}</pre>`;
+      } catch (error) {
+        resultDiv.innerHTML = `<p class="error">❌ Error: ${error.message}</p>`;
+      }
+    };
+
+    // Test de función list-people
+    window.testListPeople = async () => {
+      const resultDiv = document.getElementById('functions-result');
+      resultDiv.innerHTML = '<p class="info">Probando función list-people...</p>';
+      
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          resultDiv.innerHTML = '<p class="error">❌ Necesitas iniciar sesión primero</p>';
+          return;
+        }
+
+        const { data, error } = await supabase.functions.invoke('list-people');
+        
+        if (error) throw error;
+        resultDiv.innerHTML = `<p class="success">✅ List-people function funcionó</p><pre>${JSON.stringify(data, null, 2)}</pre>`;
+      } catch (error) {
+        resultDiv.innerHTML = `<p class="error">❌ Error: ${error.message}</p>`;
+      }
+    };
+
+    // Verificar sesión al cargar
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        document.getElementById('auth-result').innerHTML = 
+          `<p class="success">✅ Sesión activa: ${session.user.email}</p>`;
+      }
+    });
+  </script>
+</body>
+</html>
+

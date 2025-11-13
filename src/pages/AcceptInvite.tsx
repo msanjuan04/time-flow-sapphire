@@ -51,6 +51,7 @@ const AcceptInvite = () => {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [loginCode, setLoginCode] = useState<string | null>(null);
 
   useEffect(() => {
     if (token) {
@@ -60,6 +61,16 @@ const AcceptInvite = () => {
       setLoading(false);
     }
   }, [token]);
+
+  const fetchLoginCode = async (userId: string) => {
+    const { data } = await supabase
+      .from("profiles")
+      .select("login_code")
+      .eq("id", userId)
+      .maybeSingle();
+
+    setLoginCode(data?.login_code ?? null);
+  };
 
   const validateInvite = async () => {
     try {
@@ -214,12 +225,13 @@ const AcceptInvite = () => {
 
       if (updateError) console.error("Error updating invite status:", updateError);
 
+      await fetchLoginCode(authData.user.id);
       setStep("success");
       
       // Redirect based on role
       setTimeout(() => {
         navigate("/");
-      }, 2000);
+      }, 6000);
     } catch (error) {
       console.error("Error during registration:", error);
       const message = error instanceof Error ? error.message : "Error al crear cuenta";
@@ -303,12 +315,13 @@ const AcceptInvite = () => {
 
       if (updateError) console.error("Error updating invite status:", updateError);
 
+      await fetchLoginCode(authData.user.id);
       setStep("success");
       
       // Redirect to home (role-based redirection happens in Index.tsx)
       setTimeout(() => {
         navigate("/");
-      }, 2000);
+      }, 6000);
     } catch (error) {
       console.error("Error during login:", error);
       const message = error instanceof Error ? error.message : "Error al iniciar sesión";
@@ -361,8 +374,19 @@ const AcceptInvite = () => {
             <p className="text-muted-foreground">
               Te has unido exitosamente a {inviteData?.company_name}
             </p>
+            {loginCode && (
+              <div className="bg-secondary/60 rounded-xl p-4 space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Tu código para iniciar sesión es:
+                </p>
+                <p className="text-3xl font-mono tracking-wider">{loginCode}</p>
+                <p className="text-xs text-muted-foreground">
+                  Guárdalo en un lugar seguro. Lo necesitarás en /auth.
+                </p>
+              </div>
+            )}
             <p className="text-sm text-muted-foreground">
-              Redirigiendo...
+              Serás redirigido en unos segundos...
             </p>
           </Card>
         </motion.div>

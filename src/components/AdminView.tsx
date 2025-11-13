@@ -41,6 +41,7 @@ interface RawRecentEvent extends Partial<RecentEvent> {
   event_type: string;
   event_time: string;
   profile?: RecentEventProfile | null;
+  profiles?: RecentEventProfile | null;
 }
 
 const AdminView = () => {
@@ -185,7 +186,8 @@ const AdminView = () => {
         id,
         event_type,
         event_time,
-        profile:profiles(full_name, email)
+        user_id,
+        profiles!time_events_user_id_fkey(full_name, email)
       `)
       .eq("company_id", companyId)
       .order("event_time", { ascending: false })
@@ -195,7 +197,7 @@ const AdminView = () => {
       id: event.id,
       event_type: event.event_type,
       event_time: event.event_time,
-      profile: event.profile ?? null,
+      profile: event.profiles ?? event.profile ?? null,
     }));
 
     setRecentEvents(events);
