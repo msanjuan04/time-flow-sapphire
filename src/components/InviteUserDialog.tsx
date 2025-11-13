@@ -57,6 +57,30 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
   const [teams, setTeams] = useState<Team[]>([]);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
 
+  const fetchCenters = useCallback(async () => {
+    if (!companyId) return;
+
+    const { data } = await supabase
+      .from("centers")
+      .select("id, name")
+      .eq("company_id", companyId)
+      .order("name");
+
+    if (data) setCenters(data);
+  }, [companyId]);
+
+  const fetchTeams = useCallback(async () => {
+    if (!companyId) return;
+
+    const { data } = await supabase
+      .from("teams")
+      .select("id, name")
+      .eq("company_id", companyId)
+      .order("name");
+
+    if (data) setTeams(data);
+  }, [companyId]);
+
   const handleCreateCenter = useCallback(async () => {
     if (!companyId) return;
     const name = window.prompt("Nombre del nuevo centro");
@@ -92,30 +116,6 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
     if (data?.id) setTeamId(data.id);
     toast.success("Equipo creado");
   }, [companyId, fetchTeams]);
-
-  const fetchCenters = useCallback(async () => {
-    if (!companyId) return;
-
-    const { data } = await supabase
-      .from("centers")
-      .select("id, name")
-      .eq("company_id", companyId)
-      .order("name");
-
-    if (data) setCenters(data);
-  }, [companyId]);
-
-  const fetchTeams = useCallback(async () => {
-    if (!companyId) return;
-
-    const { data } = await supabase
-      .from("teams")
-      .select("id, name")
-      .eq("company_id", companyId)
-      .order("name");
-
-    if (data) setTeams(data);
-  }, [companyId]);
 
   useEffect(() => {
     if (open && companyId) {
