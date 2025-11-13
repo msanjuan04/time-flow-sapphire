@@ -137,7 +137,6 @@ const WorkerView = () => {
   const callClockAPI = async (action: ClockAction) => {
     setLoading(true);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
       // Ensure we have a location right before sending
       let loc = location;
       if (!loc?.latitude || !loc?.longitude) {

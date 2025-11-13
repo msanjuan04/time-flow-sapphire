@@ -1,149 +1,161 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { User, Session, AuthError } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
 import { useNavigate } from "react-router-dom";
 
+interface AuthUser {
+  id: string;
+  email: string | null;
+  full_name: string | null;
+  is_superadmin?: boolean;
+}
+
+interface MembershipCompany {
+  id: string;
+  name?: string | null;
+}
+
+type Role = "owner" | "admin" | "manager" | "worker";
+
+interface Membership {
+  id: string;
+  company_id: string;
+  role: Role;
+  company?: MembershipCompany | null;
+}
+
+interface Company {
+  id: string;
+  name: string | null;
+  status: string | null;
+  plan: string | null;
+}
+
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
-  signInWithCode: (code: string) => Promise<{ error: Error | null }>;
-  signUp: (email: string, password: string, fullName: string) => Promise<{ error: AuthError | null }>;
-  signOut: () => Promise<void>;
+  user: AuthUser | null;
+  memberships: Membership[];
+  company: Company | null;
   loading: boolean;
+  signInWithCode: (code: string) => Promise<{ error: string | null }>;
+  signOut: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const STORAGE_KEY = "gtiq_auth";
+const SUPABASE_BASE_URL = (import.meta.env.VITE_SUPABASE_URL || "https://fyyhkdishlythkdnojdh.supabase.co").replace(/\/$/, "");
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [memberships, setMemberships] = useState<Membership[]>([]);
+  const [company, setCompany] = useState<Company | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Set up auth state listener
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (event, session) => {
-        setSession(session);
-        setUser(session?.user ?? null);
-        setLoading(false);
+    const cached = localStorage.getItem(STORAGE_KEY);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        setUser(parsed.user ?? null);
+        setMemberships(parsed.memberships ?? []);
+        setCompany(parsed.company ?? null);
+      } catch (error) {
+        console.warn("Failed to parse cached auth state", error);
+        localStorage.removeItem(STORAGE_KEY);
       }
-    );
-
-    // Check for existing session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
+    }
+    setLoading(false);
   }, []);
 
-  const signInWithCode = async (code: string) => {
+  const persistState = (next: {
+    user: AuthUser | null;
+    memberships: Membership[];
+    company: Company | null;
+  }) => {
+    if (!next.user) {
+      localStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  };
+
+  const signInWithCode = async (code: string): Promise<{ error: string | null }> => {
+    if (!/^\d{6}$/.test(code)) {
+      return { error: "INVALID_CODE_FORMAT" };
+    }
+
     try {
-      const { data, error } = await supabase.functions.invoke<{
-        success?: boolean;
-        user?: { id: string; email: string };
-        auth_code?: string;
-        token?: string; // Mantener por compatibilidad
-        type?: "magiclink" | "recovery" | string;
-        error?: string;
-      }>("login-with-code", {
-        body: { code },
+      const response = await fetch(`${SUPABASE_BASE_URL}/functions/v1/login-with-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
       });
 
-      if (error) {
-        console.error("Login code function error:", error);
-        return { error: new Error(error.message || "No se pudo validar el código") };
+      const payload = await response
+        .json()
+        .catch(() => ({ success: false, error: "Respuesta inválida del servidor" }));
+
+      if (!response.ok || !payload?.success) {
+        const errorCode = typeof payload?.error === "string" ? payload.error : "LOGIN_FAILED";
+        return { error: errorCode };
       }
 
-      if (data?.error || !data?.success) {
-        return { error: new Error(data?.error || "Código incorrecto o usuario no encontrado") };
+      if (!payload.user) {
+        return { error: "USER_NOT_FOUND" };
       }
 
-      // Si tenemos access_token y refresh_token directamente, usarlos
-      if (data?.access_token && data?.refresh_token) {
-        try {
-          const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-            access_token: data.access_token,
-            refresh_token: data.refresh_token,
-          });
+      const userData: AuthUser = {
+        id: payload.user.id,
+        email: payload.user.email ?? null,
+        full_name: payload.user.full_name ?? null,
+        is_superadmin: payload.user.is_superadmin ?? false,
+      };
 
-          if (sessionError) {
-            console.error("Set session error:", sessionError);
-            return { error: sessionError };
+      const membershipsData: Membership[] = ((payload.memberships as Membership[]) || []).map((m) => ({
+        id: m.id,
+        company_id: m.company_id,
+        role: m.role as Role,
+        company: m.company ?? null,
+      }));
+
+      const companyData: Company | null = payload.company
+        ? {
+            id: payload.company.id,
+            name: payload.company.name ?? null,
+            status: payload.company.status ?? null,
+            plan: payload.company.plan ?? null,
           }
+        : null;
 
-          if (sessionData.session) {
-            setSession(sessionData.session);
-            setUser(sessionData.session.user ?? null);
-            return { error: null };
-          }
-        } catch (err) {
-          console.error("Error setting session:", err);
-          return { error: err instanceof Error ? err : new Error("Error al establecer sesión") };
-        }
-      }
+      const nextState = {
+        user: userData,
+        memberships: membershipsData,
+        company: companyData,
+      };
 
-      // Si no, intentar usar verifyOtp como fallback
-      const token = data?.token || data?.auth_code;
-      const tokenType = data?.type || 'magiclink';
-      
-      if (token && typeof token === 'string') {
-        try {
-          const { data: sessionData, error: sessionError } = await supabase.auth.verifyOtp({
-            token: token,
-            type: tokenType as 'magiclink' | 'email',
-            email: data?.user?.email || '',
-          });
+      setUser(nextState.user);
+      setMemberships(nextState.memberships);
+      setCompany(nextState.company ?? null);
+      persistState(nextState);
+      navigate("/");
 
-          if (sessionError) {
-            console.error("Verify OTP error:", sessionError);
-            return { error: sessionError };
-          }
-
-          if (sessionData.session) {
-            setSession(sessionData.session);
-            setUser(sessionData.session.user ?? null);
-            return { error: null };
-          }
-        } catch (err) {
-          console.error("Error verifying OTP:", err);
-          return { error: err instanceof Error ? err : new Error("Error al verificar token") };
-        }
-      }
-
-      return { error: new Error("No se pudo crear la sesión. Intenta de nuevo.") };
-    } catch (err) {
-      console.error("Unexpected code login error:", err);
-      return { error: err instanceof Error ? err : new Error("Error inesperado al iniciar sesión") };
+      return { error: null };
+    } catch (error) {
+      console.error("Unexpected code login error:", error);
+      return {
+        error: "NETWORK_ERROR",
+      };
     }
   };
 
-  const signUp = async (email: string, password: string, fullName: string) => {
-    const redirectUrl = `${window.location.origin}/`;
-    
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: redirectUrl,
-        data: {
-          full_name: fullName,
-        }
-      }
-    });
-    return { error };
-  };
-
-  const signOut = async () => {
-    await supabase.auth.signOut();
+  const signOut = () => {
+    setUser(null);
+    setMemberships([]);
+    setCompany(null);
+    localStorage.removeItem(STORAGE_KEY);
     navigate("/auth");
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, signInWithCode, signUp, signOut, loading }}>
+    <AuthContext.Provider value={{ user, memberships, company, loading, signInWithCode, signOut }}>
       {children}
     </AuthContext.Provider>
   );

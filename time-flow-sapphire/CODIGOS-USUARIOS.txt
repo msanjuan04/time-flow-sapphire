@@ -1,0 +1,52 @@
+═══════════════════════════════════════════════════════════════
+  CÓDIGOS DE ACCESO - GTiQ
+═══════════════════════════════════════════════════════════════
+
+IMPORTANTE: Guarda estos códigos en un lugar seguro.
+Los usuarios necesitan estos códigos para iniciar sesión.
+
+───────────────────────────────────────────────────────────────
+  USUARIOS Y SUS CÓDIGOS
+───────────────────────────────────────────────────────────────
+
+1. Superadmin
+   Email: gnerai@gneraitiq.com
+   Código: 521332
+   Rol: Superadmin
+
+2. Owner (Gnerai Systems S.L.)
+   Email: cortadamarc13@gmail.com
+   Código: 033797
+   Rol: Owner
+
+3. Worker (Gnerai Systems S.L.)
+   Email: marcsanjuansard@gmail.com
+   Código: 447407
+   Rol: Worker
+
+───────────────────────────────────────────────────────────────
+  CÓMO USAR
+───────────────────────────────────────────────────────────────
+
+1. Ve a http://localhost:8081/auth
+2. Ingresa tu código de 6 dígitos
+3. Haz clic en "Entrar"
+
+───────────────────────────────────────────────────────────────
+  REGENERAR CÓDIGOS
+───────────────────────────────────────────────────────────────
+
+Para regenerar el código de un usuario, ejecuta en el SQL Editor:
+
+UPDATE public.profiles
+SET login_code = LPAD(FLOOR(RANDOM() * 1000000)::TEXT, 6, '0')
+WHERE id = 'USER_ID_AQUI';
+
+Luego consulta el nuevo código:
+SELECT u.email, p.login_code
+FROM public.profiles p
+JOIN auth.users u ON u.id = p.id
+WHERE p.id = 'USER_ID_AQUI';
+
+═══════════════════════════════════════════════════════════════
+

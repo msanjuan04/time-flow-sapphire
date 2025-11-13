@@ -63,8 +63,8 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
             <Button
               variant="destructive"
               className="w-full"
-              onClick={async () => {
-                await signOut();
+              onClick={() => {
+                signOut();
                 navigate("/auth", { replace: true });
               }}
             >

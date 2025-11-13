@@ -8,11 +8,8 @@ const Logout = () => {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const doLogout = async () => {
-      await signOut();
-      navigate("/auth", { replace: true });
-    };
-    doLogout();
+    signOut();
+    navigate("/auth", { replace: true });
   }, [signOut, navigate]);
 
   return (
@@ -26,4 +23,3 @@ const Logout = () => {
 };
 
 export default Logout;
-

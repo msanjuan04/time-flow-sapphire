@@ -63,7 +63,7 @@ interface WorkSessionSummary {
 }
 
 const ManagerView = () => {
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
   const { companyId, membership } = useMembership();
   const navigate = useNavigate();
   const [stats, setStats] = useState({
@@ -78,8 +78,8 @@ const ManagerView = () => {
   const [profileLoaded, setProfileLoaded] = useState(false);
 
   const fetchManagerProfile = useCallback(async () => {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) {
+    if (!user?.id) {
+      setManagerProfile(null);
       setProfileLoaded(true);
       return;
     }
@@ -87,12 +87,12 @@ const ManagerView = () => {
     const { data: profile } = await supabase
       .from("profiles")
       .select("center_id, team_id")
-      .eq("id", data.user.id)
+      .eq("id", user.id)
       .single();
 
     setManagerProfile(profile || null);
     setProfileLoaded(true);
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     if (companyId) {

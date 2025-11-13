@@ -1,0 +1,58 @@
+import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+import { handleCorsOptions, createJsonResponse, createErrorResponse } from "../_shared/cors.ts";
+import { requireSuperadmin, writeAudit, extractRequestMetadata } from "../_shared/admin.ts";
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return handleCorsOptions();
+  }
+
+  try {
+    const { supabase, user } = await requireSuperadmin(req);
+    const { ip, user_agent } = extractRequestMetadata(req);
+
+    const body = await req.json().catch(() => ({}));
+    const name = (body.name || "").toString().trim();
+
+    if (!name) {
+      return createErrorResponse("Company name is required", 400);
+    }
+
+    // Service role client bypasses RLS but we need to set owner_user_id
+    // We'll set it to null initially and let the superadmin assign an owner later
+    const { data: company, error } = await supabase
+      .from("companies")
+      .insert({ 
+        name, 
+        status: "active", 
+        plan: "enterprise",
+        owner_user_id: null 
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Create company error:", error);
+      return createErrorResponse("Failed to create company", 500);
+    }
+
+    await writeAudit(supabase, {
+      actor_user_id: user.id,
+      action: "admin_create_company",
+      entity_type: "company",
+      entity_id: company.id,
+      diff: { name },
+      ip,
+      user_agent,
+    });
+
+    return createJsonResponse({ success: true, company });
+  } catch (error) {
+    console.error("Admin create company error:", error);
+    const message = error instanceof Error ? error.message : "Failed to create company";
+    if (message.includes("Unauthorized") || message.includes("Forbidden")) {
+      return createErrorResponse(message, 403);
+    }
+    return createErrorResponse("Failed to create company", 500);
+  }
+});

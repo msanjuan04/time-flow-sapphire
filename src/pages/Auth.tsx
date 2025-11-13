@@ -1,8 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
@@ -10,8 +9,8 @@ import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 
 const Auth = () => {
   const [code, setCode] = useState("");
-  const [loading, setLoading] = useState(false);
-  const { signInWithCode, user } = useAuth();
+  const [submitting, setSubmitting] = useState(false);
+  const { signInWithCode, user, loading } = useAuth();
   const navigate = useNavigate();
   useDocumentTitle("Iniciar sesión • GTiQ");
 
@@ -29,21 +28,27 @@ const Auth = () => {
       return;
     }
 
-    setLoading(true);
+    setSubmitting(true);
 
     try {
       const { error } = await signInWithCode(code);
       if (error) {
-        toast.error(error.message || "Código incorrecto o usuario no encontrado");
+        const message = error === "INVALID_CODE"
+          ? "Código incorrecto o expirado"
+          : error === "INVALID_CODE_FORMAT"
+            ? "El código debe tener 6 dígitos"
+            : "No se pudo crear la sesión. Intenta de nuevo.";
+        toast.error(message);
         return;
       }
+
       toast.success("¡Bienvenido de nuevo!");
       navigate("/");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error inesperado";
       toast.error(message);
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
@@ -66,29 +71,29 @@ const Auth = () => {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="code">Código de acceso</Label>
-              <Input
-                id="code"
-                type="text"
-                inputMode="numeric"
-                pattern="[0-9]{6}"
-                maxLength={6}
-                placeholder="123456"
+            <div className="space-y-3 text-center">
+              <p className="text-sm text-muted-foreground">Código de acceso</p>
+              <InputOTP
                 value={code}
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                required
-                className="glass-card"
+                onChange={(value) => setCode(value.replace(/\D/g, ""))}
+                maxLength={6}
                 autoFocus
-              />
+                containerClassName="justify-center"
+              >
+                <InputOTPGroup>
+                  {[...Array(6)].map((_, index) => (
+                    <InputOTPSlot key={index} index={index} className="text-xl" />
+                  ))}
+                </InputOTPGroup>
+              </InputOTP>
             </div>
 
             <Button
               type="submit"
               className="w-full smooth-transition"
-              disabled={loading}
+              disabled={loading || submitting || code.length !== 6}
             >
-              {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {(loading || submitting) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Entrar
             </Button>
           </form>

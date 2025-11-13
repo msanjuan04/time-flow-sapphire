@@ -136,41 +136,7 @@ const WorkerReports = () => {
   };
 
   const exportPDF = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/generate-worker-report`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session?.access_token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            period,
-            userId: user?.id,
-            companyId,
-          }),
-        }
-      );
-
-      if (!response.ok) throw new Error('Error generating PDF');
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `reporte_${period}_${new Date().toISOString().split('T')[0]}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-
-      toast.success("PDF generado correctamente");
-    } catch (error) {
-      toast.error("Error al generar el PDF");
-    }
+    toast.error("La exportación avanzada estará disponible próximamente");
   };
 
   const hoursRemaining = Math.max(0, expectedHours - totalHours);
