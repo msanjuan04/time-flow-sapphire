@@ -10,13 +10,21 @@ interface SuperadminContext {
  * @throws Error if user is not authenticated or not a superadmin
  */
 export async function requireSuperadmin(req: Request): Promise<SuperadminContext> {
+  const authHeader = req.headers.get("Authorization");
+  console.log("requireSuperadmin called with Authorization:", authHeader ? "present" : "missing");
+  
+  if (!authHeader) {
+    console.error("No Authorization header");
+    throw new Error("Unauthorized: No authorization header");
+  }
+
   // Use an authenticated client to verify user + role
   const authClient = createClient(
     Deno.env.get("SUPABASE_URL") ?? "",
     Deno.env.get("SUPABASE_ANON_KEY") ?? "",
     {
       global: {
-        headers: { Authorization: req.headers.get("Authorization")! },
+        headers: { Authorization: authHeader },
       },
     }
   );
@@ -32,6 +40,8 @@ export async function requireSuperadmin(req: Request): Promise<SuperadminContext
     throw new Error("Unauthorized: No valid session");
   }
 
+  console.log("User authenticated:", user.id);
+
   // Check if user is superadmin
   const { data: isSuperadmin, error: superadminError } = await authClient.rpc("is_superadmin");
 
@@ -44,6 +54,8 @@ export async function requireSuperadmin(req: Request): Promise<SuperadminContext
     console.warn(`User ${user.id} attempted to access superadmin endpoint`);
     throw new Error("Forbidden: Superadmin access required");
   }
+
+  console.log("User is superadmin, allowing access");
 
   // After verifying superadmin, use service role client to bypass RLS for admin operations
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
