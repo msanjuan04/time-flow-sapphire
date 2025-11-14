@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
 
 interface AuthUser {
   id: string;
@@ -63,9 +64,25 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setUser(parsed.user ?? null);
         setMemberships(parsed.memberships ?? []);
         setCompany(parsed.company ?? null);
+        
+        // Restore Supabase session if tokens exist
+        const tokensStr = localStorage.getItem(TOKENS_KEY);
+        if (tokensStr) {
+          const tokens = JSON.parse(tokensStr);
+          if (tokens.access_token && tokens.refresh_token) {
+            supabase.auth.setSession({
+              access_token: tokens.access_token,
+              refresh_token: tokens.refresh_token,
+            }).catch((err) => {
+              console.error("Failed to restore session:", err);
+              localStorage.removeItem(TOKENS_KEY);
+            });
+          }
+        }
       } catch (error) {
         console.warn("Failed to parse cached auth state", error);
         localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem(TOKENS_KEY);
       }
     }
     setLoading(false);
@@ -153,7 +170,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       // Store auth tokens
       if (payload.access_token && payload.refresh_token) {
-        persistTokens({
+        const tokens = {
+          access_token: payload.access_token,
+          refresh_token: payload.refresh_token,
+        };
+        persistTokens(tokens);
+        
+        // Set Supabase session
+        await supabase.auth.setSession({
           access_token: payload.access_token,
           refresh_token: payload.refresh_token,
         });
@@ -170,7 +194,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const signOut = () => {
+  const signOut = async () => {
+    await supabase.auth.signOut();
     setUser(null);
     setMemberships([]);
     setCompany(null);
