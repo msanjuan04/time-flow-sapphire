@@ -1,6 +1,4 @@
-const FUNCTIONS_BASE = (import.meta.env.VITE_SUPABASE_URL || "https://fyyhkdishlythkdnojdh.supabase.co").replace(/\/$/, "");
-const STORAGE_KEY = "gtiq_auth";
-const TOKENS_KEY = "gtiq_tokens";
+import { supabase } from "@/integrations/supabase/client";
 
 /**
  * Client-side helpers for admin operations
@@ -21,32 +19,16 @@ export async function callAdminFunction<T = unknown>(
   options: AdminCallOptions = {}
 ): Promise<{ data: T | null; error: Error | null }> {
   try {
-    // Get auth token from storage
-    const tokensStr = localStorage.getItem(TOKENS_KEY);
-    const tokens = tokensStr ? JSON.parse(tokensStr) : null;
-    const accessToken = tokens?.access_token;
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    if (accessToken) {
-      headers["Authorization"] = `Bearer ${accessToken}`;
-    }
-
-    const response = await fetch(`${FUNCTIONS_BASE}/functions/v1/${functionName}`, {
-      method: options.method ?? (options.body ? "POST" : "GET"),
-      headers,
-      body: options.body ? JSON.stringify(options.body) : undefined,
+    const { data, error } = await supabase.functions.invoke(functionName, {
+      body: options.body,
+      method: options.method,
     });
 
-    if (!response.ok) {
-      const text = await response.text().catch(() => "");
-      throw new Error(text || `Admin function ${functionName} failed`);
+    if (error) {
+      throw error;
     }
 
-    const data = (await response.json().catch(() => null)) as T | null;
-    return { data, error: null };
+    return { data: data as T, error: null };
   } catch (error) {
     console.error(`Failed to call admin function ${functionName}:`, error);
     return {
@@ -61,10 +43,8 @@ export async function callAdminFunction<T = unknown>(
  */
 export async function checkSuperadmin(): Promise<boolean> {
   try {
-    const cached = localStorage.getItem(STORAGE_KEY);
-    if (!cached) return false;
-    const parsed = JSON.parse(cached);
-    return Boolean(parsed?.user?.is_superadmin);
+    const { data } = await supabase.rpc("is_superadmin");
+    return Boolean(data);
   } catch (error) {
     console.error("Failed to check superadmin status:", error);
     return false;

@@ -47,3 +47,33 @@ verify_jwt = false
 
 [functions.create-company-user]
 verify_jwt = false
+
+[functions.admin-list-companies]
+verify_jwt = true
+
+[functions.admin-stats]
+verify_jwt = true
+
+[functions.admin-list-logs]
+verify_jwt = true
+
+[functions.admin-get-company]
+verify_jwt = true
+
+[functions.admin-set-company-status]
+verify_jwt = true
+
+[functions.admin-impersonate]
+verify_jwt = true
+
+[functions.admin-stop-impersonate]
+verify_jwt = true
+
+[functions.admin-transfer-ownership]
+verify_jwt = true
+
+[functions.admin-autoclose-sessions]
+verify_jwt = true
+
+[functions.admin-example]
+verify_jwt = true
