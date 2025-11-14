@@ -8,24 +8,71 @@ interface Membership {
   id: string;
   role: UserRole;
   company_id: string;
-  company: {
+  company?: {
     id: string;
     name: string;
-  };
+  } | null;
 }
 
 const ACTIVE_COMPANY_KEY = "active_company_id";
 const IMPERSONATION_KEY = "superadmin_impersonation";
 
 export const useMembership = () => {
-  const { user } = useAuth();
+  const { user, memberships: cachedMemberships } = useAuth();
   const [memberships, setMemberships] = useState<Membership[]>([]);
   const [activeMembership, setActiveMembership] = useState<Membership | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const hydrateActiveMembership = (list: Membership[]) => {
+    const storedCompanyId = localStorage.getItem(ACTIVE_COMPANY_KEY);
+    let active = list.find((m) => m.company_id === storedCompanyId);
+
+    if (!active && list.length > 0) {
+      active = list[0];
+      localStorage.setItem(ACTIVE_COMPANY_KEY, active.company_id);
+    }
+
+    setActiveMembership(active || null);
+  };
+
+  const fetchMembershipsFromSupabase = async (userId: string) => {
+    const { data, error } = await supabase
+      .from("memberships")
+      .select(`
+        id,
+        role,
+        company_id,
+        company:companies(id, name)
+      `)
+      .eq("user_id", userId);
+
+    if (error) {
+      console.error("Error fetching memberships:", error);
+      setMemberships([]);
+      setActiveMembership(null);
+      setLoading(false);
+      return;
+    }
+
+    const membershipsList = (data || []) as Membership[];
+    setMemberships(membershipsList);
+    hydrateActiveMembership(membershipsList);
+    setLoading(false);
+  };
+
   useEffect(() => {
-    const fetchMemberships = async () => {
+    const resolveMemberships = async () => {
       if (!user) {
+        setMemberships([]);
+        setActiveMembership(null);
+        setLoading(false);
+        return;
+      }
+
+      // First, try to use the memberships we already have in AuthContext
+      if (cachedMemberships && cachedMemberships.length > 0) {
+        setMemberships(cachedMemberships as Membership[]);
+        hydrateActiveMembership(cachedMemberships as Membership[]);
         setLoading(false);
         return;
       }
@@ -66,41 +113,11 @@ export const useMembership = () => {
         }
       }
 
-      // Normal flow: fetch user's actual memberships
-      const { data, error } = await supabase
-        .from("memberships")
-        .select(`
-          id,
-          role,
-          company_id,
-          company:companies(id, name)
-        `)
-        .eq("user_id", user.id);
-
-      if (error) {
-        console.error("Error fetching memberships:", error);
-        setLoading(false);
-        return;
-      }
-
-      const membershipsList = (data || []) as Membership[];
-      setMemberships(membershipsList);
-
-      // Get stored company or use first one
-      const storedCompanyId = localStorage.getItem(ACTIVE_COMPANY_KEY);
-      let active = membershipsList.find(m => m.company_id === storedCompanyId);
-      
-      if (!active && membershipsList.length > 0) {
-        active = membershipsList[0];
-        localStorage.setItem(ACTIVE_COMPANY_KEY, active.company_id);
-      }
-
-      setActiveMembership(active || null);
-      setLoading(false);
+      await fetchMembershipsFromSupabase(user.id);
     };
 
-    fetchMemberships();
-  }, [user]);
+    resolveMemberships();
+  }, [user, cachedMemberships]);
 
   const switchCompany = (companyId: string) => {
     const newMembership = memberships.find(m => m.company_id === companyId);

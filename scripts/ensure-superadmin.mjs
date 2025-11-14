@@ -90,6 +90,7 @@ async function ensureSuperadmin() {
       email: TARGET_EMAIL,
       full_name: fullName,
       is_active: true,
+      is_superadmin: true, // Set is_superadmin flag
     },
     { onConflict: "id" }
   );

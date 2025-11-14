@@ -33,7 +33,7 @@ serve(async (req) => {
 
     const { data: profile } = await db
       .from("profiles")
-      .select("id, email, full_name")
+      .select("id, email, full_name, is_superadmin")
       .eq("login_code", normalized)
       .maybeSingle();
 
@@ -83,31 +83,42 @@ serve(async (req) => {
 
     console.log("Token generated for verification");
 
-    // Check if user is superadmin
-    const { data: superadminCheck } = await db
-      .from("superadmins")
-      .select("user_id")
-      .eq("user_id", profile.id)
-      .maybeSingle();
+    // Check if user is superadmin - prioritize flag in profiles, fallback to superadmins table
+    let is_superadmin = profile.is_superadmin === true;
+    
+    // If flag is not set but user is in superadmins table, update the flag
+    if (!is_superadmin) {
+      const { data: superadminCheck } = await db
+        .from("superadmins")
+        .select("user_id")
+        .eq("user_id", profile.id)
+        .maybeSingle();
 
-    const is_superadmin = !!superadminCheck;
+      if (superadminCheck) {
+        // User is in superadmins table but flag is not set, update it
+        await db
+          .from("profiles")
+          .update({ is_superadmin: true })
+          .eq("id", profile.id);
+        is_superadmin = true;
+        profile.is_superadmin = true;
+        console.log("Updated is_superadmin flag for user in superadmins table");
+      }
+    }
+    
     console.log("Is superadmin:", is_superadmin);
 
     const { data: memberships } = await db
       .from("memberships")
-      .select("id, company_id, role")
+      .select(`
+        id,
+        company_id,
+        role,
+        company:companies(id, name, status, plan)
+      `)
       .eq("user_id", profile.id);
 
-    let company = null;
-    if (memberships?.length > 0) {
-      const { data: c } = await db
-        .from("companies")
-        .select("id, name, status, plan")
-        .eq("id", memberships[0].company_id)
-        .maybeSingle();
-
-      company = c ?? null;
-    }
+    const primaryCompany = memberships?.[0]?.company ?? null;
 
     try {
       const { ip, user_agent } = extractRequestMetadata(req);
@@ -127,7 +138,8 @@ serve(async (req) => {
       success: true,
       user: { ...profile, is_superadmin },
       memberships: memberships || [],
-      company,
+      company: primaryCompany,
+      token_hash: hashedToken,
       hashed_token: hashedToken,
       verification_type: "magiclink",
     });

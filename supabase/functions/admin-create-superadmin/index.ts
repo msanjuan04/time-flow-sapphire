@@ -51,17 +51,34 @@ serve(async (req) => {
       );
     }
 
-    // Add user to superadmins table
+    // Create or update profile with is_superadmin = true
+    const { error: profileError } = await supabaseAdmin
+      .from('profiles')
+      .upsert({
+        id: userData.user.id,
+        email: userData.user.email,
+        full_name: userData.user.user_metadata?.full_name || fullName || email.split('@')[0],
+        is_superadmin: true, // Set is_superadmin flag
+        is_active: true,
+      }, { onConflict: 'id' });
+
+    if (profileError) {
+      console.error("Error creating/updating profile:", profileError);
+      return new Response(
+        JSON.stringify({ error: "User created but failed to create profile" }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Add user to superadmins table (for backward compatibility)
     const { error: superadminError } = await supabaseAdmin
       .from('superadmins')
       .insert({ user_id: userData.user.id });
 
     if (superadminError) {
       console.error("Error adding to superadmins:", superadminError);
-      return new Response(
-        JSON.stringify({ error: "User created but failed to add superadmin role" }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      // Don't fail if superadmins insert fails, is_superadmin flag is already set
+      console.warn("Warning: Could not add to superadmins table, but is_superadmin flag is set");
     }
 
     console.log(`Superadmin created: ${email}`);

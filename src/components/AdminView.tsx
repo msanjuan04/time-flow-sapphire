@@ -46,7 +46,7 @@ interface RawRecentEvent extends Partial<RecentEvent> {
 
 const AdminView = () => {
   const { signOut } = useAuth();
-  const { companyId, membership } = useMembership();
+  const { companyId, membership, loading: membershipLoading } = useMembership();
   const navigate = useNavigate();
   const [stats, setStats] = useState({
     activeUsers: 0,
@@ -246,6 +246,29 @@ const AdminView = () => {
     }
   };
 
+  if (loading || membershipLoading || !companyId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-primary/10">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!membership) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
+        <Card className="glass-card max-w-md w-full p-6 text-center space-y-4">
+          <AlertCircle className="w-10 h-10 mx-auto text-amber-500" />
+          <h2 className="text-xl font-semibold">No encontramos tu empresa</h2>
+          <p className="text-muted-foreground">
+            Tu sesión no tiene una empresa asignada. Cierra sesión e inténtalo de nuevo o contacta con un administrador.
+          </p>
+          <Button onClick={signOut}>Cerrar sesión</Button>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
       <div className="max-w-7xl mx-auto space-y-6 pt-8 animate-fade-in">
@@ -294,7 +317,7 @@ const AdminView = () => {
             <div>
               <h1 className="text-2xl font-bold">Dashboard</h1>
               <p className="text-sm text-muted-foreground">
-                {membership?.company.name}
+                {membership?.company?.name ?? "Empresa sin nombre"}
               </p>
             </div>
           </div>

@@ -3,13 +3,12 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { SuperadminRoute } from "@/components/SuperadminRoute";
+import { AuthProvider, useAuth, Membership } from "@/contexts/AuthContext";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import ThemeToggle from "@/components/ThemeToggle";
 
 // Lazy-loaded pages (renombradas a *Page para evitar choques de nombres)
-const IndexPage = lazy(() => import("./pages/Index"));
+const RoleRedirectPage = lazy(() => import("./pages/RoleRedirect"));
 const AuthPage = lazy(() => import("./pages/Auth"));
 const EmployeesPage = lazy(() => import("./pages/Employees"));
 const PeoplePage = lazy(() => import("./pages/People"));
@@ -31,11 +30,23 @@ const AdminLogsPage = lazy(() => import("./pages/AdminLogs"));
 const NotFoundPage = lazy(() => import("./pages/NotFound"));
 const LogoutPage = lazy(() => import("./pages/Logout"));
 const LegalPage = lazy(() => import("./pages/Legal"));
+const AccessIssuePage = lazy(() => import("./pages/AccessIssue"));
+const CompanyDashboardPage = lazy(() => import("./pages/CompanyDashboard"));
+const WorkerClockPage = lazy(() => import("./pages/WorkerClock"));
+const WorkerHistoryPage = lazy(() => import("./pages/WorkerHistory"));
 
 const queryClient = new QueryClient();
 
-const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
-  const { user, loading } = useAuth();
+type AllowedRole = "superadmin" | Membership["role"];
+
+const ProtectedRoute = ({
+  children,
+  allowedRoles,
+}: {
+  children: JSX.Element;
+  allowedRoles?: AllowedRole[];
+}) => {
+  const { user, loading, memberships } = useAuth();
 
   if (loading) {
     return (
@@ -47,6 +58,16 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
 
   if (!user) {
     return <Navigate to="/auth" replace />;
+  }
+
+  if (allowedRoles && allowedRoles.length > 0) {
+    const primaryRole: AllowedRole | null = user.is_superadmin
+      ? "superadmin"
+      : memberships[0]?.role ?? null;
+
+    if (!primaryRole || !allowedRoles.includes(primaryRole)) {
+      return <Navigate to="/access-issue?reason=no-role" replace />;
+    }
   }
 
   return children;
@@ -62,17 +83,36 @@ const App = () => (
         <ImpersonationBanner />
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-muted-foreground">Cargando...</div>}>
           <Routes>
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <IndexPage />
-                </ProtectedRoute>
-              }
-            />
+            <Route path="/" element={<RoleRedirectPage />} />
             <Route path="/auth" element={<AuthPage />} />
             <Route path="/logout" element={<LogoutPage />} />
             <Route path="/legal" element={<LegalPage />} />
+            <Route path="/access-issue" element={<AccessIssuePage />} />
+
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute allowedRoles={["owner", "admin", "manager"]}>
+                  <CompanyDashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/me/clock"
+              element={
+                <ProtectedRoute allowedRoles={["worker"]}>
+                  <WorkerClockPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/me/history"
+              element={
+                <ProtectedRoute allowedRoles={["worker"]}>
+                  <WorkerHistoryPage />
+                </ProtectedRoute>
+              }
+            />
 
             <Route
               path="/employees"
@@ -160,50 +200,40 @@ const App = () => (
             <Route
               path="/admin"
               element={
-                <ProtectedRoute>
-                  <SuperadminRoute>
-                    <AdminOverviewPage />
-                  </SuperadminRoute>
+                <ProtectedRoute allowedRoles={["superadmin"]}>
+                  <AdminOverviewPage />
                 </ProtectedRoute>
               }
             />
             <Route
               path="/admin/companies"
               element={
-                <ProtectedRoute>
-                  <SuperadminRoute>
-                    <AdminCompaniesPage />
-                  </SuperadminRoute>
+                <ProtectedRoute allowedRoles={["superadmin"]}>
+                  <AdminCompaniesPage />
                 </ProtectedRoute>
               }
             />
             <Route
               path="/admin/companies/:id"
               element={
-                <ProtectedRoute>
-                  <SuperadminRoute>
-                    <AdminCompanyDetailPage />
-                  </SuperadminRoute>
+                <ProtectedRoute allowedRoles={["superadmin"]}>
+                  <AdminCompanyDetailPage />
                 </ProtectedRoute>
               }
             />
             <Route
               path="/admin/users"
               element={
-                <ProtectedRoute>
-                  <SuperadminRoute>
-                    <AdminUsersPage />
-                  </SuperadminRoute>
+                <ProtectedRoute allowedRoles={["superadmin"]}>
+                  <AdminUsersPage />
                 </ProtectedRoute>
               }
             />
             <Route
               path="/admin/logs"
               element={
-                <ProtectedRoute>
-                  <SuperadminRoute>
-                    <AdminLogsPage />
-                  </SuperadminRoute>
+                <ProtectedRoute allowedRoles={["superadmin"]}>
+                  <AdminLogsPage />
                 </ProtectedRoute>
               }
             />

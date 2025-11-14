@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { resolveDefaultRoute } from "@/lib/routeResolver";
 
-interface AuthUser {
+export interface AuthUser {
   id: string;
   email: string | null;
   full_name: string | null;
@@ -19,9 +20,9 @@ interface MembershipCompany {
   name?: string | null;
 }
 
-type Role = "owner" | "admin" | "manager" | "worker";
+export type Role = "owner" | "admin" | "manager" | "worker";
 
-interface Membership {
+export interface Membership {
   id: string;
   company_id: string;
   role: Role;
@@ -48,6 +49,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const STORAGE_KEY = "gtiq_auth";
 const TOKENS_KEY = "gtiq_tokens";
 const SUPABASE_BASE_URL = (import.meta.env.VITE_SUPABASE_URL || "https://fyyhkdishlythkdnojdh.supabase.co").replace(/\/$/, "");
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -56,39 +58,41 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
+  const clearStoredAuth = () => {
+    setUser(null);
+    setMemberships([]);
+    setCompany(null);
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(TOKENS_KEY);
+  };
+
   useEffect(() => {
-    const cached = localStorage.getItem(STORAGE_KEY);
-    if (cached) {
+    let isMounted = true;
+
+    const initialize = async () => {
+      clearStoredAuth();
       try {
-        const parsed = JSON.parse(cached);
-        setUser(parsed.user ?? null);
-        setMemberships(parsed.memberships ?? []);
-        setCompany(parsed.company ?? null);
-        
-        // Restore Supabase session if tokens exist
-        const tokensStr = localStorage.getItem(TOKENS_KEY);
-        if (tokensStr) {
-          const tokens = JSON.parse(tokensStr);
-          if (tokens.access_token && tokens.refresh_token) {
-            console.log("Restoring Supabase session from storage");
-            supabase.auth.setSession({
-              access_token: tokens.access_token,
-              refresh_token: tokens.refresh_token,
-            }).then(() => {
-              console.log("Session restored successfully");
-            }).catch((err) => {
-              console.error("Failed to restore session:", err);
-              localStorage.removeItem(TOKENS_KEY);
-            });
-          }
-        }
+        await supabase.auth.signOut();
       } catch (error) {
-        console.warn("Failed to parse cached auth state", error);
-        localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem(TOKENS_KEY);
+        console.warn("Failed to sign out during init:", error);
       }
-    }
-    setLoading(false);
+
+      if (isMounted) {
+        setLoading(false);
+      }
+    };
+
+    initialize();
+
+    const handleUnload = () => {
+      clearStoredAuth();
+    };
+
+    window.addEventListener("beforeunload", handleUnload);
+    return () => {
+      isMounted = false;
+      window.removeEventListener("beforeunload", handleUnload);
+    };
   }, []);
 
   const persistState = (next: {
@@ -121,7 +125,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       console.log("Attempting login with code:", code);
       const response = await fetch(`${SUPABASE_BASE_URL}/functions/v1/login-with-code`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(SUPABASE_ANON_KEY ? {
+            apikey: SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          } : {}),
+        },
         body: JSON.stringify({ code }),
       });
 
@@ -140,29 +150,58 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return { error: "USER_NOT_FOUND" };
       }
 
-      // If we received a hashed_token, verify it to get proper session
-      if (payload.hashed_token) {
-        console.log("Verifying hashed token to establish session");
-        
-        const { data: sessionData, error: verifyError } = await supabase.auth.verifyOtp({
-          token_hash: payload.hashed_token,
-          type: 'magiclink',
+      const tokenHash = payload.token_hash || payload.hashed_token || null;
+      const bareToken = payload.token || null;
+
+      if (payload.access_token && payload.refresh_token) {
+        console.log("Setting session with direct tokens");
+        const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
+          access_token: payload.access_token,
+          refresh_token: payload.refresh_token,
         });
 
-        if (verifyError || !sessionData.session) {
-          console.error("Failed to verify token:", verifyError);
+        if (sessionError || !sessionData.session) {
+          console.error("Failed to set session:", sessionError);
+          return { error: "SESSION_SET_FAILED" };
+        }
+
+        console.log("Session established successfully with direct tokens");
+      } else if (tokenHash || bareToken) {
+        console.log("Verifying OTP token to establish session");
+
+        try {
+          const verifyPayload: Parameters<typeof supabase.auth.verifyOtp>[0] = tokenHash
+            ? {
+                type: (payload.verification_type || "magiclink") as "magiclink" | "email" | "recovery",
+                token_hash: tokenHash,
+              }
+            : (() => {
+                const email = payload.user?.email;
+                if (!email) {
+                  throw new Error("Missing email for OTP verification");
+                }
+                return {
+                  type: (payload.verification_type || "magiclink") as "magiclink" | "email" | "recovery",
+                  token: bareToken as string,
+                  email,
+                };
+              })();
+
+          const { data: sessionData, error: verifyError } = await supabase.auth.verifyOtp(verifyPayload);
+
+          if (verifyError || !sessionData.session) {
+            console.error("Failed to verify token:", verifyError);
+            return { error: "SESSION_VERIFICATION_FAILED" };
+          }
+        } catch (verificationError) {
+          console.error("OTP verification setup failed:", verificationError);
           return { error: "SESSION_VERIFICATION_FAILED" };
         }
 
-        console.log("Session established successfully via token verification");
-        
-        // Session is now established in Supabase client
-        const { data: { session } } = await supabase.auth.getSession();
-        console.log("Verified session:", {
-          hasSession: !!session,
-          userId: session?.user?.id,
-          hasAccessToken: !!session?.access_token
-        });
+        console.log("Session established successfully via OTP verification");
+      } else {
+        console.error("No session tokens received from login-with-code");
+        return { error: "NO_SESSION_TOKENS" };
       }
 
       const userData: AuthUser = {
@@ -210,7 +249,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         });
       }
 
-      navigate("/");
+      const resolved = resolveDefaultRoute(nextState.user, nextState.memberships, nextState.company);
+      if (resolved.route === "/access-issue" && "reason" in resolved) {
+        navigate(`/access-issue?reason=${resolved.reason}`);
+      } else {
+        navigate(resolved.route);
+      }
 
       return { error: null };
     } catch (error) {

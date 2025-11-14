@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Clock, LogIn, LogOut, Coffee, User, MapPin, AlertCircle, Calendar, BarChart3 } from "lucide-react";
+import { Clock, LogIn, LogOut, Coffee, User, MapPin, AlertCircle, Calendar, BarChart3, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -28,7 +28,7 @@ type ClockAction = "in" | "out" | "break_start" | "break_end";
 
 const WorkerView = () => {
   const { user, signOut } = useAuth();
-  const { companyId, membership } = useMembership();
+  const { companyId, membership, loading: membershipLoading } = useMembership();
   const navigate = useNavigate();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [status, setStatus] = useState<WorkerStatus>("out");
@@ -236,6 +236,21 @@ const WorkerView = () => {
         return "bg-amber-500";
     }
   };
+
+  if (!user?.id || membershipLoading || !companyId || !membership?.company) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
+        <Card className="glass-card max-w-md w-full p-6 text-center space-y-4">
+          <Loader2 className="w-8 h-8 mx-auto animate-spin text-primary" />
+          <h2 className="text-lg font-semibold">Preparando tu espacio</h2>
+          <p className="text-muted-foreground text-sm">
+            Estamos cargando la información de tu empresa. Si tarda demasiado, cierra sesión e inicia de nuevo.
+          </p>
+          <Button variant="ghost" onClick={signOut}>Cerrar sesión</Button>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">

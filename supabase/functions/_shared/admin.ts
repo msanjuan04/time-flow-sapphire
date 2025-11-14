@@ -42,22 +42,7 @@ export async function requireSuperadmin(req: Request): Promise<SuperadminContext
 
   console.log("User authenticated:", user.id);
 
-  // Check if user is superadmin
-  const { data: isSuperadmin, error: superadminError } = await authClient.rpc("is_superadmin");
-
-  if (superadminError) {
-    console.error("Superadmin check error:", superadminError);
-    throw new Error("Failed to verify superadmin status");
-  }
-
-  if (!isSuperadmin) {
-    console.warn(`User ${user.id} attempted to access superadmin endpoint`);
-    throw new Error("Forbidden: Superadmin access required");
-  }
-
-  console.log("User is superadmin, allowing access");
-
-  // After verifying superadmin, use service role client to bypass RLS for admin operations
+  // Use service role client for privilege checks + later operations
   const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!serviceKey) {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY not configured");
@@ -73,6 +58,49 @@ export async function requireSuperadmin(req: Request): Promise<SuperadminContext
       }
     }
   );
+
+  // Check if user is superadmin via profiles flag or legacy table
+  let isSuperadmin = false;
+
+  const { data: profile, error: profileError } = await serviceClient
+    .from("profiles")
+    .select("is_superadmin")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (profileError) {
+    console.error("Failed to fetch profile for superadmin check:", profileError);
+  }
+
+  if (profile?.is_superadmin) {
+    isSuperadmin = true;
+  } else {
+    const { data: legacySuperadmin, error: legacyError } = await serviceClient
+      .from("superadmins")
+      .select("user_id")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (legacyError) {
+      console.error("Failed to query legacy superadmins:", legacyError);
+    }
+
+    if (legacySuperadmin) {
+      isSuperadmin = true;
+      // Ensure profiles flag stays in sync
+      await serviceClient
+        .from("profiles")
+        .update({ is_superadmin: true })
+        .eq("id", user.id);
+    }
+  }
+
+  if (!isSuperadmin) {
+    console.warn(`User ${user.id} attempted to access superadmin endpoint`);
+    throw new Error("Forbidden: Superadmin access required");
+  }
+
+  console.log("User is superadmin, allowing access");
 
   return { supabase: serviceClient, user };
 }
