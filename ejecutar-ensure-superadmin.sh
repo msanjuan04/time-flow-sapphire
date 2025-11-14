@@ -42,4 +42,3 @@ echo ""
 
 npm run ensure:superadmin
 
-

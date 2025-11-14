@@ -48,7 +48,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const STORAGE_KEY = "gtiq_auth";
 const TOKENS_KEY = "gtiq_tokens";
 const SUPABASE_BASE_URL = (import.meta.env.VITE_SUPABASE_URL || "https://fyyhkdishlythkdnojdh.supabase.co").replace(/\/$/, "");
-type SupabaseVerifyOtpParams = Parameters<typeof supabase.auth.verifyOtp>[0];
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -141,71 +140,29 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return { error: "USER_NOT_FOUND" };
       }
 
-      // We need the email for OTP verification if direct tokens are not returned
-      const userEmail = payload.user?.email;
-
-      // If we received direct session tokens, use them
-      if (payload.access_token && payload.refresh_token) {
-        console.log("Setting session with direct tokens");
+      // If we received a hashed_token, verify it to get proper session
+      if (payload.hashed_token) {
+        console.log("Verifying hashed token to establish session");
         
-        const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-          access_token: payload.access_token,
-          refresh_token: payload.refresh_token,
+        const { data: sessionData, error: verifyError } = await supabase.auth.verifyOtp({
+          token_hash: payload.hashed_token,
+          type: 'magiclink',
         });
 
-        if (sessionError || !sessionData.session) {
-          console.error("Failed to set session:", sessionError);
-          return { error: "SESSION_SET_FAILED" };
-        }
-
-        console.log("Session established successfully with direct tokens");
-      } else if (payload.token_hash || payload.token) {
-        // If we received a token, verify it to get proper session
-        // Prioritize token_hash as it doesn't expire and is more reliable
-        console.log("Verifying token to establish session", { 
-          hasTokenHash: !!payload.token_hash, 
-          hasToken: !!payload.token 
-        });
-        
-        let sessionData;
-        let verifyError;
-
-        if (payload.token_hash) {
-          // token_hash doesn't require email and doesn't expire
-          console.log("Using token_hash for verification (no expiration)");
-          const result = await supabase.auth.verifyOtp({
-            type: 'magiclink',
-            token_hash: payload.token_hash,
-          });
-          sessionData = result.data;
-          verifyError = result.error;
-        } else if (payload.token) {
-          // Regular token requires email
-          if (!userEmail) {
-            console.error("Missing email for token verification");
-            return { error: "SESSION_VERIFICATION_FAILED" };
-          }
-          console.log("Using regular token for verification");
-          const result = await supabase.auth.verifyOtp({
-            type: 'magiclink',
-            token: payload.token,
-            email: userEmail,
-          });
-          sessionData = result.data;
-          verifyError = result.error;
-        } else {
-          console.error("No token provided for verification");
-          return { error: "SESSION_VERIFICATION_FAILED" };
-        }
-
-        if (verifyError || !sessionData?.session) {
+        if (verifyError || !sessionData.session) {
           console.error("Failed to verify token:", verifyError);
           return { error: "SESSION_VERIFICATION_FAILED" };
         }
 
         console.log("Session established successfully via token verification");
-      } else {
-        return { error: "NO_SESSION_TOKENS" };
+        
+        // Session is now established in Supabase client
+        const { data: { session } } = await supabase.auth.getSession();
+        console.log("Verified session:", {
+          hasSession: !!session,
+          userId: session?.user?.id,
+          hasAccessToken: !!session?.access_token
+        });
       }
 
       const userData: AuthUser = {

@@ -50,4 +50,3 @@ Deberías ver algo como:
 
 El script está configurado para usar el código `739421` por defecto, pero si el usuario ya tiene un código (como `521332`), lo mantendrá y no lo sobrescribirá.
 
-

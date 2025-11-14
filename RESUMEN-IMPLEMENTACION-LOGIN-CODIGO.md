@@ -112,4 +112,3 @@ WHERE p.login_code IS NOT NULL;
 4. `EJECUTAR-ENSURE-SUPERADMIN.md` - Instrucciones para ensure:superadmin
 5. `OBTENER-SERVICE-ROLE-KEY.md` - Cómo obtener el SERVICE_ROLE_KEY
 
-

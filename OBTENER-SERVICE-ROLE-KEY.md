@@ -40,4 +40,3 @@ También puedes usar el script helper:
 SUPABASE_SERVICE_ROLE_KEY="tu-key" ./ejecutar-ensure-superadmin.sh
 ```
 
-
