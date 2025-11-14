@@ -1,5 +1,6 @@
 const FUNCTIONS_BASE = (import.meta.env.VITE_SUPABASE_URL || "https://fyyhkdishlythkdnojdh.supabase.co").replace(/\/$/, "");
 const STORAGE_KEY = "gtiq_auth";
+const TOKENS_KEY = "gtiq_tokens";
 
 /**
  * Client-side helpers for admin operations
@@ -20,9 +21,22 @@ export async function callAdminFunction<T = unknown>(
   options: AdminCallOptions = {}
 ): Promise<{ data: T | null; error: Error | null }> {
   try {
+    // Get auth token from storage
+    const tokensStr = localStorage.getItem(TOKENS_KEY);
+    const tokens = tokensStr ? JSON.parse(tokensStr) : null;
+    const accessToken = tokens?.access_token;
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (accessToken) {
+      headers["Authorization"] = `Bearer ${accessToken}`;
+    }
+
     const response = await fetch(`${FUNCTIONS_BASE}/functions/v1/${functionName}`, {
       method: options.method ?? (options.body ? "POST" : "GET"),
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: options.body ? JSON.stringify(options.body) : undefined,
     });
 

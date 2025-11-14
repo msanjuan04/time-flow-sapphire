@@ -30,13 +30,42 @@ serve(async (req) => {
 
     const { data: profile } = await db
       .from("profiles")
-      .select("id, email, full_name, is_superadmin")
-      .eq("access_code", normalized)
+      .select("id, email, full_name")
+      .eq("login_code", normalized)
       .maybeSingle();
 
     if (!profile) {
       return createJsonResponse({ success: false, error: "INVALID_CODE" }, 401);
     }
+
+    // Generate auth session using admin API
+    const { data: linkData, error: linkError } = await db.auth.admin.generateLink({
+      type: "magiclink",
+      email: profile.email,
+    });
+
+    if (linkError || !linkData) {
+      console.error("Failed to generate auth link:", linkError);
+      return createErrorResponse("Failed to create session", 500);
+    }
+
+    // Extract tokens from the generated link
+    const accessToken = linkData.properties?.access_token;
+    const refreshToken = linkData.properties?.refresh_token;
+
+    if (!accessToken || !refreshToken) {
+      console.error("No tokens in generated link");
+      return createErrorResponse("Failed to create session", 500);
+    }
+
+    // Check if user is superadmin
+    const { data: superadminCheck } = await db
+      .from("superadmins")
+      .select("user_id")
+      .eq("user_id", profile.id)
+      .maybeSingle();
+
+    const is_superadmin = !!superadminCheck;
 
     const { data: memberships } = await db
       .from("memberships")
@@ -68,9 +97,11 @@ serve(async (req) => {
 
     return createJsonResponse({
       success: true,
-      user: profile,
+      user: { ...profile, is_superadmin },
       memberships: memberships || [],
       company,
+      access_token: accessToken,
+      refresh_token: refreshToken,
     });
   } catch (err) {
     console.error("login-with-code error:", err);

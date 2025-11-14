@@ -8,6 +8,11 @@ interface AuthUser {
   is_superadmin?: boolean;
 }
 
+interface AuthTokens {
+  access_token: string;
+  refresh_token: string;
+}
+
 interface MembershipCompany {
   id: string;
   name?: string | null;
@@ -40,6 +45,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const STORAGE_KEY = "gtiq_auth";
+const TOKENS_KEY = "gtiq_tokens";
 const SUPABASE_BASE_URL = (import.meta.env.VITE_SUPABASE_URL || "https://fyyhkdishlythkdnojdh.supabase.co").replace(/\/$/, "");
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -72,9 +78,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }) => {
     if (!next.user) {
       localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(TOKENS_KEY);
       return;
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  };
+
+  const persistTokens = (tokens: AuthTokens | null) => {
+    if (!tokens) {
+      localStorage.removeItem(TOKENS_KEY);
+      return;
+    }
+    localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens));
   };
 
   const signInWithCode = async (code: string): Promise<{ error: string | null }> => {
@@ -135,6 +150,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setMemberships(nextState.memberships);
       setCompany(nextState.company ?? null);
       persistState(nextState);
+
+      // Store auth tokens
+      if (payload.access_token && payload.refresh_token) {
+        persistTokens({
+          access_token: payload.access_token,
+          refresh_token: payload.refresh_token,
+        });
+      }
+
       navigate("/");
 
       return { error: null };
@@ -151,6 +175,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setMemberships([]);
     setCompany(null);
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(TOKENS_KEY);
     navigate("/auth");
   };
 
