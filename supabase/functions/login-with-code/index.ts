@@ -17,7 +17,10 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const normalized = cleanCode(body.code);
 
+    console.log("Login attempt with code:", normalized);
+
     if (!/^\d{6}$/.test(normalized)) {
+      console.log("Invalid code format");
       return createJsonResponse({ success: false, error: "INVALID_CODE_FORMAT" }, 400);
     }
 
@@ -35,28 +38,33 @@ serve(async (req) => {
       .maybeSingle();
 
     if (!profile) {
+      console.log("No profile found with code:", normalized);
       return createJsonResponse({ success: false, error: "INVALID_CODE" }, 401);
     }
 
-    // Generate auth session using admin API
-    const { data: linkData, error: linkError } = await db.auth.admin.generateLink({
-      type: "magiclink",
-      email: profile.email,
+    console.log("Profile found:", profile.id, profile.email);
+
+    // Ensure the user exists in auth.users
+    const { data: authUser, error: authError } = await db.auth.admin.getUserById(profile.id);
+    
+    if (authError || !authUser?.user) {
+      console.error("User not found in auth.users:", authError);
+      return createErrorResponse("User authentication failed", 500);
+    }
+
+    console.log("Auth user found, creating session");
+
+    // Generate a proper session for this user
+    const { data: sessionData, error: sessionError } = await db.auth.admin.createSession({
+      user_id: profile.id,
     });
 
-    if (linkError || !linkData) {
-      console.error("Failed to generate auth link:", linkError);
+    if (sessionError || !sessionData?.session) {
+      console.error("Failed to create session:", sessionError);
       return createErrorResponse("Failed to create session", 500);
     }
 
-    // Extract tokens from the generated link
-    const accessToken = linkData.properties?.access_token;
-    const refreshToken = linkData.properties?.refresh_token;
-
-    if (!accessToken || !refreshToken) {
-      console.error("No tokens in generated link");
-      return createErrorResponse("Failed to create session", 500);
-    }
+    console.log("Session created successfully");
 
     // Check if user is superadmin
     const { data: superadminCheck } = await db
@@ -66,6 +74,7 @@ serve(async (req) => {
       .maybeSingle();
 
     const is_superadmin = !!superadminCheck;
+    console.log("Is superadmin:", is_superadmin);
 
     const { data: memberships } = await db
       .from("memberships")
@@ -95,13 +104,15 @@ serve(async (req) => {
       });
     } catch {}
 
+    console.log("Returning success response with tokens");
+
     return createJsonResponse({
       success: true,
       user: { ...profile, is_superadmin },
       memberships: memberships || [],
       company,
-      access_token: accessToken,
-      refresh_token: refreshToken,
+      access_token: sessionData.session.access_token,
+      refresh_token: sessionData.session.refresh_token,
     });
   } catch (err) {
     console.error("login-with-code error:", err);

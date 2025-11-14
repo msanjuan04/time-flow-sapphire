@@ -70,9 +70,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         if (tokensStr) {
           const tokens = JSON.parse(tokensStr);
           if (tokens.access_token && tokens.refresh_token) {
+            console.log("Restoring Supabase session from storage");
             supabase.auth.setSession({
               access_token: tokens.access_token,
               refresh_token: tokens.refresh_token,
+            }).then(() => {
+              console.log("Session restored successfully");
             }).catch((err) => {
               console.error("Failed to restore session:", err);
               localStorage.removeItem(TOKENS_KEY);
@@ -115,6 +118,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
 
     try {
+      console.log("Attempting login with code:", code);
       const response = await fetch(`${SUPABASE_BASE_URL}/functions/v1/login-with-code`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -124,6 +128,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const payload = await response
         .json()
         .catch(() => ({ success: false, error: "Respuesta inválida del servidor" }));
+
+      console.log("Login response:", { success: payload?.success, hasTokens: !!(payload?.access_token) });
 
       if (!response.ok || !payload?.success) {
         const errorCode = typeof payload?.error === "string" ? payload.error : "LOGIN_FAILED";
@@ -170,6 +176,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       // Store auth tokens
       if (payload.access_token && payload.refresh_token) {
+        console.log("Setting Supabase session with tokens");
         const tokens = {
           access_token: payload.access_token,
           refresh_token: payload.refresh_token,
@@ -177,10 +184,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         persistTokens(tokens);
         
         // Set Supabase session
-        await supabase.auth.setSession({
+        const { error: sessionError } = await supabase.auth.setSession({
           access_token: payload.access_token,
           refresh_token: payload.refresh_token,
         });
+        
+        if (sessionError) {
+          console.error("Failed to set Supabase session:", sessionError);
+        } else {
+          console.log("Supabase session set successfully");
+        }
       }
 
       navigate("/");
