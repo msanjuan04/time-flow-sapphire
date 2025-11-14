@@ -70,31 +70,18 @@ serve(async (req) => {
       return createErrorResponse("Failed to create session", 500);
     }
 
-    console.log("Link data structure:", JSON.stringify(linkData, null, 2));
+    console.log("Link generated successfully");
 
-    // Extract tokens - they might be in different places depending on Supabase version
-    let accessToken = linkData.properties?.access_token;
-    let refreshToken = linkData.properties?.refresh_token;
+    // Extract the hashed token for verification
+    const hashedToken = linkData.properties?.hashed_token;
+    const verificationUrl = linkData.properties?.action_link;
 
-    // Try alternative locations
-    if (!accessToken && linkData.user) {
-      // Try to get tokens from user object
-      accessToken = linkData.user.access_token;
-      refreshToken = linkData.user.refresh_token;
-    }
-
-    if (!accessToken && linkData.session) {
-      // Try to get from session object
-      accessToken = linkData.session.access_token;
-      refreshToken = linkData.session.refresh_token;
-    }
-
-    if (!accessToken || !refreshToken) {
-      console.error("No tokens found in magic link response. Available keys:", Object.keys(linkData));
+    if (!hashedToken || !verificationUrl) {
+      console.error("No hashed token in magic link response");
       return createErrorResponse("Failed to create session", 500);
     }
 
-    console.log("Session tokens generated successfully");
+    console.log("Token generated for verification");
 
     // Check if user is superadmin
     const { data: superadminCheck } = await db
@@ -134,15 +121,15 @@ serve(async (req) => {
       });
     } catch {}
 
-    console.log("Returning success response with tokens");
+    console.log("Returning success response with verification token");
 
     return createJsonResponse({
       success: true,
       user: { ...profile, is_superadmin },
       memberships: memberships || [],
       company,
-      access_token: accessToken,
-      refresh_token: refreshToken,
+      hashed_token: hashedToken,
+      verification_type: "magiclink",
     });
   } catch (err) {
     console.error("login-with-code error:", err);

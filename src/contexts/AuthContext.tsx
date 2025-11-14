@@ -140,6 +140,31 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return { error: "USER_NOT_FOUND" };
       }
 
+      // If we received a hashed_token, verify it to get proper session
+      if (payload.hashed_token) {
+        console.log("Verifying hashed token to establish session");
+        
+        const { data: sessionData, error: verifyError } = await supabase.auth.verifyOtp({
+          token_hash: payload.hashed_token,
+          type: 'magiclink',
+        });
+
+        if (verifyError || !sessionData.session) {
+          console.error("Failed to verify token:", verifyError);
+          return { error: "SESSION_VERIFICATION_FAILED" };
+        }
+
+        console.log("Session established successfully via token verification");
+        
+        // Session is now established in Supabase client
+        const { data: { session } } = await supabase.auth.getSession();
+        console.log("Verified session:", {
+          hasSession: !!session,
+          userId: session?.user?.id,
+          hasAccessToken: !!session?.access_token
+        });
+      }
+
       const userData: AuthUser = {
         id: payload.user.id,
         email: payload.user.email ?? null,
@@ -174,45 +199,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setCompany(nextState.company ?? null);
       persistState(nextState);
 
-      // Store auth tokens and establish Supabase session
-      if (payload.access_token && payload.refresh_token) {
-        console.log("Setting Supabase session with tokens");
-        const tokens = {
-          access_token: payload.access_token,
-          refresh_token: payload.refresh_token,
-        };
-        persistTokens(tokens);
-        
-        // Set Supabase session and WAIT for it to complete
-        const { data: sessionResponse, error: sessionError } = await supabase.auth.setSession({
-          access_token: payload.access_token,
-          refresh_token: payload.refresh_token,
+      // Get the current session (should be set by verifyOtp)
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (session) {
+        console.log("Storing session tokens");
+        persistTokens({
+          access_token: session.access_token,
+          refresh_token: session.refresh_token,
         });
-        
-        if (sessionError) {
-          console.error("Failed to set Supabase session:", sessionError);
-          return { error: "SESSION_FAILED" };
-        }
-        
-        if (!sessionResponse?.session) {
-          console.error("No session returned from setSession");
-          return { error: "SESSION_FAILED" };
-        }
-        
-        console.log("Supabase session set successfully:", {
-          userId: sessionResponse.user?.id,
-          hasAccessToken: !!sessionResponse.session.access_token
-        });
-        
-        // Verify the session is active
-        const { data: { session: verifySession } } = await supabase.auth.getSession();
-        console.log("Session verification:", {
-          hasSession: !!verifySession,
-          userId: verifySession?.user?.id
-        });
-      } else {
-        console.error("No tokens received from login");
-        return { error: "NO_TOKENS" };
       }
 
       navigate("/");
