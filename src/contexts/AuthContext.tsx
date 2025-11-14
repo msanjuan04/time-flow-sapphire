@@ -174,7 +174,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setCompany(nextState.company ?? null);
       persistState(nextState);
 
-      // Store auth tokens
+      // Store auth tokens and establish Supabase session
       if (payload.access_token && payload.refresh_token) {
         console.log("Setting Supabase session with tokens");
         const tokens = {
@@ -183,17 +183,36 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         };
         persistTokens(tokens);
         
-        // Set Supabase session
-        const { error: sessionError } = await supabase.auth.setSession({
+        // Set Supabase session and WAIT for it to complete
+        const { data: sessionResponse, error: sessionError } = await supabase.auth.setSession({
           access_token: payload.access_token,
           refresh_token: payload.refresh_token,
         });
         
         if (sessionError) {
           console.error("Failed to set Supabase session:", sessionError);
-        } else {
-          console.log("Supabase session set successfully");
+          return { error: "SESSION_FAILED" };
         }
+        
+        if (!sessionResponse?.session) {
+          console.error("No session returned from setSession");
+          return { error: "SESSION_FAILED" };
+        }
+        
+        console.log("Supabase session set successfully:", {
+          userId: sessionResponse.user?.id,
+          hasAccessToken: !!sessionResponse.session.access_token
+        });
+        
+        // Verify the session is active
+        const { data: { session: verifySession } } = await supabase.auth.getSession();
+        console.log("Session verification:", {
+          hasSession: !!verifySession,
+          userId: verifySession?.user?.id
+        });
+      } else {
+        console.error("No tokens received from login");
+        return { error: "NO_TOKENS" };
       }
 
       navigate("/");
