@@ -70,12 +70,27 @@ serve(async (req) => {
       return createErrorResponse("Failed to create session", 500);
     }
 
-    // Extract tokens from properties
-    const accessToken = linkData.properties?.access_token;
-    const refreshToken = linkData.properties?.refresh_token;
+    console.log("Link data structure:", JSON.stringify(linkData, null, 2));
+
+    // Extract tokens - they might be in different places depending on Supabase version
+    let accessToken = linkData.properties?.access_token;
+    let refreshToken = linkData.properties?.refresh_token;
+
+    // Try alternative locations
+    if (!accessToken && linkData.user) {
+      // Try to get tokens from user object
+      accessToken = linkData.user.access_token;
+      refreshToken = linkData.user.refresh_token;
+    }
+
+    if (!accessToken && linkData.session) {
+      // Try to get from session object
+      accessToken = linkData.session.access_token;
+      refreshToken = linkData.session.refresh_token;
+    }
 
     if (!accessToken || !refreshToken) {
-      console.error("No tokens in magic link response");
+      console.error("No tokens found in magic link response. Available keys:", Object.keys(linkData));
       return createErrorResponse("Failed to create session", 500);
     }
 
