@@ -167,36 +167,38 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           hasToken: !!payload.token 
         });
         
-        const verifyType = (payload.verification_type || 'magiclink') as SupabaseVerifyOtpParams["type"];
-        let verifyPayload: SupabaseVerifyOtpParams | null = null;
+        let sessionData;
+        let verifyError;
 
         if (payload.token_hash) {
           // token_hash doesn't require email and doesn't expire
-          verifyPayload = {
-            type: verifyType,
-            token_hash: payload.token_hash,
-          };
           console.log("Using token_hash for verification (no expiration)");
+          const result = await supabase.auth.verifyOtp({
+            type: 'magiclink',
+            token_hash: payload.token_hash,
+          });
+          sessionData = result.data;
+          verifyError = result.error;
         } else if (payload.token) {
           // Regular token requires email
           if (!userEmail) {
             console.error("Missing email for token verification");
             return { error: "SESSION_VERIFICATION_FAILED" };
           }
-          verifyPayload = {
-            type: verifyType,
+          console.log("Using regular token for verification");
+          const result = await supabase.auth.verifyOtp({
+            type: 'magiclink',
             token: payload.token,
             email: userEmail,
-          };
-          console.log("Using regular token for verification");
+          });
+          sessionData = result.data;
+          verifyError = result.error;
         } else {
           console.error("No token provided for verification");
           return { error: "SESSION_VERIFICATION_FAILED" };
         }
-        
-        const { data: sessionData, error: verifyError } = await supabase.auth.verifyOtp(verifyPayload);
 
-        if (verifyError || !sessionData.session) {
+        if (verifyError || !sessionData?.session) {
           console.error("Failed to verify token:", verifyError);
           return { error: "SESSION_VERIFICATION_FAILED" };
         }
