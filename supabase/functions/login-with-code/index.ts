@@ -52,19 +52,34 @@ serve(async (req) => {
       return createErrorResponse("User authentication failed", 500);
     }
 
-    console.log("Auth user found, creating session");
+    console.log("Auth user found, generating magic link tokens");
 
-    // Generate a proper session for this user
-    const { data: sessionData, error: sessionError } = await db.auth.admin.createSession({
-      user_id: profile.id,
+    // Generate authentication tokens using magic link
+    const { data: linkData, error: linkError } = await db.auth.admin.generateLink({
+      type: "magiclink",
+      email: profile.email,
+      options: {
+        data: {
+          full_name: profile.full_name
+        }
+      }
     });
 
-    if (sessionError || !sessionData?.session) {
-      console.error("Failed to create session:", sessionError);
+    if (linkError || !linkData) {
+      console.error("Failed to generate magic link:", linkError);
       return createErrorResponse("Failed to create session", 500);
     }
 
-    console.log("Session created successfully");
+    // Extract tokens from properties
+    const accessToken = linkData.properties?.access_token;
+    const refreshToken = linkData.properties?.refresh_token;
+
+    if (!accessToken || !refreshToken) {
+      console.error("No tokens in magic link response");
+      return createErrorResponse("Failed to create session", 500);
+    }
+
+    console.log("Session tokens generated successfully");
 
     // Check if user is superadmin
     const { data: superadminCheck } = await db
@@ -111,8 +126,8 @@ serve(async (req) => {
       user: { ...profile, is_superadmin },
       memberships: memberships || [],
       company,
-      access_token: sessionData.session.access_token,
-      refresh_token: sessionData.session.refresh_token,
+      access_token: accessToken,
+      refresh_token: refreshToken,
     });
   } catch (err) {
     console.error("login-with-code error:", err);
