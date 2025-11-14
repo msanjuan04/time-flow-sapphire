@@ -633,7 +633,7 @@ export type Database = {
           full_name: string | null
           id: string
           is_active: boolean
-          login_code: string
+          login_code: string | null
           team_id: string | null
           updated_at: string
         }
@@ -645,7 +645,7 @@ export type Database = {
           full_name?: string | null
           id: string
           is_active?: boolean
-          login_code?: string
+          login_code?: string | null
           team_id?: string | null
           updated_at?: string
         }
@@ -657,7 +657,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           is_active?: boolean
-          login_code?: string
+          login_code?: string | null
           team_id?: string | null
           updated_at?: string
         }
@@ -958,6 +958,7 @@ export type Database = {
     }
     Functions: {
       check_company_active: { Args: { p_company_id: string }; Returns: boolean }
+      generate_login_code: { Args: never; Returns: string }
       get_user_role: {
         Args: { p_company_id: string; p_user_id: string }
         Returns: Database["public"]["Enums"]["user_role"]
