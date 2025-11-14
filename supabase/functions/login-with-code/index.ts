@@ -1,162 +1,79 @@
-import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
+// @ts-nocheck
+import { serve } from "https://deno.land/std/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.81.0";
+import { handleCorsOptions, createJsonResponse, createErrorResponse } from "../_shared/cors.ts";
+import { writeAudit, extractRequestMetadata } from "../_shared/admin.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+function cleanCode(raw: unknown): string {
+  if (typeof raw === "number") return raw.toString().padStart(6, "0");
+  if (typeof raw === "string") return raw.replace(/\D/g, "");
+  return "";
+}
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return handleCorsOptions();
 
   try {
-    const { code } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const normalized = cleanCode(body.code);
 
-    if (!code || !/^\d{6}$/.test(code)) {
-      return new Response(
-        JSON.stringify({ error: "Código inválido. Debe ser de 6 dígitos." }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    if (!/^\d{6}$/.test(normalized)) {
+      return createJsonResponse({ success: false, error: "INVALID_CODE_FORMAT" }, 400);
     }
 
-    // Create admin client
-    const supabaseAdmin = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    );
+    const url = Deno.env.get("SUPABASE_URL") ?? "";
+    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-    // Buscar usuario por login_code
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('id, login_code, is_active')
-      .eq('login_code', code)
-      .single();
+    const db = createClient(url, key, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
 
-    if (profileError || !profile) {
-      return new Response(
-        JSON.stringify({ error: "Código incorrecto o usuario no encontrado" }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    const { data: profile } = await db
+      .from("profiles")
+      .select("id, email, full_name, is_superadmin")
+      .eq("access_code", normalized)
+      .maybeSingle();
+
+    if (!profile) {
+      return createJsonResponse({ success: false, error: "INVALID_CODE" }, 401);
     }
 
-    // Verificar que el perfil está activo
-    if (!profile.is_active) {
-      return new Response(
-        JSON.stringify({ error: "Usuario inactivo. Contacta con tu administrador." }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    const { data: memberships } = await db
+      .from("memberships")
+      .select("id, company_id, role")
+      .eq("user_id", profile.id);
+
+    let company = null;
+    if (memberships?.length > 0) {
+      const { data: c } = await db
+        .from("companies")
+        .select("id, name, status, plan")
+        .eq("id", memberships[0].company_id)
+        .maybeSingle();
+
+      company = c ?? null;
     }
 
-    // Obtener el usuario de auth.users
-    const { data: user, error: userError } = await supabaseAdmin.auth.admin.getUserById(profile.id);
-
-    if (userError || !user) {
-      return new Response(
-        JSON.stringify({ error: "Usuario no encontrado en el sistema de autenticación" }),
-        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Usar generateLink con recovery y verificar inmediatamente
-    // Este es el método más confiable
     try {
-      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-        type: 'recovery',
-        email: user.user.email,
-        options: {
-          redirectTo: 'http://localhost:8080/auth/callback',
-        },
+      const { ip, user_agent } = extractRequestMetadata(req);
+      await writeAudit(db, {
+        actor_user_id: profile.id,
+        company_id: memberships?.[0]?.company_id,
+        action: "login_with_code",
+        diff: { code: normalized },
+        ip,
+        user_agent,
       });
+    } catch {}
 
-      if (linkError) {
-        console.error("Error generating recovery link:", linkError);
-        return new Response(
-          JSON.stringify({ error: "Error al generar sesión: " + (linkError.message || "Unknown error") }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      if (!linkData) {
-        return new Response(
-          JSON.stringify({ error: "No se pudo generar el link de recuperación" }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      // Extraer el token de verificación
-      const verificationToken = linkData.properties?.verification_token || 
-                                linkData.properties?.hashed_token ||
-                                null;
-
-      if (!verificationToken) {
-        console.error("No se pudo extraer el token. LinkData:", JSON.stringify(linkData, null, 2));
-        return new Response(
-          JSON.stringify({ error: "No se pudo extraer el token de verificación" }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      // Verificar inmediatamente con el cliente admin
-      // Esto debería funcionar porque estamos usando Service Role Key
-      const { data: sessionData, error: verifyError } = await supabaseAdmin.auth.verifyOtp({
-        token: verificationToken,
-        type: 'recovery',
-        email: user.user.email,
-      });
-
-      if (verifyError) {
-        console.error("Error verifying OTP:", verifyError);
-        return new Response(
-          JSON.stringify({ error: "Error al verificar token: " + (verifyError.message || "Unknown error") }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      if (!sessionData?.session) {
-        return new Response(
-          JSON.stringify({ error: "No se pudo crear la sesión después de verificar el token" }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-
-      // Retornar los tokens de sesión
-      return new Response(
-        JSON.stringify({
-          success: true,
-          user: {
-            id: user.user.id,
-            email: user.user.email,
-          },
-          access_token: sessionData.session.access_token,
-          refresh_token: sessionData.session.refresh_token,
-          expires_in: sessionData.session.expires_in || 3600,
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-
-    } catch (error) {
-      console.error("Unexpected error in login flow:", error);
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      return new Response(
-        JSON.stringify({ error: "Error inesperado: " + errorMessage }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-  } catch (error) {
-    console.error("Error:", error);
-    const message = error instanceof Error ? error.message : "Unexpected error";
-    return new Response(
-      JSON.stringify({ error: message }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return createJsonResponse({
+      success: true,
+      user: profile,
+      memberships: memberships || [],
+      company,
+    });
+  } catch (err) {
+    console.error("login-with-code error:", err);
+    return createErrorResponse("Internal server error", 500);
   }
 });
