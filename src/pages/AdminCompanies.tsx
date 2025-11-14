@@ -19,12 +19,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, UserCog, Search, Loader2, Plus } from "lucide-react";
+import { ArrowLeft, UserCog, Search, Loader2, Plus, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useImpersonation } from "@/hooks/useImpersonation";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Company {
   id: string;
@@ -48,6 +49,10 @@ const AdminCompanies = () => {
   const [createOpen, setCreateOpen] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     fetchCompanies();
@@ -70,6 +75,45 @@ const AdminCompanies = () => {
       toast.error("Error al cargar empresas");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openDeleteDialog = (company: Company) => {
+    setCompanyToDelete(company);
+    setDeleteReason("");
+    setDeleteOpen(true);
+  };
+
+  const handleDeleteCompany = async () => {
+    if (!companyToDelete) return;
+    setDeleting(true);
+    try {
+      const { error } = await (supabase as any).functions.invoke("admin-delete-company", {
+        body: {
+          company_id: companyToDelete.id,
+          reason: deleteReason.trim() || undefined,
+        },
+      });
+      if (error) throw error;
+      toast.success("Empresa eliminada correctamente");
+      setDeleteOpen(false);
+      setCompanyToDelete(null);
+      setDeleteReason("");
+      fetchCompanies();
+    } catch (error: any) {
+      console.error("Error deleting company:", error);
+      toast.error(error?.message || "No se pudo eliminar la empresa");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const handleDeleteDialogChange = (open: boolean) => {
+    setDeleteOpen(open);
+    if (!open) {
+      setCompanyToDelete(null);
+      setDeleteReason("");
+      setDeleting(false);
     }
   };
 
@@ -244,6 +288,16 @@ const AdminCompanies = () => {
                           >
                             Ver
                           </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => openDeleteDialog(company)}
+                            disabled={deleting && companyToDelete?.id === company.id}
+                            className="hover-scale"
+                          >
+                            <Trash2 className="w-4 h-4 mr-1" />
+                            Borrar
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -273,6 +327,36 @@ const AdminCompanies = () => {
               <Button onClick={handleCreateCompany} disabled={creating || !newCompanyName.trim()}>
                 {creating && <Loader2 className="w-4 h-4 mr-2 animate-spin"/>}
                 Crear
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Company Dialog */}
+      <Dialog open={deleteOpen} onOpenChange={handleDeleteDialogChange}>
+        <DialogContent className="glass-card">
+          <DialogHeader>
+            <DialogTitle>Eliminar empresa</DialogTitle>
+            <DialogDescription>
+              Esta acción eliminará permanentemente todos los datos asociados a{" "}
+              <span className="font-semibold">{companyToDelete?.name}</span>. Confirma sólo si estás seguro.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <Textarea
+              placeholder="Motivo (opcional, visible en auditoría)"
+              value={deleteReason}
+              onChange={(e) => setDeleteReason(e.target.value)}
+              rows={3}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => handleDeleteDialogChange(false)} disabled={deleting}>
+                Cancelar
+              </Button>
+              <Button variant="destructive" onClick={handleDeleteCompany} disabled={deleting || !companyToDelete}>
+                {deleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Confirmar borrado
               </Button>
             </div>
           </div>

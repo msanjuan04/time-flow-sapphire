@@ -52,36 +52,7 @@ serve(async (req) => {
       return createErrorResponse("User authentication failed", 500);
     }
 
-    console.log("Auth user found, generating magic link tokens");
-
-    // Generate authentication tokens using magic link
-    const { data: linkData, error: linkError } = await db.auth.admin.generateLink({
-      type: "magiclink",
-      email: profile.email,
-      options: {
-        data: {
-          full_name: profile.full_name
-        }
-      }
-    });
-
-    if (linkError || !linkData) {
-      console.error("Failed to generate magic link:", linkError);
-      return createErrorResponse("Failed to create session", 500);
-    }
-
-    console.log("Link generated successfully");
-
-    // Extract the hashed token for verification
-    const hashedToken = linkData.properties?.hashed_token;
-    const verificationUrl = linkData.properties?.action_link;
-
-    if (!hashedToken || !verificationUrl) {
-      console.error("No hashed token in magic link response");
-      return createErrorResponse("Failed to create session", 500);
-    }
-
-    console.log("Token generated for verification");
+    console.log("Auth user found, gathering user data");
 
     // Check if user is superadmin
     const { data: superadminCheck } = await db
@@ -109,28 +80,74 @@ serve(async (req) => {
       company = c ?? null;
     }
 
+    console.log("Generating magic link for user");
+
+    // Generate magic link and extract token for frontend verification
     try {
-      const { ip, user_agent } = extractRequestMetadata(req);
-      await writeAudit(db, {
-        actor_user_id: profile.id,
-        company_id: memberships?.[0]?.company_id,
-        action: "login_with_code",
-        diff: { code: normalized },
-        ip,
-        user_agent,
+      const { data: linkData, error: linkError } = await db.auth.admin.generateLink({
+        type: "magiclink",
+        email: profile.email,
+        options: {
+          redirectTo: "http://localhost:8080/auth/callback",
+        },
       });
-    } catch {}
 
-    console.log("Returning success response with verification token");
+      if (linkError || !linkData) {
+        console.error("Failed to generate magic link:", linkError);
+        return createErrorResponse("Failed to generate login link: " + (linkError?.message || "Unknown error"), 500);
+      }
 
-    return createJsonResponse({
-      success: true,
-      user: { ...profile, is_superadmin },
-      memberships: memberships || [],
-      company,
-      hashed_token: hashedToken,
-      verification_type: "magiclink",
-    });
+      console.log("Magic link generated successfully");
+
+      // Extract hashed_token (preferred) and regular token (fallback)
+      const hashedToken = linkData.properties?.hashed_token;
+      const actionLink = linkData.properties?.action_link;
+      
+      let token = null;
+      let type = "magiclink";
+      
+      if (actionLink) {
+        // Extract token from URL (format: .../verify?token=...&type=...)
+        const urlObj = new URL(actionLink);
+        token = urlObj.searchParams.get("token");
+        type = urlObj.searchParams.get("type") || "magiclink";
+      }
+
+      // Prefer hashed_token over regular token for more reliable verification
+      if (!hashedToken && !token) {
+        console.error("No token or hashed_token in response");
+        return createErrorResponse("No token in response", 500);
+      }
+
+      console.log("Token extracted from magic link", { hasHashedToken: !!hashedToken, hasToken: !!token });
+
+      try {
+        const { ip, user_agent } = extractRequestMetadata(req);
+        await writeAudit(db, {
+          actor_user_id: profile.id,
+          company_id: memberships?.[0]?.company_id,
+          action: "login_with_code",
+          diff: { code: normalized },
+          ip,
+          user_agent,
+        });
+      } catch {}
+
+      return createJsonResponse({
+        success: true,
+        user: { ...profile, is_superadmin },
+        memberships: memberships || [],
+        company,
+        // Prioritize token_hash for more reliable verification (no expiration issues)
+        token_hash: hashedToken || null,
+        // Include token as fallback if token_hash is not available
+        token: hashedToken ? null : token,
+        verification_type: type,
+      });
+    } catch (sessionError) {
+      console.error("Error generating magic link:", sessionError);
+      return createErrorResponse("Failed to generate login link: " + (sessionError?.message || "Unknown error"), 500);
+    }
   } catch (err) {
     console.error("login-with-code error:", err);
     return createErrorResponse("Internal server error", 500);

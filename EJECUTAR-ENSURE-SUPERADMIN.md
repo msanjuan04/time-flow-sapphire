@@ -37,3 +37,4 @@ El script debería mostrar:
 
 El script está configurado para usar el código `739421` por defecto, pero si el usuario ya tiene un código, lo mantendrá.
 
+
