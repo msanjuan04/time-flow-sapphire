@@ -6,10 +6,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+import { RecoverAccessDialog } from "@/components/RecoverAccessDialog";
 
 const Auth = () => {
   const [code, setCode] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [recoverOpen, setRecoverOpen] = useState(false);
   const { signInWithCode, user, loading } = useAuth();
   const navigate = useNavigate();
   useDocumentTitle("Iniciar sesión • GTiQ");
@@ -43,7 +45,6 @@ const Auth = () => {
       }
 
       toast.success("¡Bienvenido de nuevo!");
-      navigate("/");
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error inesperado";
       toast.error(message);
@@ -97,12 +98,22 @@ const Auth = () => {
               Entrar
             </Button>
           </form>
+          <div className="text-center">
+            <button
+              type="button"
+              className="text-sm text-primary hover:underline"
+              onClick={() => setRecoverOpen(true)}
+            >
+              ¿No tienes tu código? Recuperar acceso
+            </button>
+          </div>
           <p className="text-xs text-center text-muted-foreground">
             Al iniciar sesión aceptas nuestras políticas. Más info en
             <a href="/legal" className="ml-1 underline hover:text-primary">Legal y privacidad</a>.
           </p>
         </div>
       </div>
+      <RecoverAccessDialog open={recoverOpen} onOpenChange={setRecoverOpen} />
     </div>
   );
 };

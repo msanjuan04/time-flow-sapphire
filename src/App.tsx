@@ -34,6 +34,7 @@ const AccessIssuePage = lazy(() => import("./pages/AccessIssue"));
 const CompanyDashboardPage = lazy(() => import("./pages/CompanyDashboard"));
 const WorkerClockPage = lazy(() => import("./pages/WorkerClock"));
 const WorkerHistoryPage = lazy(() => import("./pages/WorkerHistory"));
+const IncidentsPage = lazy(() => import("./pages/Incidents"));
 
 const queryClient = new QueryClient();
 
@@ -94,6 +95,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["owner", "admin", "manager"]}>
                   <CompanyDashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/incidents"
+              element={
+                <ProtectedRoute allowedRoles={["owner", "admin", "manager"]}>
+                  <IncidentsPage />
                 </ProtectedRoute>
               }
             />

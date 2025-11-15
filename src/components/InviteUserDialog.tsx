@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useMembership } from "@/hooks/useMembership";
+import { useSuperadmin } from "@/hooks/useSuperadmin";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
 import { z } from "zod";
@@ -45,6 +46,7 @@ interface Team {
 
 const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogProps) => {
   const { companyId } = useMembership();
+  const { isSuperadmin } = useSuperadmin();
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<string>("worker");
@@ -155,18 +157,31 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
 
     try {
       // Delegate creation + email to the superadmin edge function
-      const { data, error } = await supabase.functions.invoke("admin-create-invite", {
-        body: {
-          company_id: companyId,
-          email: email.toLowerCase().trim(),
-          role: role as "owner" | "manager" | "worker",
-          center_id: centerId || null,
-          team_id: teamId || null,
-          // Campos adicionales informativos. El backend puede ignorarlos
-          full_name: fullName || undefined,
-          dni: dni || undefined,
-          phone: phone || undefined,
-        },
+      const endpoint = isSuperadmin ? "admin-create-invite" : "create-invite";
+      const payload = isSuperadmin
+        ? {
+            company_id: companyId,
+            email: email.toLowerCase().trim(),
+            role: role as "owner" | "manager" | "worker",
+            center_id: centerId || null,
+            team_id: teamId || null,
+            full_name: fullName || undefined,
+            dni: dni || undefined,
+            phone: phone || undefined,
+          }
+        : {
+            email: email.toLowerCase().trim(),
+            role: role as "owner" | "manager" | "worker",
+            center_id: centerId || null,
+            team_id: teamId || null,
+          };
+
+      if (!companyId && !isSuperadmin) {
+        throw new Error("No se encontró la empresa activa");
+      }
+
+      const { data, error } = await supabase.functions.invoke(endpoint, {
+        body: payload,
       });
 
       if (error) throw error;

@@ -3,8 +3,9 @@
 # Script para crear usuarios y asociarlos a la empresa
 
 COMPANY_ID="d7babcd0-2d90-4300-a4b7-4d394351be6c"
-PROJECT_REF="fyyhkdishlythkdnojdh"
+PROJECT_REF="TU_PROJECT_REF"
 SUPABASE_URL="https://${PROJECT_REF}.supabase.co"
+SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY:-REEMPLAZA_CON_TU_SERVICE_ROLE_KEY}"
 
 # Necesitamos el service role key para crear usuarios
 # Por ahora usaremos la función admin-create-superadmin como base
@@ -16,8 +17,8 @@ echo ""
 # Crear usuario Owner
 echo "📧 Creando Owner: cortadamarc13@gmail.com"
 OWNER_RESPONSE=$(curl -s -X POST "${SUPABASE_URL}/auth/v1/admin/users" \
-  -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5eWhrZGlzaGx5dGhrZG5vamRoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2Mjk4MjI3OSwiZXhwIjoyMDc4NTU4Mjc5fQ.placeholder" \
-  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5eWhrZGlzaGx5dGhrZG5vamRoIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2Mjk4MjI3OSwiZXhwIjoyMDc4NTU4Mjc5fQ.placeholder" \
+  -H "apikey: ${SERVICE_ROLE_KEY}" \
+  -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
   -H "Content-Type: application/json" \
   -d '{
     "email": "cortadamarc13@gmail.com",

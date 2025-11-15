@@ -35,9 +35,16 @@ serve(async (req) => {
       );
     }
 
-    // Get invite ID from URL
-    const url = new URL(req.url);
-    const inviteId = url.pathname.split("/").pop();
+    let inviteId: string | null = null;
+    if (req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      inviteId = typeof body?.invite_id === "string" ? body.invite_id : null;
+    }
+
+    if (!inviteId) {
+      const url = new URL(req.url);
+      inviteId = url.pathname.split("/").pop() ?? null;
+    }
 
     if (!inviteId) {
       return new Response(

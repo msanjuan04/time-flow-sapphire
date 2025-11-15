@@ -48,8 +48,19 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const STORAGE_KEY = "gtiq_auth";
 const TOKENS_KEY = "gtiq_tokens";
-const SUPABASE_BASE_URL = (import.meta.env.VITE_SUPABASE_URL || "https://fyyhkdishlythkdnojdh.supabase.co").replace(/\/$/, "");
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || "";
+const envSupabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const envAnonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+if (!envSupabaseUrl) {
+  throw new Error("VITE_SUPABASE_URL no está definido. Revisa tu archivo .env o variables en el hosting.");
+}
+
+if (!envAnonKey) {
+  throw new Error("VITE_SUPABASE_PUBLISHABLE_KEY no está definido. No se puede inicializar Supabase.");
+}
+
+const SUPABASE_BASE_URL = envSupabaseUrl.replace(/\/$/, "");
+const SUPABASE_ANON_KEY = envAnonKey;
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(null);

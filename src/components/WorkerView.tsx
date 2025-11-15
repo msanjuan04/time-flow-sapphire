@@ -9,6 +9,7 @@ import { useMembership } from "@/hooks/useMembership";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import NotificationBell from "@/components/NotificationBell";
+import { CompanySelector } from "@/components/CompanySelector";
 
 type WorkerStatus = "out" | "in" | "on_break";
 
@@ -27,16 +28,26 @@ interface ActiveWorkSession {
 type ClockAction = "in" | "out" | "break_start" | "break_end";
 
 const WorkerView = () => {
-  const { user, signOut } = useAuth();
-  const { companyId, membership, loading: membershipLoading } = useMembership();
+  const { user, signOut, memberships: authMemberships, company: authCompany } = useAuth();
+  const { companyId: hookCompanyId, membership: hookMembership, loading: membershipLoading, hasMultipleCompanies } = useMembership();
+  const fallbackMembership = authCompany
+    ? authMemberships?.find((m) => m.company_id === authCompany.id) ?? authMemberships?.[0]
+    : authMemberships?.[0];
+  const membership = hookMembership ?? (fallbackMembership ?? null);
+  const companyId = hookCompanyId ?? membership?.company_id ?? authCompany?.id ?? null;
+  const companyName = membership?.company?.name ?? authCompany?.name ?? "GTiQ";
   const navigate = useNavigate();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [status, setStatus] = useState<WorkerStatus>("out");
   const [activeSession, setActiveSession] = useState<ActiveWorkSession | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [actionPending, setActionPending] = useState<ClockAction | null>(null);
   const [location, setLocation] = useState<GeolocationCoords | null>(null);
   const [gpsEnabled, setGpsEnabled] = useState(false);
+  const [gpsWarningShown, setGpsWarningShown] = useState(false);
+  const [lastEvent, setLastEvent] = useState<{ type: ClockAction; timestamp: string } | null>(null);
+  const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
 
   // Update clock every second
   useEffect(() => {
@@ -95,6 +106,7 @@ const WorkerView = () => {
             longitude: position.coords.longitude,
           });
           setGpsEnabled(true);
+          setGpsWarningShown(false);
         },
         (error) => {
           console.warn("GPS not available:", error);
@@ -103,6 +115,29 @@ const WorkerView = () => {
       );
     }
   }, []);
+
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOffline(false);
+      toast.success("Conexión restablecida", {
+        description: "Puedes volver a fichar.",
+      });
+      fetchStatus();
+    };
+    const handleOffline = () => {
+      setIsOffline(true);
+      toast.warning("Sin conexión a internet", {
+        description: "Tus fichajes se habilitarán cuando vuelvas a estar conectado.",
+      });
+    };
+
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, [fetchStatus]);
 
   useEffect(() => {
     let interval: NodeJS.Timeout;
@@ -135,6 +170,19 @@ const WorkerView = () => {
   };
 
   const callClockAPI = async (action: ClockAction) => {
+    if (!navigator.onLine) {
+      toast.error("Sin conexión a internet", {
+        description: "Activa tu conexión para registrar el fichaje.",
+        action: {
+          label: "Reintentar",
+          onClick: () => callClockAPI(action),
+        },
+      });
+      setIsOffline(true);
+      return;
+    }
+
+    setActionPending(action);
     setLoading(true);
     try {
       // Ensure we have a location right before sending
@@ -145,6 +193,13 @@ const WorkerView = () => {
           setLocation({ latitude: fresh.latitude, longitude: fresh.longitude });
           loc = { latitude: fresh.latitude, longitude: fresh.longitude } as any;
           setGpsEnabled(true);
+          setGpsWarningShown(false);
+        } else if (!gpsWarningShown) {
+          toast.warning("No pudimos obtener tu ubicación", {
+            description: "Verifica permisos de GPS. El fichaje se guardará sin coordenadas.",
+          });
+          setGpsWarningShown(true);
+          setGpsEnabled(false);
         }
       }
 
@@ -165,22 +220,37 @@ const WorkerView = () => {
       await fetchStatus();
 
       // Show success message based on action
-      const messages = {
+      const messages: Record<ClockAction, string> = {
         in: '✓ Entrada registrada',
         out: '✓ Salida registrada',
         break_start: '☕ Pausa iniciada',
         break_end: '✓ Pausa finalizada',
       };
 
+      const timestamp = result?.timestamp || new Date().toISOString();
+      setLastEvent({ type: action, timestamp });
+
       toast.success(messages[action], {
-        description: new Date().toLocaleTimeString("es-ES"),
+        description: new Date(timestamp).toLocaleTimeString("es-ES"),
       });
     } catch (error) {
       console.error("Clock API error:", error);
-      const message = error instanceof Error ? error.message : "Error al registrar fichaje";
-      toast.error(message);
+      const rawMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+          ? error
+          : "Error al registrar fichaje";
+      const friendlyMessage = normalizeErrorMessage(rawMessage);
+      toast.error(friendlyMessage, {
+        action: {
+          label: "Reintentar",
+          onClick: () => callClockAPI(action),
+        },
+      });
     } finally {
       setLoading(false);
+      setActionPending(null);
     }
   };
 
@@ -237,7 +307,45 @@ const WorkerView = () => {
     }
   };
 
-  if (!user?.id || membershipLoading || !companyId || !membership?.company) {
+  const formatEventLabel = (type: ClockAction) => {
+    switch (type) {
+      case "in":
+        return "Entrada registrada";
+      case "out":
+        return "Salida registrada";
+      case "break_start":
+        return "Pausa iniciada";
+      case "break_end":
+        return "Pausa finalizada";
+    }
+  };
+
+  const formatEventTimestamp = (timestamp: string) => {
+    return new Date(timestamp).toLocaleString("es-ES", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      day: "2-digit",
+      month: "2-digit",
+    });
+  };
+
+  const normalizeErrorMessage = (raw: string) => {
+    if (raw.toLowerCase().includes("sesión activa")) {
+      return "Ya tienes una sesión activa. Finalízala antes de volver a fichar.";
+    }
+    if (raw.toLowerCase().includes("ninguna sesión activa")) {
+      return "No tienes una sesión abierta. Registra una entrada antes de salir.";
+    }
+    if (raw.toLowerCase().includes("suspendida")) {
+      return "Tu empresa está suspendida. Contacta con un administrador.";
+    }
+    return raw || "No pudimos registrar el fichaje. Intenta nuevamente.";
+  };
+
+  const isActionDisabled = loading || isOffline;
+
+  if (!user?.id || !companyId || (!membership && membershipLoading)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
         <Card className="glass-card max-w-md w-full p-6 text-center space-y-4">
@@ -255,6 +363,36 @@ const WorkerView = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
       <div className="max-w-2xl mx-auto space-y-6 pt-8">
+        {isOffline && (
+          <Card className="border-amber-500 bg-amber-50 text-amber-800 p-4 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5" />
+              <div>
+                <p className="font-semibold text-amber-900">Estás sin conexión</p>
+                <p className="text-sm text-amber-800">
+                  Tus fichajes se habilitarán cuando vuelvas a tener internet.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (!navigator.onLine) {
+                    toast.warning("Seguimos sin conexión");
+                    return;
+                  }
+                  setIsOffline(false);
+                  fetchStatus();
+                }}
+              >
+                Reintentar
+              </Button>
+            </div>
+          </Card>
+        )}
+
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -267,12 +405,13 @@ const WorkerView = () => {
             </div>
             <div>
               <h1 className="text-xl font-bold">
-                {membership?.company.name || "GTiQ"}
+                {companyName}
               </h1>
               <p className="text-sm text-muted-foreground">Control de fichaje</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {hasMultipleCompanies && <CompanySelector />}
             <NotificationBell />
             <Button variant="ghost" size="icon" onClick={signOut} className="hover-scale">
               <LogOut className="w-5 h-5" />
@@ -411,11 +550,15 @@ const WorkerView = () => {
                 >
                   <Button
                     onClick={handleClockIn}
-                    disabled={loading}
+                    disabled={isActionDisabled}
                     size="lg"
                     className="w-full h-20 text-xl rounded-2xl shadow-lg hover:shadow-xl smooth-transition bg-gradient-to-r from-primary to-primary/80"
                   >
-                    <LogIn className="w-8 h-8 mr-3" />
+                    {actionPending === "in" ? (
+                      <Loader2 className="w-6 h-6 mr-3 animate-spin" />
+                    ) : (
+                      <LogIn className="w-8 h-8 mr-3" />
+                    )}
                     Fichar Entrada
                   </Button>
                 </motion.div>
@@ -429,22 +572,30 @@ const WorkerView = () => {
                 >
                   <Button
                     onClick={handleBreakStart}
-                    disabled={loading}
+                    disabled={isActionDisabled}
                     size="lg"
                     variant="secondary"
                     className="w-full h-16 text-lg rounded-2xl shadow-md hover:shadow-lg smooth-transition"
                   >
-                    <Coffee className="w-6 h-6 mr-2" />
+                    {actionPending === "break_start" ? (
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    ) : (
+                      <Coffee className="w-6 h-6 mr-2" />
+                    )}
                     Iniciar Pausa
                   </Button>
                   <Button
                     onClick={handleClockOut}
-                    disabled={loading}
+                    disabled={isActionDisabled}
                     size="lg"
                     variant="destructive"
                     className="w-full h-16 text-lg rounded-2xl shadow-md hover:shadow-lg smooth-transition"
                   >
-                    <LogOut className="w-6 h-6 mr-2" />
+                    {actionPending === "out" ? (
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    ) : (
+                      <LogOut className="w-6 h-6 mr-2" />
+                    )}
                     Fichar Salida
                   </Button>
                 </motion.div>
@@ -462,21 +613,29 @@ const WorkerView = () => {
                   </div>
                   <Button
                     onClick={handleBreakEnd}
-                    disabled={loading}
+                    disabled={isActionDisabled}
                     size="lg"
                     className="w-full h-16 text-lg rounded-2xl shadow-md hover:shadow-lg smooth-transition"
                   >
-                    <Clock className="w-6 h-6 mr-2" />
+                    {actionPending === "break_end" ? (
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    ) : (
+                      <Clock className="w-6 h-6 mr-2" />
+                    )}
                     Reanudar Trabajo
                   </Button>
                   <Button
                     onClick={handleClockOut}
-                    disabled={loading}
+                    disabled={isActionDisabled}
                     size="lg"
                     variant="outline"
                     className="w-full h-16 text-lg rounded-2xl shadow-md hover:shadow-lg smooth-transition"
                   >
-                    <LogOut className="w-6 h-6 mr-2" />
+                    {actionPending === "out" ? (
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    ) : (
+                      <LogOut className="w-6 h-6 mr-2" />
+                    )}
                     Fichar Salida
                   </Button>
                 </motion.div>
@@ -484,6 +643,19 @@ const WorkerView = () => {
             </div>
           </Card>
         </motion.div>
+
+        {lastEvent && (
+          <Card className="glass-card p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+              <Clock className="w-5 h-5 text-primary" />
+            </div>
+            <div className="flex-1">
+              <p className="text-xs text-muted-foreground">Último movimiento</p>
+              <p className="font-semibold text-foreground">{formatEventLabel(lastEvent.type)}</p>
+              <p className="text-xs text-muted-foreground">{formatEventTimestamp(lastEvent.timestamp)}</p>
+            </div>
+          </Card>
+        )}
 
         {/* Status Indicator */}
         <motion.div

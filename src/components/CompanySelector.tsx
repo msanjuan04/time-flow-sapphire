@@ -7,6 +7,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { useMembership } from "@/hooks/useMembership";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 export const CompanySelector = () => {
   const { membership, memberships, hasMultipleCompanies, switchCompany } = useMembership();
@@ -36,10 +38,31 @@ export const CompanySelector = () => {
               <Check className="w-4 h-4" />
             )}
             <div className="flex flex-col flex-1">
-              <span className="font-medium">{m.company.name}</span>
-              <span className="text-xs text-muted-foreground capitalize">
-                {m.role}
-              </span>
+              <span className="font-medium">{m.company?.name || "Empresa sin nombre"}</span>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <span className="capitalize">{m.role}</span>
+                {m.company?.status && (
+                  <Badge
+                    variant={m.company.status === "suspended" ? "destructive" : "secondary"}
+                    className={cn(
+                      "text-[10px]",
+                      m.company.status === "grace" && "bg-amber-100 text-amber-800 hover:bg-amber-100",
+                      m.company.status === "suspended" && "bg-red-100 text-red-700 hover:bg-red-100"
+                    )}
+                  >
+                    {m.company.status === "grace"
+                      ? "Período de gracia"
+                      : m.company.status === "suspended"
+                      ? "Suspendida"
+                      : "Activa"}
+                  </Badge>
+                )}
+                {m.company?.plan && (
+                  <span className="text-[10px] uppercase tracking-wide">
+                    Plan {m.company.plan}
+                  </span>
+                )}
+              </div>
             </div>
           </DropdownMenuItem>
         ))}

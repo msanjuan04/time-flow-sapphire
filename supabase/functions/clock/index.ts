@@ -2,8 +2,11 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.81.0'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+  'Access-Control-Allow-Headers': 'Authorization, authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+  'Access-Control-Max-Age': '86400',
+  'Access-Control-Allow-Credentials': 'true',
+};
 
 interface ClockRequest {
   action: 'in' | 'out' | 'break_start' | 'break_end';
@@ -28,7 +31,7 @@ interface MembershipResult {
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
+    return new Response('ok', { status: 200, headers: corsHeaders });
   }
 
   try {
@@ -70,6 +73,73 @@ Deno.serve(async (req) => {
       );
     }
 
+    const notifyUsers = async (userIds: string[], payload: { title: string; message: string; type: 'info' | 'success' | 'warning' | 'error'; entity_type?: string | null; entity_id?: string | null; company_id: string }) => {
+      if (!userIds.length) return;
+      try {
+        await supabaseAdmin.from('notifications').insert(
+          userIds.map((userId) => ({
+            company_id: payload.company_id,
+            user_id: userId,
+            title: payload.title,
+            message: payload.message,
+            type: payload.type,
+            entity_type: payload.entity_type || null,
+            entity_id: payload.entity_id || null,
+          }))
+        );
+      } catch (notificationError) {
+        console.error('Failed to create notification:', notificationError);
+      }
+    };
+
+    const reportIncident = async (params: {
+      type: 'late_arrival' | 'early_departure' | 'missing_checkout' | 'missing_checkin' | 'other';
+      description: string;
+      notifyMessage: string;
+      severity?: 'info' | 'success' | 'warning' | 'error';
+    }) => {
+      try {
+        const incidentDate = new Date().toISOString().split('T')[0];
+        const { data: incident, error: incidentError } = await supabaseAdmin
+          .from('incidents')
+          .insert({
+            user_id: currentUserId,
+            company_id: companyId,
+            incident_type: params.type,
+            incident_date: incidentDate,
+            description: params.description,
+          })
+          .select()
+          .single();
+
+        if (incidentError) {
+          console.error('Failed to create incident:', incidentError);
+          return;
+        }
+
+        const { data: admins } = await supabaseAdmin
+          .from('memberships')
+          .select('user_id')
+          .eq('company_id', companyId)
+          .in('role', ['owner', 'admin', 'manager']);
+
+        const recipients = new Set<string>();
+        (admins || []).forEach((m: { user_id: string }) => recipients.add(m.user_id));
+        recipients.add(currentUserId);
+
+        await notifyUsers(Array.from(recipients), {
+          company_id: companyId,
+          title: 'Incidencia de fichaje',
+          message: params.notifyMessage,
+          type: params.severity || 'warning',
+          entity_type: 'incident',
+          entity_id: incident?.id || null,
+        });
+      } catch (error) {
+        console.error('Failed to report incident:', error);
+      }
+    };
+
     console.log('Clock request:', { user_id: currentUserId, action, source, company_id });
 
     // Get user's company membership
@@ -97,11 +167,17 @@ Deno.serve(async (req) => {
     const membership = memberships[0] as any;
 
     const companyId = membership.company_id;
-    const company = membership.company?.[0];
+    const company = Array.isArray(membership.company) ? membership.company[0] : membership.company;
 
     // Check if company is active
     if (company?.status === 'suspended') {
       console.error('Company suspended:', companyId);
+      await reportIncident({
+        type: 'other',
+        description: 'Intento de fichar con empresa suspendida',
+        notifyMessage: 'Un empleado intentó fichar mientras la empresa está suspendida.',
+        severity: 'error',
+      });
       return new Response(
         JSON.stringify({ error: 'Empresa suspendida. Contacta con administración.' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -141,6 +217,11 @@ Deno.serve(async (req) => {
 
     // Validate action based on current state
     if (action === 'in' && activeSession) {
+      await reportIncident({
+        type: 'missing_checkout',
+        description: 'El empleado intentó fichar entrada con una sesión previa abierta.',
+        notifyMessage: 'Una sesión previa quedó abierta y el sistema bloqueó un nuevo fichaje de entrada.',
+      });
       return new Response(
         JSON.stringify({ error: 'Ya tienes una sesión activa' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -148,6 +229,11 @@ Deno.serve(async (req) => {
     }
 
     if ((action === 'out' || action === 'break_start' || action === 'break_end') && !activeSession) {
+      await reportIncident({
+        type: 'missing_checkin',
+        description: `El empleado intentó registrar ${action} sin tener una sesión abierta.`,
+        notifyMessage: 'Se detectó un intento de fichaje sin entrada previa.',
+      });
       return new Response(
         JSON.stringify({ error: 'No tienes ninguna sesión activa' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -169,6 +255,12 @@ Deno.serve(async (req) => {
 
     if (eventError) {
       console.error('Event insert error:', eventError);
+      await reportIncident({
+        type: 'other',
+        description: 'Error de base de datos al registrar el evento de fichaje.',
+        notifyMessage: 'El sistema no pudo registrar un fichaje por un error interno.',
+        severity: 'error',
+      });
       return new Response(
         JSON.stringify({ error: 'Error al registrar evento' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -188,6 +280,12 @@ Deno.serve(async (req) => {
 
       if (sessionError) {
         console.error('Session insert error:', sessionError);
+        await reportIncident({
+          type: 'other',
+          description: 'No se pudo crear la sesión de trabajo del empleado.',
+          notifyMessage: 'Un fichaje no pudo crear su sesión correspondiente.',
+          severity: 'error',
+        });
         return new Response(
           JSON.stringify({ error: 'Error al crear sesión' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -206,6 +304,12 @@ Deno.serve(async (req) => {
 
       if (updateError) {
         console.error('Session update error:', updateError);
+        await reportIncident({
+          type: 'other',
+          description: 'No se pudo cerrar la sesión de trabajo activa del empleado.',
+          notifyMessage: 'Un fichaje de salida falló al cerrar la sesión.',
+          severity: 'error',
+        });
         return new Response(
           JSON.stringify({ error: 'Error al cerrar sesión' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -236,6 +340,7 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     console.error('Unexpected error:', error);
+    // In case of total failure, we cannot determine company/user safely for incident
     return new Response(
       JSON.stringify({ error: 'Error interno del servidor' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

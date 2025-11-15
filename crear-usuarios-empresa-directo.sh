@@ -4,9 +4,9 @@
 # Necesita autenticación como superadmin
 
 COMPANY_ID="d7babcd0-2d90-4300-a4b7-4d394351be6c"
-PROJECT_REF="fyyhkdishlythkdnojdh"
+PROJECT_REF="TU_PROJECT_REF"
 FUNCTION_URL="https://${PROJECT_REF}.supabase.co/functions/v1/create-company-user"
-ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5eWhrZGlzaGx5dGhrZG5vamRoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI5ODIyNzksImV4cCI6MjA3ODU1ODI3OX0.1tAqRaA9hDl1wozBxYzA9Ms1mHVULtJbdAgoRLgy5jk"
+ANON_KEY="REEMPLAZA_CON_TU_ANON_KEY"
 
 echo "🔐 Creando usuarios para Gnerai Systems S.L..."
 echo ""
@@ -68,4 +68,3 @@ echo "$WORKER_RESPONSE" | jq '.' 2>/dev/null || echo "$WORKER_RESPONSE"
 echo ""
 
 echo "✅ Proceso completado"
-

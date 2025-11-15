@@ -1,6 +1,5 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { requireSuperadmin } from "../_shared/admin.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -13,56 +12,109 @@ serve(async (req) => {
   }
 
   try {
-    // Validate superadmin
-    const { supabase } = await requireSuperadmin(req);
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-    // Get invite ID from request body
-    const body = await req.json();
-    const inviteId = body.invite_id;
+    const anonClient = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_ANON_KEY") ?? "",
+      {
+        global: {
+          headers: { Authorization: authHeader },
+        },
+      }
+    );
+
+    const {
+      data: { user },
+      error: authError,
+    } = await anonClient.auth.getUser();
+
+    if (authError || !user) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!serviceKey) {
+      console.error("Missing service role key");
+      return new Response(
+        JSON.stringify({ error: "Misconfigured server" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      serviceKey,
+      {
+        auth: { autoRefreshToken: false, persistSession: false },
+      }
+    );
+
+    const body = await req.json().catch(() => ({}));
+    const inviteId = body?.invite_id as string | undefined;
 
     if (!inviteId) {
-      console.error("No invite_id provided in request body");
       return new Response(
         JSON.stringify({ error: "Invite ID is required" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log("Resending invite with ID:", inviteId);
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("is_superadmin")
+      .eq("id", user.id)
+      .maybeSingle();
+    const isSuperadmin = profile?.is_superadmin === true;
 
-    // Get the invite
-    const { data: invite, error: fetchError } = await supabase
-      .from("invites")
-      .select("*")
-      .eq("id", inviteId)
-      .single();
+    const { data: membership } = await supabase
+      .from("memberships")
+      .select("company_id, role")
+      .eq("user_id", user.id)
+      .maybeSingle();
 
-    if (fetchError) {
-      console.error("Error fetching invite:", fetchError);
+    const isCompanyAdmin = membership && ["owner", "admin"].includes(membership.role);
+
+    if (!isSuperadmin && !isCompanyAdmin) {
       return new Response(
-        JSON.stringify({ error: "Invitation not found", details: fetchError.message }),
-        { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Insufficient permissions" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    if (!invite) {
-      console.error("Invite not found for ID:", inviteId);
+    const { data: invite, error: inviteError } = await supabase
+      .from("invites")
+      .select("*")
+      .eq("id", inviteId)
+      .maybeSingle();
+
+    if (inviteError || !invite) {
       return new Response(
         JSON.stringify({ error: "Invitation not found" }),
         { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log("Invite found:", invite.email, "status:", invite.status);
+    if (!isSuperadmin && invite.company_id !== membership!.company_id) {
+      return new Response(
+        JSON.stringify({ error: "Cannot manage invitations from another company" }),
+        { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
 
-    // Generate new token and expiration
     const newToken = crypto.randomUUID();
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 7);
 
-    console.log("Updating invite with new token and expiration:", expiresAt.toISOString());
-
-    // Update invite with new token and reset to pending
     const { data: updatedInvite, error: updateError } = await supabase
       .from("invites")
       .update({
@@ -74,29 +126,14 @@ serve(async (req) => {
       .select()
       .single();
 
-    if (updateError) {
-      console.error("Error updating invite:", updateError);
-      console.error("Update error details:", JSON.stringify(updateError));
+    if (updateError || !updatedInvite) {
+      console.error("Failed to update invite:", updateError);
       return new Response(
-        JSON.stringify({ 
-          error: "Failed to resend invitation",
-          details: updateError.message,
-          code: updateError.code 
-        }),
+        JSON.stringify({ error: "Failed to resend invitation" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    if (!updatedInvite) {
-      console.error("No updated invite returned after update");
-      return new Response(
-        JSON.stringify({ error: "Failed to update invitation" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    console.log("Invite resent successfully:", inviteId);
-    // Send email with new invite link via Resend (if configured)
     try {
       const siteUrl = Deno.env.get("SITE_URL") || "http://localhost:8080";
       const resendApiKey = Deno.env.get("RESEND_API_KEY");
@@ -107,7 +144,7 @@ serve(async (req) => {
         const res = await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
-            "Authorization": `Bearer ${resendApiKey}`,
+            Authorization: `Bearer ${resendApiKey}`,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -128,17 +165,11 @@ serve(async (req) => {
         });
 
         if (!res.ok) {
-          const errText = await res.text();
-          console.error("Resend email failed (resend-invite):", errText);
-        } else {
-          console.log("Resent invite email via Resend to:", updatedInvite.email);
+          console.error("Resend email failed (resend-invite):", await res.text());
         }
-      } else {
-        console.warn("RESEND_API_KEY not set; skipping resend invite email.");
       }
     } catch (emailErr) {
       console.error("Error sending resend invite email:", emailErr);
-      // Do not fail the whole request if email fails
     }
 
     return new Response(

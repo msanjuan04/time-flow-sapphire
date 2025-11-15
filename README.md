@@ -14,11 +14,12 @@ Sistema profesional de control horario (fichaje) para empresas construido con Re
 
 ## Stack Tecnológico
 
-- **Frontend**: React 18 + TypeScript + Vite
+- **Frontend**: React 18 + TypeScript + Vite + Vitest para testing
 - **Estilos**: Tailwind CSS + Shadcn UI
 - **Backend**: Lovable Cloud (Supabase)
 - **Base de datos**: PostgreSQL con RLS
 - **Autenticación**: Supabase Auth
+- **Testing**: Vitest + Testing Library
 
 ## Estructura de Base de Datos
 
@@ -29,134 +30,106 @@ Sistema profesional de control horario (fichaje) para empresas construido con Re
 - **memberships**: Relación usuario-empresa con roles
 - **time_events**: Eventos de fichaje (entrada/salida/pausa)
 - **work_sessions**: Sesiones de trabajo calculadas
+- **incidents**: Incidencias automáticas de fichaje
+- **notifications**: Notificaciones para admins y workers
+- **correction_requests**: Solicitudes de corrección de fichajes
 
 ### Roles
 
 - **Owner**: Control total de la empresa
 - **Admin**: Gestión y visualización completa
-- **Manager**: Visualización del equipo asignado
+- **Manager**: Visualización del equipo asignado y revisión de incidencias/correcciones
 - **Worker**: Solo puede fichar entrada/salida/pausas
 
 ## Cómo empezar
 
 ### Primer registro
 
-1. Ve a `/auth` y regístrate con tu email
-2. Automáticamente se te redirigirá al onboarding
-3. Crea tu empresa (serás asignado como Owner)
-4. ¡Listo para usar!
+1. Ve a `/auth` e inicia sesión con tu código de 6 dígitos.
+2. Si eres superadmin, ejecuta `npm run ensure:superadmin` y usa el código 739421.
+3. Al crear una empresa se asigna automáticamente al usuario como Owner.
 
 ### Agregar empleados
 
-Los Owners y Admins pueden:
-1. Crear cuentas para empleados
-2. Asignarles roles directamente en la base de datos (por ahora)
-3. Los empleados recibirán acceso según su rol
+Owners y Admins pueden invitar empleados desde **Gestión de Empleados → Invitaciones pendientes**. El flujo crea un registro en Supabase, envía email (via Resend) y permite reenviar o revocar desde la UI.
 
-### Testing rápido
+## Testing y QA
 
-Para probar los diferentes roles, crea múltiples cuentas y asígnales roles en la tabla `memberships` desde el panel de Lovable Cloud:
-
-```sql
--- Ejemplo: Asignar rol worker a un usuario
-UPDATE memberships 
-SET role = 'worker' 
-WHERE user_id = '[user-id-aquí]';
-```
-
-## Vistas por rol
-
-### Worker
-- Botón grande de fichar entrada/salida
-- Indicador de tiempo transcurrido
-- Gestión de pausas
-- Interfaz simple y directa
-
-### Admin/Owner
-- Dashboard con métricas
-- Usuarios activos en tiempo real
-- Listado de fichajes recientes
-- Estadísticas del día
-
-### Manager
-- Vista del equipo asignado (próximamente)
-- Métricas de su departamento
-
-## Desarrollo local
+Se añadió Vitest con Testing Library para tests de componentes y hooks.
 
 ```bash
-# Instalar dependencias
-npm install
-
-# Iniciar servidor de desarrollo
-npm run dev
-
-# Abrir en http://localhost:8080
+npm run test        # ejecuta Vitest una vez
+npm run test:watch  # Vitest en modo watch
+npm run test:ci     # Vitest run para CI
 ```
 
-### Envío de emails de invitación
+Archivo de configuración: `vitest.config.ts`. Los tests residen en `src/**/*.test.tsx` o `__tests__`.
 
-Las invitaciones se envían desde funciones Edge de Supabase. Se requiere configurar un proveedor de correo (por ejemplo, Resend):
+### Verificación de esquema y funciones
 
-1. Crea una cuenta en Resend y genera una API Key.
-2. Configura estas variables de entorno en Supabase (Dashboard o `supabase secrets set`):
-   - `RESEND_API_KEY`: tu API key de Resend
-   - `EMAIL_FROM`: dirección de envío, por ejemplo `GTiQ <no-reply@tudominio.com>`
-   - `SITE_URL`: URL pública de la app, por ejemplo `https://app.tudominio.com` (se usa para generar el enlace de aceptación)
+- Las migraciones viven en `supabase/migrations`. Ejecuta `supabase migration status` y `supabase migrate up` para validar el esquema.
+- Para health checks de Edge Functions puedes usar `supabase functions deploy --dry-run` y el dashboard de Supabase (Health tab) o scripts que hagan ping a `/functions/v1/<func>`.
+- Recomendado: configurar alertas en Supabase (Settings → Monitoring) para edge function failures y anomalias en la base de datos.
 
-Las funciones afectadas:
-- `create-invite`: crea la invitación y envía email
-- `resend-invite`: regenera el token y reenvía el email
+## Monitorización y alertas
 
-En local, puedes crear un archivo `.env` para Vite, pero recuerda que las funciones Edge usan variables configuradas en el entorno de Supabase, no las del frontend.
+1. **Supabase Logs & Alerts**: Configura en el dashboard alertas basadas en query performance y edge function errors (Settings → Logs/Monitoring → Alerts). Ejemplos:
+   - Error rate > 5% en `clock`
+   - # de incidencias diarias por encima de un umbral
+2. **Health Checks**: Añade un endpoint simple en cada función crítica que responda `200 ok` (ej. `clock` con `OPTIONS`). Usa servicios como UptimeRobot o Supabase Health.
+3. **Vitest en CI**: Ejecuta `npm run test:ci` antes de desplegar. Para pipelines, combine `npm run lint && npm run test:ci && npm run build`.
 
-### Funciones de Superadmin y RLS
+## Contribución
 
-Para que el Superadmin vea todas las empresas y usuarios, las funciones Edge usan el Service Role (bypass RLS). Configura también:
-- `SUPABASE_SERVICE_ROLE_KEY`: clave service role de tu proyecto Supabase.
+1. `npm install`
+2. `npm run dev`
+3. Ejecuta `npm run test:watch` mientras desarrollas
 
-Añádela en Supabase → Project Settings → Configuration → Secrets y vuelve a desplegar las funciones.
+## Dependencias críticas
 
-## Diseño
-
-El sistema utiliza un diseño inspirado en Apple con:
-- Efecto "liquid glass" (glassmorphism)
-- Color primario: GnerAI Blue (#1A6AFF)
-- Fuentes del sistema (SF Pro Display)
-- Animaciones suaves y fluidas
-- Diseño responsive
-
-## Seguridad
-
-- ✅ Row Level Security (RLS) en todas las tablas
-- ✅ Aislamiento por empresa
-- ✅ Autenticación segura con Supabase
-- ✅ Roles almacenados en tabla separada
-- ✅ Validación de permisos en el backend
+- `supabase.functions.*` (clock, create-invite, resend-invite, revoke-invite, request-login-code, list-invites)
+- `scripts/ensure-superadmin.mjs`
 
 ## SUPERADMIN
 
-SUPERADMIN:  
-email: `gnerai@gneraitiq.com`  
-código: `739421`
+- email: `gnerai@gneraitiq.com`
+- código: `739421`
 
-Para asegurarte de que siempre exista con ese código, ejecuta `npm run ensure:superadmin` (requiere `SUPABASE_SERVICE_ROLE_KEY` y `SUPABASE_URL` en tu entorno).
+Ejecútalo mediante `npm run ensure:superadmin` tras configurar `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`.
+
+## Deploy
+
+### Frontend (Vercel / Netlify)
+
+Ambos proveedores siguen los mismos pasos básicos:
+
+1. **Comando de build**: `npm run build`
+2. **Directorio de publicación**: `dist/`
+3. **Variables de entorno (todas en el panel del hosting, nunca en el código)**  
+   - `VITE_SUPABASE_URL=https://TU-PROYECTO.supabase.co`  
+   - `VITE_SUPABASE_PUBLISHABLE_KEY=tu_anon_key`  
+   - `VITE_SUPABASE_PROJECT_ID=tu_project_id`
+4. **Comando de pre-deploy recomendado**: `npm run test:ci && npm run build` (en Vercel usa el campo “Build Command”).  
+   Esto garantiza que Vitest pase antes de publicar.  
+5. **Variables para funciones**: usa `supabase secrets set` para `RESEND_API_KEY`, `EMAIL_FROM`, `SITE_URL`, etc. Nunca expongas `SUPABASE_SERVICE_ROLE_KEY` en el frontend.
+
+Notas específicas:
+
+- **Vercel**: en Project Settings → Environment Variables, define las `VITE_...`. Activa “Automatic Prerender” y usa `npm run test:ci && npm run build`. Para pruebas post-deploy, habilita [Checks](https://vercel.com/docs/checks) y añade `npm run test:ci`.
+- **Netlify**: en Site settings → Build & deploy, establece `cmd: npm run build`, `Publish directory: dist`. En “Environment”, añade las `VITE_...`. Para tests automáticos usa los [Build Plugins](https://docs.netlify.com/configure-builds/build-plugins/) o define `npm run test:ci && npm run build`.
+
+### Supabase
+
+- `supabase functions deploy <name>` (clock, create-invite, request-login-code, etc.)
+- `supabase secrets set` para `RESEND_API_KEY`, `EMAIL_FROM`, `SITE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, etc.
+- `supabase migrate status && supabase migrate up` para validar el esquema antes de desplegar.
 
 ## Próximas funcionalidades
 
-- [ ] Panel de gestión de empleados
-- [ ] Vista de Manager con filtros de equipo
-- [ ] Reportes y exportación de datos
-- [ ] Notificaciones push
-- [ ] Geolocalización de fichajes
-- [ ] Aplicación móvil
-
-## Soporte
-
-Para más información sobre Lovable Cloud:
-- [Documentación oficial](https://docs.lovable.dev/)
-- [Guía de Cloud](https://docs.lovable.dev/features/cloud)
+- Reportes avanzados y exportaciones
+- App móvil
+- Integración con payroll
+- Señales de geolocalización avanzada
 
 ---
-
-Desarrollado con ❤️ usando Lovable
+Desarrollado con ❤️ usando Lovable Cloud

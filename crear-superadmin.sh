@@ -3,7 +3,7 @@
 # Script para crear un superadmin en Supabase
 
 EMAIL="${1:-gnerai@gneraitiq.com}"
-PROJECT_REF="fyyhkdishlythkdnojdh"
+PROJECT_REF="TU_PROJECT_REF"
 FUNCTION_URL="https://${PROJECT_REF}.supabase.co/functions/v1/admin-create-superadmin"
 
 echo "🔐 Creando superadmin..."
@@ -37,7 +37,7 @@ echo "🔄 Creando superadmin..."
 # Llamar a la función Edge Function
 RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${FUNCTION_URL}" \
   -H "Content-Type: application/json" \
-  -H "apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5eWhrZGlzaGx5dGhrZG5vamRoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI5ODIyNzksImV4cCI6MjA3ODU1ODI3OX0.1tAqRaA9hDl1wozBxYzA9Ms1mHVULtJbdAgoRLgy5jk" \
+  -H "apikey: ${SUPABASE_SERVICE_ROLE_KEY}" \
   -d "{
     \"email\": \"${EMAIL}\",
     \"password\": \"${PASSWORD}\",
@@ -61,4 +61,3 @@ else
   echo "$BODY" | jq '.' 2>/dev/null || echo "$BODY"
   exit 1
 fi
-

@@ -1,5 +1,5 @@
 // src/pages/Employees.tsx
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,7 +12,18 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  UserPlus, Search, Filter, Edit, Download, FileText, Users as UsersIcon, MapPin,
+  UserPlus,
+  Search,
+  Filter,
+  Edit,
+  Download,
+  FileText,
+  Users as UsersIcon,
+  MapPin,
+  RefreshCcw,
+  Send,
+  Ban,
+  Loader2,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -90,11 +101,23 @@ interface DetailEvent {
   longitude: number | null;
 }
 
+interface InviteSummary {
+  id: string;
+  email: string;
+  role: string;
+  status: string;
+  created_at: string;
+  expires_at: string;
+  center_id: string | null;
+  team_id: string | null;
+}
+
 const Employees = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { companyId, role } = useMembership();
   const { isSuperadmin } = useSuperadmin();
+  const canManageInvites = isSuperadmin || role === "owner" || role === "admin";
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
@@ -119,6 +142,10 @@ const Employees = () => {
 
   // Cache de ubicaciones
   const [locCache, setLocCache] = useState<Record<string, { lat: number; lng: number } | null>>({});
+  const [invites, setInvites] = useState<InviteSummary[]>([]);
+  const [invitesLoading, setInvitesLoading] = useState(false);
+  const [invitesError, setInvitesError] = useState<string | null>(null);
+  const [inviteAction, setInviteAction] = useState<{ id: string; action: "resend" | "revoke" } | null>(null);
 
   const mapSrc = (lat: number, lng: number, z = 15) =>
     `https://maps.google.com/maps?q=${lat},${lng}&z=${z}&output=embed`;
@@ -284,6 +311,71 @@ const Employees = () => {
     }
   };
 
+  const fetchInvites = useCallback(async () => {
+    if (!canManageInvites) return;
+    setInvitesLoading(true);
+    setInvitesError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke<{ invites: InviteSummary[] }>("list-invites", {
+        body: { status: "pending" },
+      });
+      if (error) throw error;
+      setInvites(data?.invites ?? []);
+    } catch (err) {
+      console.error("Error fetching invites:", err);
+      setInvitesError("No pudimos cargar las invitaciones.");
+    } finally {
+      setInvitesLoading(false);
+    }
+  }, [canManageInvites]);
+
+  useEffect(() => {
+    if (canManageInvites) {
+      fetchInvites();
+    } else {
+      setInvites([]);
+    }
+  }, [canManageInvites, fetchInvites]);
+
+  const handleResendInvite = async (inviteId: string) => {
+    setInviteAction({ id: inviteId, action: "resend" });
+    try {
+      const { error } = await supabase.functions.invoke("resend-invite", {
+        body: { invite_id: inviteId },
+      });
+      if (error) throw error;
+      toast.success("Invitación reenviada");
+      fetchInvites();
+    } catch (error) {
+      console.error("Error resending invite:", error);
+      toast.error("No se pudo reenviar la invitación");
+    } finally {
+      setInviteAction(null);
+    }
+  };
+
+  const handleRevokeInvite = async (inviteId: string) => {
+    setInviteAction({ id: inviteId, action: "revoke" });
+    try {
+      const { error } = await supabase.functions.invoke("revoke-invite", {
+        body: { invite_id: inviteId },
+      });
+      if (error) throw error;
+      toast.success("Invitación revocada");
+      fetchInvites();
+    } catch (error) {
+      console.error("Error revoking invite:", error);
+      toast.error("No se pudo revocar la invitación");
+    } finally {
+      setInviteAction(null);
+    }
+  };
+
+  const handleInviteSuccess = () => {
+    fetchEmployees();
+    fetchInvites();
+  };
+
   const getRoleBadgeColor = (r: Exclude<RoleFilter, "all">) =>
     ({
       owner: "bg-primary text-primary-foreground",
@@ -342,12 +434,6 @@ const Employees = () => {
               <p className="text-sm text-muted-foreground">{totalEmployees} empleados en total</p>
             </div>
           </div>
-          {isSuperadmin && (
-            <Button onClick={() => setInviteDialogOpen(true)} className="hover-scale">
-              <UserPlus className="w-4 h-4 mr-2" />
-              Invitar Usuario
-            </Button>
-          )}
         </div>
 
         {/* Filtros */}
@@ -377,6 +463,96 @@ const Employees = () => {
             </Select>
           </div>
         </Card>
+
+        {canManageInvites && (
+          <Card className="glass-card p-4 space-y-4">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold">Invitaciones pendientes</h2>
+                <p className="text-sm text-muted-foreground">
+                  Controla quién aún no ha activado su acceso.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchInvites}
+                  disabled={invitesLoading}
+                >
+                  {invitesLoading ? (
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCcw className="w-4 h-4 mr-2" />
+                  )}
+                  Actualizar
+                </Button>
+                <Button size="sm" onClick={() => setInviteDialogOpen(true)} className="hover-scale">
+                  <UserPlus className="w-4 h-4 mr-2" />
+                  Invitar
+                </Button>
+              </div>
+            </div>
+            {invitesError && (
+              <p className="text-sm text-destructive">{invitesError}</p>
+            )}
+            {invitesLoading && invites.length === 0 ? (
+              <Skeleton className="h-20 w-full" />
+            ) : invites.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No hay invitaciones pendientes.
+              </p>
+            ) : (
+              <div className="divide-y divide-border rounded-lg border border-border/60">
+                {invites.map((invite) => (
+                  <div
+                    key={invite.id}
+                    className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3"
+                  >
+                    <div>
+                      <p className="font-medium">{invite.email}</p>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground mt-1">
+                        <Badge variant="outline" className="capitalize">
+                          {invite.role}
+                        </Badge>
+                        <span>Creada {new Date(invite.created_at).toLocaleDateString("es-ES")}</span>
+                        <span>Expira {new Date(invite.expires_at).toLocaleDateString("es-ES")}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleResendInvite(invite.id)}
+                        disabled={inviteAction?.id === invite.id}
+                      >
+                        {inviteAction?.id === invite.id && inviteAction.action === "resend" ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Send className="w-4 h-4 mr-2" />
+                        )}
+                        Reenviar
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleRevokeInvite(invite.id)}
+                        disabled={inviteAction?.id === invite.id}
+                      >
+                        {inviteAction?.id === invite.id && inviteAction.action === "revoke" ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Ban className="w-4 h-4 mr-2" />
+                        )}
+                        Revocar
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )}
 
         {/* Tabla */}
         <Card className="glass-card">
@@ -583,8 +759,8 @@ const Employees = () => {
         </div>
       </div>
 
-      {isSuperadmin && (
-        <InviteUserDialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen} onSuccess={fetchEmployees} />
+      {canManageInvites && (
+        <InviteUserDialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen} onSuccess={handleInviteSuccess} />
       )}
 
       {selectedEmployee && (

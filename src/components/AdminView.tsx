@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, Users, TrendingUp, LogOut, AlertCircle, BarChart3, Calendar, Settings, Tablet } from "lucide-react";
+import { Clock, Users, TrendingUp, LogOut, AlertCircle, BarChart3, Calendar, Settings, Tablet, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -40,9 +40,12 @@ interface RawRecentEvent extends Partial<RecentEvent> {
   id: string;
   event_type: string;
   event_time: string;
+  user_id?: string;
   profile?: RecentEventProfile | null;
   profiles?: RecentEventProfile | null;
 }
+
+const DASHBOARD_REFRESH_MS = 60000;
 
 const AdminView = () => {
   const { signOut } = useAuth();
@@ -59,14 +62,19 @@ const AdminView = () => {
   const [weeklyData, setWeeklyData] = useState<DailyStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [companyStatus, setCompanyStatus] = useState<string>("active");
+  const [error, setError] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   const fetchCompanyStatus = useCallback(async () => {
     if (!companyId) return;
-    const { data } = await supabase
+    const { data, error: statusError } = await supabase
       .from("companies")
       .select("status")
       .eq("id", companyId)
       .single();
+
+    if (statusError) throw statusError;
 
     if (data) {
       setCompanyStatus(data.status || "active");
@@ -92,38 +100,43 @@ const AdminView = () => {
     const startOfToday = new Date(today.setHours(0, 0, 0, 0)).toISOString();
     const startOfWeek = new Date(today.setDate(today.getDate() - today.getDay())).toISOString();
 
-    const { count: activeCount } = await supabase
+    const { count: activeCount, error: activeError } = await supabase
       .from("work_sessions")
       .select("*", { count: "exact", head: true })
       .eq("company_id", companyId)
       .eq("is_active", true);
+    if (activeError) throw activeError;
 
-    const { count: checkInsCount } = await supabase
+    const { count: checkInsCount, error: checkInsError } = await supabase
       .from("time_events")
       .select("*", { count: "exact", head: true })
       .eq("company_id", companyId)
       .eq("event_type", "clock_in")
       .gte("event_time", startOfToday);
+    if (checkInsError) throw checkInsError;
 
-    const { count: incidentsCount } = await supabase
+    const { count: incidentsCount, error: incidentsError } = await supabase
       .from("incidents")
       .select("*", { count: "exact", head: true })
       .eq("company_id", companyId)
       .eq("status", "pending");
+    if (incidentsError) throw incidentsError;
 
-    const { data: todaySessions } = await supabase
+    const { data: todaySessions, error: todaySessionsError } = await supabase
       .from("work_sessions")
       .select("clock_in_time, clock_out_time, total_pause_duration")
       .eq("company_id", companyId)
       .gte("clock_in_time", startOfToday);
+    if (todaySessionsError) throw todaySessionsError;
 
     const totalHoursToday = calculateTotalHours((todaySessions || []) as WorkSessionRecord[]);
 
-    const { data: weekSessions } = await supabase
+    const { data: weekSessions, error: weekSessionsError } = await supabase
       .from("work_sessions")
       .select("clock_in_time, clock_out_time, total_pause_duration")
       .eq("company_id", companyId)
       .gte("clock_in_time", startOfWeek);
+    if (weekSessionsError) throw weekSessionsError;
 
     const totalHoursWeek = calculateTotalHours((weekSessions || []) as WorkSessionRecord[]);
 
@@ -151,20 +164,22 @@ const AdminView = () => {
       const nextDay = new Date(date);
       nextDay.setDate(date.getDate() + 1);
 
-      const { data: sessions } = await supabase
+      const { data: sessions, error: sessionsError } = await supabase
         .from("work_sessions")
         .select("clock_in_time, clock_out_time, total_pause_duration")
         .eq("company_id", companyId)
         .gte("clock_in_time", date.toISOString())
         .lt("clock_in_time", nextDay.toISOString());
+      if (sessionsError) throw sessionsError;
 
-      const { count: checkInsCount } = await supabase
+      const { count: checkInsCount, error: checkInsError } = await supabase
         .from("time_events")
         .select("*", { count: "exact", head: true })
         .eq("company_id", companyId)
         .eq("event_type", "clock_in")
         .gte("event_time", date.toISOString())
         .lt("event_time", nextDay.toISOString());
+      if (checkInsError) throw checkInsError;
 
       const hours = calculateTotalHours((sessions || []) as WorkSessionRecord[]);
 
@@ -180,42 +195,94 @@ const AdminView = () => {
 
   const fetchRecentEvents = useCallback(async () => {
     if (!companyId) return;
-    const { data } = await supabase
+    const { data, error: eventsError } = await supabase
       .from("time_events")
-      .select(`
-        id,
-        event_type,
-        event_time,
-        user_id,
-        profiles!time_events_user_id_fkey(full_name, email)
-      `)
+      .select("id,event_type,event_time,user_id")
       .eq("company_id", companyId)
       .order("event_time", { ascending: false })
       .limit(8);
+    if (eventsError) throw eventsError;
 
-    const events: RecentEvent[] = (data || []).map((event: RawRecentEvent) => ({
+    const eventsData = (data || []) as RawRecentEvent[];
+    const userIds = Array.from(new Set(eventsData.map((event) => event.user_id).filter(Boolean)));
+    let profilesMap: Record<string, RecentEventProfile> = {};
+
+    if (userIds.length > 0) {
+      const { data: profilesData } = await supabase
+        .from("profiles")
+        .select("id, full_name, email")
+        .in("id", userIds);
+
+      profilesMap = (profilesData || []).reduce((acc, profile) => {
+        acc[profile.id] = { full_name: profile.full_name, email: profile.email };
+        return acc;
+      }, {} as Record<string, RecentEventProfile>);
+    }
+
+    const events: RecentEvent[] = eventsData.map((event) => ({
       id: event.id,
       event_type: event.event_type,
       event_time: event.event_time,
-      profile: event.profiles ?? event.profile ?? null,
+      profile: (event.user_id && profilesMap[event.user_id]) || null,
     }));
 
     setRecentEvents(events);
   }, [companyId]);
 
-  const fetchAllData = useCallback(async () => {
-    if (!companyId) return;
-    setLoading(true);
-    await Promise.all([fetchStats(), fetchRecentEvents(), fetchWeeklyData()]);
-    setLoading(false);
-  }, [companyId, fetchStats, fetchRecentEvents, fetchWeeklyData]);
+  const fetchAllData = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!companyId) return;
+      const isSilent = options?.silent;
+      if (isSilent) {
+        setRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+      setError(null);
+      try {
+        await Promise.all([fetchStats(), fetchRecentEvents(), fetchWeeklyData(), fetchCompanyStatus()]);
+        setLastUpdated(new Date().toISOString());
+      } catch (fetchError) {
+        console.error("Dashboard fetch error:", fetchError);
+        setError("No pudimos actualizar los datos. Intenta de nuevo en unos segundos.");
+      } finally {
+        if (isSilent) {
+          setRefreshing(false);
+        } else {
+          setLoading(false);
+        }
+      }
+    },
+    [companyId, fetchStats, fetchRecentEvents, fetchWeeklyData, fetchCompanyStatus]
+  );
 
   useEffect(() => {
-    if (companyId) {
-      fetchAllData();
-      fetchCompanyStatus();
-    }
-  }, [companyId, fetchAllData, fetchCompanyStatus]);
+    if (!companyId) return;
+    fetchAllData();
+  }, [companyId, fetchAllData]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    const interval = setInterval(() => {
+      fetchAllData({ silent: true });
+    }, DASHBOARD_REFRESH_MS);
+
+    return () => clearInterval(interval);
+  }, [companyId, fetchAllData]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        fetchAllData({ silent: true });
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [companyId, fetchAllData]);
 
   const formatEventType = (type: string) => {
     const types: Record<string, string> = {
@@ -246,6 +313,16 @@ const AdminView = () => {
     }
   };
 
+  const lastUpdatedLabel = lastUpdated
+    ? new Date(lastUpdated).toLocaleTimeString("es-ES", {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    : null;
+
+  const hasWeeklyHours = weeklyData.some((day) => day.hours > 0);
+  const hasWeeklyCheckIns = weeklyData.some((day) => day.checkIns > 0);
+
   if (loading || membershipLoading || !companyId) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-primary/10">
@@ -272,6 +349,21 @@ const AdminView = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
       <div className="max-w-7xl mx-auto space-y-6 pt-8 animate-fade-in">
+        {error && (
+          <Card className="border-destructive bg-destructive/10 text-destructive-foreground p-4 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5" />
+              <p className="font-semibold">No pudimos actualizar los datos</p>
+            </div>
+            <p className="text-sm opacity-80">{error}</p>
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" size="sm" onClick={() => fetchAllData()}>
+                Reintentar
+              </Button>
+            </div>
+          </Card>
+        )}
+
         {/* Company Status Warning */}
         {(companyStatus === "grace" || companyStatus === "suspended") && (
           <motion.div
@@ -318,6 +410,12 @@ const AdminView = () => {
               <h1 className="text-2xl font-bold">Dashboard</h1>
               <p className="text-sm text-muted-foreground">
                 {membership?.company?.name ?? "Empresa sin nombre"}
+              </p>
+              <p className="text-xs text-muted-foreground flex items-center gap-2 mt-1">
+                {refreshing && <Loader2 className="w-3 h-3 animate-spin" />}
+                {lastUpdatedLabel
+                  ? `Actualizado a las ${lastUpdatedLabel}`
+                  : "Esperando primera actualización..."}
               </p>
             </div>
           </div>
@@ -406,6 +504,13 @@ const AdminView = () => {
               <div>
                 <p className="text-sm text-muted-foreground">Incidencias pendientes</p>
                 <p className="text-3xl font-bold mt-1">{stats.pendingIncidents}</p>
+                <Button
+                  variant="link"
+                  className="px-0 text-sm text-primary"
+                  onClick={() => navigate("/incidents")}
+                >
+                  Ver incidencias
+                </Button>
               </div>
               <div className="w-12 h-12 bg-amber-500/10 rounded-xl flex items-center justify-center">
                 <AlertCircle className="w-6 h-6 text-amber-600" />
@@ -436,30 +541,35 @@ const AdminView = () => {
               <BarChart3 className="w-5 h-5 text-primary" />
               Horas trabajadas - Última semana
             </h2>
-            <ResponsiveContainer width="100%" height={250}>
-              <BarChart data={weeklyData}>
-                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                <XAxis 
-                  dataKey="date" 
-                  tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                />
-                <YAxis 
-                  tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                />
-                <Tooltip 
-                  contentStyle={{
-                    backgroundColor: 'hsl(var(--card))',
-                    border: '1px solid hsl(var(--border))',
-                    borderRadius: '8px',
-                  }}
-                />
-                <Bar 
-                  dataKey="hours" 
-                  fill="hsl(var(--primary))" 
-                  radius={[8, 8, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
+            {hasWeeklyHours ? (
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={weeklyData}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fill: "hsl(var(--muted-foreground))" }}
+                  />
+                  <YAxis tick={{ fill: "hsl(var(--muted-foreground))" }} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "8px",
+                    }}
+                  />
+                  <Bar
+                    dataKey="hours"
+                    fill="hsl(var(--primary))"
+                    radius={[8, 8, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[250px] flex flex-col items-center justify-center text-muted-foreground text-sm">
+                <p>Sin datos registrados para esta semana.</p>
+                <p>Cuando tus empleados registren horas las verás aquí.</p>
+              </div>
+            )}
           </Card>
 
           {/* Check-ins Chart */}
@@ -468,32 +578,37 @@ const AdminView = () => {
               <TrendingUp className="w-5 h-5 text-primary" />
               Fichajes - Última semana
             </h2>
-            <ResponsiveContainer width="100%" height={250}>
-              <LineChart data={weeklyData}>
-                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                <XAxis 
-                  dataKey="date"
-                  tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                />
-                <YAxis 
-                  tick={{ fill: 'hsl(var(--muted-foreground))' }}
-                />
-                <Tooltip 
-                  contentStyle={{
-                    backgroundColor: 'hsl(var(--card))',
-                    border: '1px solid hsl(var(--border))',
-                    borderRadius: '8px',
-                  }}
-                />
-                <Line 
-                  type="monotone" 
-                  dataKey="checkIns" 
-                  stroke="hsl(var(--primary))" 
-                  strokeWidth={2}
-                  dot={{ fill: 'hsl(var(--primary))' }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            {hasWeeklyCheckIns ? (
+              <ResponsiveContainer width="100%" height={250}>
+                <LineChart data={weeklyData}>
+                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fill: "hsl(var(--muted-foreground))" }}
+                  />
+                  <YAxis tick={{ fill: "hsl(var(--muted-foreground))" }} />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: "hsl(var(--card))",
+                      border: "1px solid hsl(var(--border))",
+                      borderRadius: "8px",
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="checkIns"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    dot={{ fill: "hsl(var(--primary))" }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[250px] flex flex-col items-center justify-center text-muted-foreground text-sm">
+                <p>Aún no hay fichajes esta semana.</p>
+                <p>Cuando existan registros los verás en esta gráfica.</p>
+              </div>
+            )}
           </Card>
         </div>
 

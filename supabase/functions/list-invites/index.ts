@@ -4,6 +4,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 serve(async (req) => {
@@ -49,9 +50,14 @@ serve(async (req) => {
       );
     }
 
-    // Get query parameters
-    const url = new URL(req.url);
-    const status = url.searchParams.get("status");
+    let status: string | null = null;
+    if (req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      status = typeof body?.status === "string" ? body.status : null;
+    } else {
+      const url = new URL(req.url);
+      status = url.searchParams.get("status");
+    }
 
     // Build query
     let query = supabase

@@ -12,9 +12,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { useNavigate } from "react-router-dom";
 
 interface Notification {
   id: string;
+  company_id: string;
   title: string;
   message: string;
   type: "info" | "success" | "warning" | "error";
@@ -26,6 +28,7 @@ interface Notification {
 
 const NotificationBell = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [open, setOpen] = useState(false);
@@ -120,6 +123,18 @@ const NotificationBell = () => {
     setUnreadCount(0);
   };
 
+  const handleNotificationClick = async (notification: Notification) => {
+    if (!notification.read) {
+      await markAsRead(notification.id);
+    }
+
+    setOpen(false);
+
+    if (notification.entity_type === "incident" && notification.entity_id) {
+      navigate(`/incidents?focus=${notification.entity_id}`);
+    }
+  };
+
   const getIcon = (type: string) => {
     switch (type) {
       case "success":
@@ -210,7 +225,7 @@ const NotificationBell = () => {
                         ? "bg-transparent hover:bg-secondary/50"
                         : "bg-primary/5 hover:bg-primary/10"
                     )}
-                    onClick={() => !notification.read && markAsRead(notification.id)}
+                    onClick={() => handleNotificationClick(notification)}
                   >
                     <div className="flex gap-3">
                       <div className="flex-shrink-0 mt-1">
@@ -231,6 +246,11 @@ const NotificationBell = () => {
                         <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                           {notification.message}
                         </p>
+                        {notification.entity_type === "incident" && (
+                          <p className="text-[11px] text-primary font-medium mt-1">
+                            Incidencia pendiente · pulsa para ver detalles
+                          </p>
+                        )}
                       </div>
                       {!notification.read && (
                         <div className="flex-shrink-0">

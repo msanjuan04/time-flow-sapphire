@@ -98,14 +98,10 @@ const CorrectionRequests = () => {
     try {
       let query = supabase
         .from("correction_requests")
-        .select(`
-          *,
-          profile:profiles!correction_requests_user_id_fkey(full_name, email)
-        `)
+        .select("*")
         .eq("company_id", companyId)
         .order("created_at", { ascending: false });
 
-      // Workers only see their own requests
       if (isWorker) {
         query = query.eq("user_id", user?.id);
       }
@@ -114,11 +110,29 @@ const CorrectionRequests = () => {
 
       if (error) throw error;
 
-      setRequests((data as any[])?.map(item => ({
-        ...item,
-        payload: item.payload as CorrectionPayload,
-        profile: item.profile || null
-      })) as CorrectionRequest[] || []);
+      const requestsData = (data || []) as any[];
+      const userIds = Array.from(new Set(requestsData.map((item) => item.user_id).filter(Boolean)));
+
+      let profilesMap: Record<string, { full_name: string | null; email: string | null }> = {};
+      if (userIds.length > 0) {
+        const { data: profilesData } = await supabase
+          .from("profiles")
+          .select("id, full_name, email")
+          .in("id", userIds);
+
+        profilesMap = (profilesData || []).reduce((acc, profile) => {
+          acc[profile.id] = { full_name: profile.full_name, email: profile.email };
+          return acc;
+        }, {} as Record<string, { full_name: string | null; email: string | null }>);
+      }
+
+      setRequests(
+        requestsData.map((item) => ({
+          ...item,
+          payload: item.payload as CorrectionPayload,
+          profile: profilesMap[item.user_id] || { full_name: null, email: null },
+        }))
+      );
     } catch (error) {
       console.error("Error fetching requests:", error);
       toast.error("Error al cargar las solicitudes");

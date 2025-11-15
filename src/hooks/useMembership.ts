@@ -11,6 +11,8 @@ interface Membership {
   company?: {
     id: string;
     name: string;
+    status?: string | null;
+    plan?: string | null;
   } | null;
 }
 
@@ -42,7 +44,7 @@ export const useMembership = () => {
         id,
         role,
         company_id,
-        company:companies(id, name)
+        company:companies(id, name, status, plan)
       `)
       .eq("user_id", userId);
 
@@ -69,12 +71,18 @@ export const useMembership = () => {
         return;
       }
 
+      const cachedList = (cachedMemberships as Membership[]) || [];
+      const hasCachedMemberships = cachedList.length > 0;
+      const cachedHasCompanyInfo = cachedList.every((m) => !!m.company);
+
       // First, try to use the memberships we already have in AuthContext
-      if (cachedMemberships && cachedMemberships.length > 0) {
-        setMemberships(cachedMemberships as Membership[]);
-        hydrateActiveMembership(cachedMemberships as Membership[]);
+      if (hasCachedMemberships) {
+        setMemberships(cachedList);
+        hydrateActiveMembership(cachedList);
         setLoading(false);
-        return;
+        if (cachedHasCompanyInfo) {
+          return;
+        }
       }
 
       // Check for impersonation mode
