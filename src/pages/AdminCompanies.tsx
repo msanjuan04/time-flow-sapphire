@@ -26,20 +26,79 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import {
-  COMPANY_PLANS,
-  CompanyPlanDefinition,
   CompanyPlanId,
   UNIVERSAL_PLAN_FEATURES,
   getCompanyPlanDefinition,
-  getCompanyPlanLimit,
   normalizeCompanyPlan,
 } from "@/config/companyPlans";
+
+type PlanKey = "basic" | "empresa" | "pro" | "advanced" | "custom";
+type BillingPeriod = "yearly";
+
+interface PlanConfig {
+  label: string;
+  description: string;
+  maxEmployees: number | null;
+  billingPeriod: BillingPeriod;
+  yearlyPrice: number | null;
+  highlight?: boolean;
+}
+
+const formatPlanDescription = (maxEmployees: number | null) => {
+  if (maxEmployees === null) {
+    return "Solución personalizada para más de 50 empleados.";
+  }
+  return `Incluye todas las funcionalidades para equipos de hasta ${maxEmployees} empleados.`;
+};
+
+const PLANS: Record<PlanKey, PlanConfig> = {
+  basic: {
+    label: "Básico",
+    description: formatPlanDescription(5),
+    maxEmployees: 5,
+    billingPeriod: "yearly",
+    yearlyPrice: 119,
+  },
+  empresa: {
+    label: "Empresa",
+    description: formatPlanDescription(10),
+    maxEmployees: 10,
+    billingPeriod: "yearly",
+    yearlyPrice: 189,
+    highlight: true,
+  },
+  pro: {
+    label: "Pro",
+    description: formatPlanDescription(20),
+    maxEmployees: 20,
+    billingPeriod: "yearly",
+    yearlyPrice: 289,
+  },
+  advanced: {
+    label: "Avanzado",
+    description: formatPlanDescription(50),
+    maxEmployees: 50,
+    billingPeriod: "yearly",
+    yearlyPrice: 499,
+  },
+  custom: {
+    label: "Plan Custom",
+    description: formatPlanDescription(null),
+    maxEmployees: null,
+    billingPeriod: "yearly",
+    yearlyPrice: null,
+  },
+};
 
 interface Company {
   id: string;
   name: string;
   status: string;
   plan: string;
+  plan_key?: PlanKey | null;
+  max_employees?: number | null;
+  billing_period?: BillingPeriod | null;
+  yearly_price?: number | null;
   created_at: string;
   users_count?: number;
   last_event_at?: string | null;
@@ -47,8 +106,9 @@ interface Company {
 }
 
 interface PlanSelectionGridProps {
-  selectedPlan: CompanyPlanId;
-  onSelectPlan: (planId: CompanyPlanId) => void;
+  selectedPlan: PlanKey | null;
+  onSelectPlan: (planId: PlanKey) => void;
+  disabled?: boolean;
 }
 
 const AdminCompanies = () => {
@@ -61,12 +121,20 @@ const AdminCompanies = () => {
   const [selectedRole, setSelectedRole] = useState<"admin" | "manager" | "worker">("admin");
   const [createOpen, setCreateOpen] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState("");
-  const [newCompanyPlan, setNewCompanyPlan] = useState<CompanyPlanId>("empresa");
+  const [selectedPlan, setSelectedPlan] = useState<PlanKey | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     fetchCompanies();
   }, []);
+
+  useEffect(() => {
+    if (!createOpen) {
+      setSelectedPlan(null);
+      setPlanError(null);
+    }
+  }, [createOpen]);
 
   const fetchCompanies = async () => {
     setLoading(true);
@@ -91,21 +159,34 @@ const AdminCompanies = () => {
   const handleCreateCompany = async () => {
     const name = newCompanyName.trim();
     if (!name) return;
+    if (!selectedPlan) {
+      setPlanError("Debes seleccionar un plan para esta empresa");
+      return;
+    }
+    const planKey = selectedPlan;
+    const plan = PLANS[planKey];
     setCreating(true);
     try {
       const { data, error } = await (supabase as any).functions.invoke("admin-create-company", {
-        body: { name, plan: newCompanyPlan },
+        body: {
+          name,
+          plan: planKey,
+          plan_key: planKey,
+          max_employees: plan.maxEmployees,
+          billing_period: plan.billingPeriod,
+          yearly_price: plan.yearlyPrice,
+        },
       });
       if (error) throw error;
       const createdCompany = data?.company;
       if (createdCompany) {
         const normalizedCreatedPlan = normalizeCompanyPlan(createdCompany.plan);
-        if (normalizedCreatedPlan !== newCompanyPlan) {
+        if (normalizedCreatedPlan !== planKey) {
           try {
             const { error: planError } = await (supabase as any).functions.invoke(
               "admin-set-company-plan",
               {
-                body: { company_id: createdCompany.id, plan: newCompanyPlan },
+                body: { company_id: createdCompany.id, plan: planKey },
               }
             );
             if (planError) {
@@ -120,7 +201,8 @@ const AdminCompanies = () => {
       }
       setCreateOpen(false);
       setNewCompanyName("");
-      setNewCompanyPlan("empresa");
+      setSelectedPlan(null);
+      setPlanError(null);
       fetchCompanies();
       toast.success("Empresa creada correctamente");
     } catch (e: any) {
@@ -133,6 +215,13 @@ const AdminCompanies = () => {
 
   const handleImpersonate = (companyId: string) => {
     startImpersonation(companyId, selectedRole);
+  };
+
+  const handlePlanSelect = (planId: PlanKey) => {
+    setSelectedPlan(planId);
+    if (planError) {
+      setPlanError(null);
+    }
   };
 
   const filteredCompanies = companies.filter((company) =>
@@ -330,9 +419,9 @@ const AdminCompanies = () => {
                 />
                 <section className="space-y-5">
                   <div>
-                    <p className="text-lg font-semibold">Selecciona el plan</p>
+                    <p className="text-lg font-semibold">Selecciona el plan de la empresa</p>
                     <p className="text-sm text-muted-foreground">
-                      Define el número máximo de empleados que podrá gestionar esta empresa.
+                      Define el plan anual y el límite de empleados que tendrá esta empresa.
                     </p>
                   </div>
                   <div className="rounded-2xl border border-primary/10 bg-primary/5 px-5 py-4">
@@ -352,9 +441,13 @@ const AdminCompanies = () => {
                     </p>
                   </div>
                   <PlanSelectionGrid
-                    selectedPlan={newCompanyPlan}
-                    onSelectPlan={(planId) => setNewCompanyPlan(planId)}
+                    selectedPlan={selectedPlan}
+                    onSelectPlan={handlePlanSelect}
+                    disabled={creating}
                   />
+                  {planError && (
+                    <p className="text-sm font-medium text-destructive">{planError}</p>
+                  )}
                 </section>
               </div>
             </div>
@@ -376,60 +469,69 @@ const AdminCompanies = () => {
   );
 };
 
-const standardPlanOrder: CompanyPlanId[] = ["basic", "empresa", "pro", "advanced"];
+const PLAN_ORDER: PlanKey[] = ["basic", "empresa", "pro", "advanced", "custom"];
 
-const PlanSelectionGrid = ({ selectedPlan, onSelectPlan }: PlanSelectionGridProps) => {
+const PlanSelectionGrid = ({ selectedPlan, onSelectPlan, disabled }: PlanSelectionGridProps) => {
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {standardPlanOrder.map((planId) => {
-          const plan = COMPANY_PLANS[planId];
-          return (
-            <PlanCard
-              key={planId}
-              plan={plan}
-              selected={selectedPlan === planId}
-              onSelect={onSelectPlan}
-            />
-          );
-        })}
-      </div>
-      <PlanCard
-        plan={COMPANY_PLANS.custom}
-        selected={selectedPlan === "custom"}
-        onSelect={onSelectPlan}
-      />
+    <div className="grid auto-rows-fr grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+      {PLAN_ORDER.map((planKey) => (
+        <PlanCard
+          key={planKey}
+          planKey={planKey}
+          plan={PLANS[planKey]}
+          selected={selectedPlan === planKey}
+          onSelect={onSelectPlan}
+          disabled={disabled}
+        />
+      ))}
     </div>
   );
 };
 
 interface PlanCardProps {
-  plan: CompanyPlanDefinition;
+  planKey: PlanKey;
+  plan: PlanConfig;
   selected: boolean;
-  onSelect: (planId: CompanyPlanId) => void;
+  onSelect: (planId: PlanKey) => void;
+  disabled?: boolean;
 }
 
-const PlanCard = ({ plan, selected, onSelect }: PlanCardProps) => {
+const currencyFormatter = new Intl.NumberFormat("es-ES", {
+  style: "currency",
+  currency: "EUR",
+});
+
+const PlanCard = ({ planKey, plan, selected, onSelect, disabled }: PlanCardProps) => {
   const employeeLabel =
     plan.maxEmployees !== null ? `Hasta ${plan.maxEmployees} empleados` : "Sin límite de empleados";
+  const priceLabel =
+    plan.yearlyPrice === null
+      ? "Contactar"
+      : `${currencyFormatter.format(plan.yearlyPrice)}/${plan.billingPeriod === "yearly" ? "año" : plan.billingPeriod}`;
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
-      onSelect(plan.id);
+      onSelect(planKey);
     }
   };
 
   return (
     <div
       role="button"
-      tabIndex={0}
+      tabIndex={disabled ? -1 : 0}
       aria-pressed={selected}
-      onClick={() => onSelect(plan.id)}
-      onKeyDown={handleKeyDown}
-      className={`rounded-2xl border bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
-        selected ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border"
-      }`}
+      aria-disabled={disabled}
+      onClick={() => !disabled && onSelect(planKey)}
+      onKeyDown={(event) => {
+        if (disabled) return;
+        handleKeyDown(event);
+      }}
+      className={`flex h-full flex-col rounded-2xl border bg-white p-5 shadow-sm transition focus:outline-none ${
+        disabled
+          ? "cursor-not-allowed opacity-60"
+          : "hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md focus-visible:ring-2 focus-visible:ring-primary/50"
+      } ${selected ? "border-primary bg-primary/5 ring-2 ring-primary/30" : "border-border"}`}
     >
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
@@ -444,15 +546,15 @@ const PlanCard = ({ plan, selected, onSelect }: PlanCardProps) => {
       </div>
 
       <div className="mt-4 flex items-baseline justify-between gap-3">
-        <p className="text-3xl font-bold">{plan.price}</p>
+        <p className="text-3xl font-bold">{priceLabel}</p>
         <span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-foreground/80">
           {employeeLabel}
         </span>
       </div>
 
-      <p className="mt-3 text-sm text-muted-foreground">Todas las funcionalidades incluidas.</p>
+      <p className="mt-3 text-sm text-muted-foreground">{plan.description}</p>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-6">
         <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
           <Users className="h-4 w-4 text-primary" />
           {employeeLabel}
@@ -466,9 +568,12 @@ const PlanCard = ({ plan, selected, onSelect }: PlanCardProps) => {
             type="button"
             variant="outline"
             size="sm"
+            disabled={disabled}
             onClick={(event) => {
               event.stopPropagation();
-              onSelect(plan.id);
+              if (!disabled) {
+                onSelect(planKey);
+              }
             }}
           >
             Seleccionar plan
