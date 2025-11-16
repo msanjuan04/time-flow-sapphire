@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { handleCorsOptions, createJsonResponse, createErrorResponse } from "../_shared/cors.ts";
 import { requireSuperadmin, writeAudit, extractRequestMetadata } from "../_shared/admin.ts";
+import { normalizeCompanyPlan } from "../_shared/company-plan.ts";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -13,6 +14,8 @@ serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const name = (body.name || "").toString().trim();
+    const planInput = typeof body.plan === "string" ? body.plan : null;
+    const plan = normalizeCompanyPlan(planInput);
 
     if (!name) {
       return createErrorResponse("Company name is required", 400);
@@ -22,10 +25,10 @@ serve(async (req) => {
     // We'll set it to null initially and let the superadmin assign an owner later
     const { data: company, error } = await supabase
       .from("companies")
-      .insert({ 
-        name, 
-        status: "active", 
-        plan: "enterprise",
+      .insert({
+        name,
+        status: "active",
+        plan,
         owner_user_id: null 
       })
       .select()

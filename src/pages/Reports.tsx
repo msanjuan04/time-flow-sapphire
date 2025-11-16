@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,7 +27,10 @@ import {
   Clock,
   Users,
   ArrowLeft,
+  MapPin,
 } from "lucide-react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -73,8 +76,44 @@ interface Employee {
   email: string;
 }
 
-const CHART_COLORS = ["hsl(var(--primary))", "hsl(var(--secondary))", "#10b981", "#f59e0b", "#ef4444"];
+interface ClockInLocation {
+  id: string;
+  user_id: string;
+  event_time: string;
+  latitude: number;
+  longitude: number;
+  profiles?: {
+    full_name: string | null;
+    email: string | null;
+  } | null;
+}
 
+const CHART_COLORS = ["hsl(var(--primary))", "hsl(var(--secondary))", "#10b981", "#f59e0b", "#ef4444"];
+const WEEKDAY_LABELS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+const WEEKDAY_FILTERS = [
+  { value: "all", label: "Todos los días" },
+  { value: "1", label: "Lunes" },
+  { value: "2", label: "Martes" },
+  { value: "3", label: "Miércoles" },
+  { value: "4", label: "Jueves" },
+  { value: "5", label: "Viernes" },
+  { value: "6", label: "Sábado" },
+  { value: "0", label: "Domingo" },
+];
+const getEventColor = (type: string) => {
+  switch (type) {
+    case "clock_in":
+      return "#10b981";
+    case "clock_out":
+      return "#ef4444";
+    case "pause_start":
+      return "#f59e0b";
+    case "pause_end":
+      return "#f97316";
+    default:
+      return "#3b82f6";
+  }
+};
 const Reports = () => {
   const { user } = useAuth();
   const { companyId, membership, loading: membershipLoading } = useMembership();
@@ -95,6 +134,33 @@ const Reports = () => {
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [selectedCenter, setSelectedCenter] = useState<string>("all");
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const leafletMapRef = useRef<L.Map | null>(null);
+  const leafletMarkersRef = useRef<L.Marker[]>([]);
+  const [mapEvents, setMapEvents] = useState<ClockInLocation[]>([]);
+  const [mapLoading, setMapLoading] = useState(false);
+  const [selectedWeekday, setSelectedWeekday] = useState<string>("all");
+  const filteredMapEvents = useMemo(() => {
+    if (selectedWeekday === "all") {
+      return mapEvents;
+    }
+    const weekdayNumber = Number(selectedWeekday);
+    return mapEvents.filter((event) => {
+      const eventDay = new Date(event.event_time).getDay();
+      return eventDay === weekdayNumber;
+    });
+  }, [mapEvents, selectedWeekday]);
+  const eventsWithCoords = useMemo(
+    () =>
+      filteredMapEvents.filter(
+        (event) =>
+          typeof event.latitude === "number" && typeof event.longitude === "number"
+      ),
+    [filteredMapEvents]
+  );
+  const uniqueEmployeesOnMap = useMemo(() => {
+    return new Set(filteredMapEvents.map((event) => event.user_id)).size;
+  }, [filteredMapEvents]);
 
   useEffect(() => {
     if (!membershipLoading) {
@@ -111,11 +177,156 @@ const Reports = () => {
     }
   }, [companyId, user, membershipLoading, navigate]);
 
+  const fetchMapEvents = useCallback(async () => {
+    if (!companyId) return;
+    setMapLoading(true);
+    try {
+      let query = supabase
+        .from("time_events")
+        .select(`
+          id,
+          user_id,
+          event_time,
+          latitude,
+          longitude
+        `)
+        .eq("company_id", companyId)
+        .eq("event_type", "clock_in")
+        .gte("event_time", `${startDate}T00:00:00`)
+        .lte("event_time", `${endDate}T23:59:59`)
+        .not("latitude", "is", null)
+        .not("longitude", "is", null)
+        .order("event_time", { ascending: false });
+
+      if (selectedEmployee !== "all") {
+        query = query.eq("user_id", selectedEmployee);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const events = (data as ClockInLocation[]) || [];
+      const userIds = Array.from(new Set(events.map((event) => event.user_id)));
+
+      let profilesMap: Record<string, { full_name: string | null; email: string | null }> = {};
+      if (userIds.length > 0) {
+        const { data: profileRows, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id, full_name, email")
+          .in("id", userIds);
+
+        if (profilesError) throw profilesError;
+
+        profilesMap = (profileRows || []).reduce(
+          (acc, profile) => {
+            acc[profile.id] = {
+              full_name: profile.full_name,
+              email: profile.email,
+            };
+            return acc;
+          },
+          {} as Record<string, { full_name: string | null; email: string | null }>
+        );
+      }
+
+      setMapEvents(
+        events.map((event) => ({
+          ...event,
+          profiles: profilesMap[event.user_id] ?? null,
+        }))
+      );
+    } catch (error) {
+      console.error("Error fetching map data:", error);
+      setMapEvents([]);
+      toast.error("No pudimos cargar el mapa de fichajes");
+    } finally {
+      setMapLoading(false);
+    }
+  }, [companyId, endDate, selectedEmployee, startDate]);
+
   useEffect(() => {
     if (companyId) {
       fetchReportData();
     }
   }, [companyId, startDate, endDate, selectedCenter, selectedEmployee]);
+
+  useEffect(() => {
+    if (companyId) {
+      fetchMapEvents();
+    }
+  }, [companyId, fetchMapEvents]);
+
+  useEffect(() => {
+    if (leafletMapRef.current || !mapContainerRef.current) return;
+
+    const mapInstance = L.map(mapContainerRef.current, {
+      center: [40.4168, -3.7038],
+      zoom: 6,
+      zoomControl: true,
+    });
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+      maxZoom: 19,
+    }).addTo(mapInstance);
+
+    leafletMapRef.current = mapInstance;
+
+    setTimeout(() => {
+      mapInstance.invalidateSize();
+    }, 0);
+
+    return () => {
+      mapInstance.remove();
+      leafletMapRef.current = null;
+      leafletMarkersRef.current = [];
+    };
+  }, []);
+
+  useEffect(() => {
+    const mapInstance = leafletMapRef.current;
+    if (!mapInstance) return;
+
+    leafletMarkersRef.current.forEach((marker) => marker.remove());
+    leafletMarkersRef.current = [];
+
+    if (eventsWithCoords.length === 0) return;
+
+    const bounds = L.latLngBounds([]);
+
+    eventsWithCoords.forEach((event) => {
+      const icon = L.divIcon({
+        className: "",
+        html: `<span style="
+          background:${getEventColor(event.event_type)};
+          width:22px;
+          height:22px;
+          display:block;
+          border:3px solid #ffffff;
+          border-radius:50%;
+          box-shadow:0 4px 10px rgba(0,0,0,0.25);
+        "></span>`,
+        iconSize: [22, 22],
+        iconAnchor: [11, 11],
+      });
+
+      const leafletMarker = L.marker([event.latitude, event.longitude], { icon }).addTo(mapInstance);
+      leafletMarker.bindPopup(
+        `<strong>${event.profiles?.full_name || event.profiles?.email || "Empleado"}</strong><br/>
+         ${new Date(event.event_time).toLocaleDateString("es-ES")} · ${new Date(event.event_time).toLocaleTimeString("es-ES", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`
+      );
+
+      leafletMarkersRef.current.push(leafletMarker);
+      bounds.extend([event.latitude, event.longitude]);
+    });
+
+    if (bounds.isValid()) {
+      mapInstance.fitBounds(bounds, { padding: [40, 40], maxZoom: 15 });
+    }
+  }, [eventsWithCoords]);
 
   const fetchFiltersData = async () => {
     // Fetch centers
@@ -555,6 +766,126 @@ const Reports = () => {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+        </Card>
+
+        {/* Location map */}
+        <Card className="glass-card p-6">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center gap-4 justify-between">
+              <div>
+                <h2 className="text-xl font-semibold flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-primary" />
+                  Mapa de fichajes
+                </h2>
+                <p className="text-sm text-muted-foreground">
+                  Visualiza desde dónde han fichado tus empleados en el período seleccionado.
+                </p>
+              </div>
+              <div className="w-full md:w-64 space-y-1">
+                <Label htmlFor="weekday-filter">Día de la semana</Label>
+                <Select value={selectedWeekday} onValueChange={setSelectedWeekday}>
+                  <SelectTrigger id="weekday-filter">
+                    <SelectValue placeholder="Todos los días" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WEEKDAY_FILTERS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr),320px]">
+              <div className="rounded-xl border bg-muted/30 overflow-hidden min-h-[360px] relative">
+                <div ref={mapContainerRef} className="w-full h-[360px]" />
+                {mapLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground bg-background/80 backdrop-blur-sm">
+                    Cargando ubicaciones...
+                  </div>
+                )}
+                {!mapLoading && eventsWithCoords.length === 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground bg-background/70 backdrop-blur-sm text-center px-6">
+                    No hay fichajes con coordenadas para este filtro.
+                  </div>
+                )}
+              </div>
+              <div className="space-y-4">
+                <div className="p-4 rounded-xl bg-secondary/40">
+                  <p className="text-sm text-muted-foreground">Registros mostrados</p>
+                  <p className="text-3xl font-bold">
+                    {filteredMapEvents.length}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {selectedWeekday === "all"
+                      ? "Incluyendo todos los días"
+                      : `Solo ${WEEKDAY_LABELS[Number(selectedWeekday)]}s`}
+                  </p>
+                  <div className="mt-3 text-sm">
+                    Empleados únicos:{" "}
+                    <span className="font-semibold">{uniqueEmployeesOnMap}</span>
+                  </div>
+                </div>
+                <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1">
+                  {mapLoading ? (
+                    <p className="text-sm text-muted-foreground">Cargando ubicaciones...</p>
+                  ) : filteredMapEvents.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      No hay fichajes con ubicación para este filtro.
+                    </p>
+                  ) : (
+                    filteredMapEvents.slice(0, 5).map((event) => {
+                      const eventDate = new Date(event.event_time);
+                      return (
+                        <div
+                          key={event.id}
+                          className="p-3 rounded-xl border bg-background/40 flex flex-col gap-2"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                              <MapPin className="w-4 h-4" />
+                            </div>
+                            <div>
+                              <p className="font-medium">
+                                {event.profiles?.full_name || event.profiles?.email || "Empleado"}
+                              </p>
+                              <p className="text-xs text-muted-foreground">
+                                {eventDate.toLocaleDateString("es-ES", {
+                                  weekday: "short",
+                                  day: "2-digit",
+                                  month: "short",
+                                })}{" "}
+                                ·{" "}
+                                {eventDate.toLocaleTimeString("es-ES", {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </p>
+                            </div>
+                          </div>
+                          <a
+                            href={`https://www.google.com/maps?q=${event.latitude},${event.longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-primary hover:underline flex items-center gap-1"
+                          >
+                            <MapPin className="w-3 h-3" />
+                            Ver en Google Maps
+                          </a>
+                        </div>
+                      );
+                    })
+                  )}
+                  {filteredMapEvents.length > 5 && (
+                    <p className="text-xs text-muted-foreground text-right">
+                      Mostrando los últimos 5 registros
+                    </p>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </Card>

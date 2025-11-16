@@ -1,5 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { ensureWorkerProfile } from "../_shared/invite-helpers.ts";
+import { getPlanLimit } from "../_shared/company-plan.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -63,6 +65,23 @@ serve(async (req) => {
       );
     }
 
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!serviceRoleKey) {
+      console.error("Missing SUPABASE_SERVICE_ROLE_KEY");
+      return new Response(
+        JSON.stringify({ error: "Misconfigured server" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      serviceRoleKey,
+      {
+        auth: { autoRefreshToken: false, persistSession: false },
+      }
+    );
+
     const body: CreateInviteRequest = await req.json().catch(() => ({
       email: "",
       role: "worker",
@@ -84,6 +103,25 @@ serve(async (req) => {
     }
 
     const companyId = membership.company_id;
+    const { data: company } = await supabase
+      .from("companies")
+      .select("name, plan")
+      .eq("id", companyId)
+      .maybeSingle();
+    const companyName = company?.name || "tu empresa";
+    const planLimit = getPlanLimit(company?.plan);
+    if (planLimit !== null) {
+      const { count: activeMembers } = await supabase
+        .from("memberships")
+        .select("*", { count: "exact", head: true })
+        .eq("company_id", companyId);
+      if ((activeMembers || 0) >= planLimit) {
+        return new Response(
+          JSON.stringify({ error: "Has alcanzado el máximo de empleados de tu plan actual" }),
+          { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+    }
 
     const { data: existingMembership } = await supabase
       .from("memberships")
@@ -109,6 +147,22 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: "Ya existe una invitación pendiente para este correo" }),
         { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    let loginCode: string | null = null;
+    try {
+      const ensured = await ensureWorkerProfile(supabaseAdmin, {
+        email,
+        centerId: body.center_id || undefined,
+        teamId: body.team_id || undefined,
+      });
+      loginCode = ensured.loginCode;
+    } catch (profileError) {
+      console.error("Failed to prepare invited user profile:", profileError);
+      return new Response(
+        JSON.stringify({ error: "No pudimos preparar al usuario invitado" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -146,6 +200,8 @@ serve(async (req) => {
       const siteUrl = Deno.env.get("SITE_URL") || "http://localhost:8080";
       const inviteUrl = `${siteUrl}/accept-invite?token=${token}`;
 
+      const authUrl = `${siteUrl}/auth`;
+
       if (resendApiKey) {
         await fetch("https://api.resend.com/emails", {
           method: "POST",
@@ -159,12 +215,26 @@ serve(async (req) => {
             subject: "Invitación a GTiQ",
             html: `
               <div style="font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.6;color:#111827">
-                <h2 style="margin:0 0 12px">Has sido invitado a GTiQ</h2>
-                <p>Te han invitado a unirte a la empresa con el rol <strong>${invite.role}</strong>.</p>
-                <p>Puedes aceptar la invitación usando este enlace:</p>
-                <p><a href="${inviteUrl}" style="color:#1d4ed8">Aceptar invitación</a></p>
-                <p>Si el botón no funciona, copia y pega esta URL en tu navegador:</p>
+                <h2 style="margin:0 0 12px">Te esperamos en ${companyName}</h2>
+                <p>Esta empresa te ha invitado a GTiQ con el rol <strong>${invite.role}</strong>.</p>
+                <ol style="padding-left:20px;margin:16px 0;">
+                  <li>Haz clic en el botón para confirmar la invitación.</li>
+                  <li>Accede a <a href="${authUrl}" style="color:#1d4ed8;">GTiQ</a> e introduce tu código personal.</li>
+                </ol>
+                <div style="margin:16px 0;">
+                  <p style="margin:0 0 8px;font-weight:600;">Tu código personal de acceso:</p>
+                  <p style="font-size:28px;font-weight:600;letter-spacing:4px;background:#f3f4f6;padding:12px 16px;border-radius:10px;display:inline-block;margin:0;color:#0f172a;">
+                    ${loginCode ?? "Disponible con tu administrador"}
+                  </p>
+                </div>
+                <p style="margin:16px 0;">
+                  <a href="${inviteUrl}" style="color:#fff;background:#1d4ed8;padding:10px 18px;border-radius:8px;text-decoration:none;display:inline-block;">Aceptar invitación</a>
+                </p>
+                <p style="font-size:13px;color:#64748b;">Si el botón no funciona, copia esta URL:</p>
                 <code style="display:block;padding:8px;background:#f3f4f6;border-radius:6px">${inviteUrl}</code>
+                <p style="font-size:13px;color:#64748b;margin-top:12px;">
+                  En cuanto confirmes la invitación, tu administrador verá que ya formas parte del equipo.
+                </p>
               </div>
             `,
           }),

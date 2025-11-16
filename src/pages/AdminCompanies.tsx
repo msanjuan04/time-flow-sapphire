@@ -19,12 +19,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, UserCog, Search, Loader2, Plus } from "lucide-react";
+import { ArrowLeft, UserCog, Search, Loader2, Plus, CheckCircle2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useImpersonation } from "@/hooks/useImpersonation";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+import {
+  COMPANY_PLANS,
+  CompanyPlanId,
+  getCompanyPlanDefinition,
+  getCompanyPlanLimit,
+  normalizeCompanyPlan,
+} from "@/config/companyPlans";
 
 interface Company {
   id: string;
@@ -47,6 +54,7 @@ const AdminCompanies = () => {
   const [selectedRole, setSelectedRole] = useState<"admin" | "manager" | "worker">("admin");
   const [createOpen, setCreateOpen] = useState(false);
   const [newCompanyName, setNewCompanyName] = useState("");
+  const [newCompanyPlan, setNewCompanyPlan] = useState<CompanyPlanId>("empresa");
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -79,11 +87,12 @@ const AdminCompanies = () => {
     setCreating(true);
     try {
       const { error } = await (supabase as any).functions.invoke("admin-create-company", {
-        body: { name },
+        body: { name, plan: newCompanyPlan },
       });
       if (error) throw error;
       setCreateOpen(false);
       setNewCompanyName("");
+      setNewCompanyPlan("empresa");
       fetchCompanies();
       toast.success("Empresa creada correctamente");
     } catch (e: any) {
@@ -112,12 +121,15 @@ const AdminCompanies = () => {
   };
 
   const getPlanBadge = (plan: string) => {
-    const variants: Record<string, string> = {
-      free: "bg-gray-500/10 text-gray-700 border-gray-500/20",
-      pro: "bg-blue-500/10 text-blue-700 border-blue-500/20",
-      enterprise: "bg-purple-500/10 text-purple-700 border-purple-500/20",
+    const info = getCompanyPlanDefinition(plan);
+    const palette: Record<CompanyPlanId, string> = {
+      basic: "bg-slate-500/10 text-slate-700 border-slate-500/20",
+      empresa: "bg-blue-500/10 text-blue-700 border-blue-500/20",
+      pro: "bg-indigo-500/10 text-indigo-700 border-indigo-500/20",
+      advanced: "bg-purple-500/10 text-purple-700 border-purple-500/20",
+      custom: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20",
     };
-    return variants[plan] || variants.free;
+    return palette[info.id];
   };
 
   return (
@@ -207,14 +219,30 @@ const AdminCompanies = () => {
                       </TableCell>
                       <TableCell>
                         <Badge className={getPlanBadge(company.plan)}>
-                          {company.plan.toUpperCase()}
+                          {getCompanyPlanDefinition(company.plan).label}
                         </Badge>
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {company.owner_email || "—"}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        {company.users_count || 0}
+                        {(() => {
+                          const planInfo = getCompanyPlanDefinition(company.plan);
+                          const limit = planInfo.maxEmployees;
+                          const used = company.users_count || 0;
+                          if (limit === null) {
+                            return `${used} empleados (sin límite)`;
+                          }
+                          const remaining = Math.max(limit - used, 0);
+                          return (
+                            <span className="font-medium">
+                              {used} / {limit}{" "}
+                              <span className="text-xs text-muted-foreground block">
+                                Restantes: {remaining}
+                              </span>
+                            </span>
+                          );
+                        })()}
                       </TableCell>
                       <TableCell className="text-muted-foreground text-sm">
                         {company.last_event_at
@@ -262,12 +290,74 @@ const AdminCompanies = () => {
             <DialogTitle>Nueva empresa</DialogTitle>
             <DialogDescription>Introduce el nombre de la empresa</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-6">
             <Input
               placeholder="Nombre de la empresa"
               value={newCompanyName}
               onChange={(e) => setNewCompanyName(e.target.value)}
             />
+            <div className="space-y-3">
+              <div>
+                <p className="text-sm font-semibold">Selecciona el plan</p>
+                <p className="text-xs text-muted-foreground">
+                  Define el número máximo de empleados que podrá gestionar esta empresa.
+                </p>
+              </div>
+              <div className="grid gap-3">
+                {["basic", "empresa", "pro", "advanced", "custom"].map((planId) => {
+                  const plan = COMPANY_PLANS[planId as CompanyPlanId];
+                  const selected = newCompanyPlan === plan.id;
+                  return (
+                    <button
+                      key={plan.id}
+                      type="button"
+                      onClick={() => setNewCompanyPlan(plan.id)}
+                      className={`text-left rounded-2xl border px-4 py-4 transition hover:border-primary/60 ${
+                        selected ? "border-primary bg-primary/5 shadow-sm" : "border-border"
+                      }`}
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p className="text-lg font-semibold">{plan.label}</p>
+                            {plan.highlight && (
+                              <span className="text-[11px] uppercase tracking-wide text-primary font-semibold">
+                                Más popular
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-muted-foreground">{plan.description}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-lg font-semibold">{plan.price}</p>
+                          {plan.maxEmployees !== null && (
+                            <p className="text-xs text-muted-foreground">
+                              Máx. {plan.maxEmployees} empleados
+                            </p>
+                          )}
+                          {plan.maxEmployees === null && (
+                            <p className="text-xs text-muted-foreground">Sin límite</p>
+                          )}
+                        </div>
+                      </div>
+                      <ul className="mt-3 grid gap-1 text-sm text-muted-foreground sm:grid-cols-2">
+                        {plan.features.map((feature) => (
+                          <li key={feature} className="flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-primary" />
+                            {feature}
+                          </li>
+                        ))}
+                      </ul>
+                      {selected && (
+                        <p className="text-xs text-primary mt-3 font-medium">
+                          Plan seleccionado
+                        </p>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setCreateOpen(false)} disabled={creating}>Cancelar</Button>
               <Button onClick={handleCreateCompany} disabled={creating || !newCompanyName.trim()}>

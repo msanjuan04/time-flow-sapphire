@@ -19,18 +19,11 @@ interface InviteData {
   status: string;
 }
 
-interface InviteRecord {
-  id: string;
-  email: string;
-  role: UserRole;
-  company_id: string;
-  center_id: string | null;
-  team_id: string | null;
-  expires_at: string;
-  status: string;
-  companies: {
-    name: string;
-  };
+interface AcceptInviteResponse {
+  invite: InviteData;
+  login_code: string | null;
+  user_created: boolean;
+  membership_created: boolean;
 }
 
 const AcceptInvite = () => {
@@ -42,6 +35,8 @@ const AcceptInvite = () => {
   const [inviteData, setInviteData] = useState<InviteData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [userExists, setUserExists] = useState(false);
+  const [loginCode, setLoginCode] = useState<string | null>(null);
+  const [membershipCreated, setMembershipCreated] = useState(false);
 
   useEffect(() => {
     if (token) {
@@ -54,70 +49,27 @@ const AcceptInvite = () => {
 
   const validateInvite = async () => {
     try {
-      const { data, error } = await supabase
-        .from("invites")
-        .select(`
-          id,
-          email,
-          role,
-          company_id,
-          center_id,
-          team_id,
-          expires_at,
-          status,
-          companies!inner(name)
-        `)
-        .eq("token", token)
-        .single();
+      const { data, error } = await supabase.functions.invoke<AcceptInviteResponse>("accept-invite", {
+        body: { token },
+      });
 
-      if (error || !data) {
+      if (error) {
+        console.error("Error validating invite:", error);
+        setError(error.message || "Error al validar la invitación");
+        setLoading(false);
+        return;
+      }
+
+      if (!data?.invite) {
         setError("Invitación no encontrada");
         setLoading(false);
         return;
       }
 
-      // Check if expired
-      if (new Date(data.expires_at) < new Date()) {
-        setError("Esta invitación ha expirado");
-        setLoading(false);
-        return;
-      }
-
-      // Check if already accepted or revoked
-      if (data.status !== "pending") {
-        if (data.status === "accepted") {
-          setError("Esta invitación ya ha sido aceptada");
-        } else if (data.status === "revoked") {
-          setError("Esta invitación ha sido revocada");
-        } else {
-          setError("Esta invitación no es válida");
-        }
-        setLoading(false);
-        return;
-      }
-
-      const record = data as InviteRecord;
-      const inviteInfo: InviteData = {
-        id: record.id,
-        email: record.email,
-        role: record.role,
-        company_id: record.company_id,
-        company_name: record.companies.name,
-        center_id: record.center_id,
-        team_id: record.team_id,
-        expires_at: record.expires_at,
-        status: record.status,
-      };
-
-      setInviteData(inviteInfo);
-
-      const { data: existingProfile } = await supabase
-        .from("profiles")
-        .select("id")
-        .eq("email", data.email.toLowerCase())
-        .maybeSingle();
-
-      setUserExists(Boolean(existingProfile));
+      setInviteData(data.invite);
+      setLoginCode(data.login_code || null);
+      setUserExists(!data.user_created);
+      setMembershipCreated(Boolean(data.membership_created));
       setLoading(false);
     } catch (error) {
       console.error("Error validating invite:", error);
@@ -173,11 +125,29 @@ const AcceptInvite = () => {
             <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-4">
               <CheckCircle2 className="w-8 h-8 text-primary" />
             </div>
-            <h1 className="text-2xl font-bold">Invitación verificada</h1>
+            <h1 className="text-2xl font-bold">¡Todo listo!</h1>
             <p className="text-sm text-muted-foreground">
-              Has sido invitado a <span className="font-semibold">{inviteData.company_name}</span>. Utiliza tu código personal de 6 dígitos para entrar.
+              Ya formas parte de <span className="font-semibold">{inviteData.company_name}</span> como{" "}
+              <span className="font-semibold">{inviteData.role}</span>. Usa tu código personal para acceder a GTiQ.
             </p>
+            {membershipCreated ? (
+              <p className="text-xs text-green-600">Hemos activado tu puesto automáticamente.</p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Esta invitación ya estaba activa. Puedes usar tu código habitual.
+              </p>
+            )}
           </div>
+
+          {loginCode && (
+            <div className="bg-secondary/60 p-4 rounded-lg text-center space-y-2">
+              <p className="text-sm text-muted-foreground m-0">Tu código personal</p>
+              <p className="text-3xl font-bold tracking-[0.4rem]">{loginCode}</p>
+              <p className="text-xs text-muted-foreground m-0">
+                Puedes cambiarlo cuando lo solicites desde la pantalla de acceso.
+              </p>
+            </div>
+          )}
 
           <div className="bg-secondary/50 p-4 rounded-lg space-y-2 text-sm">
             <div className="flex items-center gap-2">
@@ -197,10 +167,10 @@ const AcceptInvite = () => {
 
           <div className="space-y-3 text-sm text-muted-foreground">
             <p>
-              Hemos generado tu acceso con un código de 6 dígitos. Lo recibirás por correo y el administrador también puede consultarlo desde GTiQ.
+              Recuerda iniciar sesión desde <a href="/auth" className="underline text-primary">gtiq.app/auth</a> con tu código de acceso.
             </p>
             <p>
-              Si no lo encuentras, solicita que te lo reenvíen. Una vez lo tengas, introdúcelo en la pantalla de login para entrar al instante.
+              Si necesitas un nuevo código, puedes solicitarlo desde la propia pantalla de login.
             </p>
           </div>
 

@@ -4,7 +4,7 @@ import App from "./App.tsx";
 import "./index.css";
 import { ThemeProvider } from "next-themes";
 
-// Avoid loading duplicated presence scripts injected by external tooling
+// Avoid loading duplicated presence scripts injected by external tooling (e.g., lovable-tagger)
 const guardPresenceScript = () => {
   if (typeof window === "undefined") return;
   if ((window as Record<string, unknown>).__presenceScriptGuarded) return;
@@ -18,7 +18,8 @@ const guardPresenceScript = () => {
   });
 
   const seen = new Set<string>();
-  const shouldSkip = (script: HTMLScriptElement) => {
+  const shouldSkip = (script: HTMLScriptElement | null): boolean => {
+    if (!script || script.tagName !== "SCRIPT") return false;
     const src = script.src || script.getAttribute("src") || "";
     if (!src.toLowerCase().includes("presence.js")) return false;
     if (seen.has(src)) {
@@ -29,18 +30,33 @@ const guardPresenceScript = () => {
     return false;
   };
 
+  // Wrap methods that can inject scripts
   const wrap = <T extends Element>(fn: (...args: any[]) => T) => {
     return function patched(this: Element, ...args: any[]): T {
       const candidate = args[0] as Element | null;
-      if (candidate && candidate.tagName === "SCRIPT" && shouldSkip(candidate as HTMLScriptElement)) {
+      if (shouldSkip(candidate as HTMLScriptElement)) {
         return candidate as T;
       }
       return fn.apply(this, args);
     };
   };
 
+  // Intercept common DOM manipulation methods
   Element.prototype.appendChild = wrap(Element.prototype.appendChild);
   Element.prototype.insertBefore = wrap(Element.prototype.insertBefore);
+  Element.prototype.replaceChild = wrap(Element.prototype.replaceChild);
+  
+  // Also intercept insertAdjacentElement which might be used
+  const originalInsertAdjacentElement = Element.prototype.insertAdjacentElement;
+  Element.prototype.insertAdjacentElement = function(
+    position: InsertPosition,
+    element: Element
+  ): Element | null {
+    if (shouldSkip(element as HTMLScriptElement)) {
+      return element;
+    }
+    return originalInsertAdjacentElement.call(this, position, element);
+  };
 };
 
 guardPresenceScript();

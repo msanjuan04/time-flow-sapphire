@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+import { getCompanyPlanDefinition, normalizeCompanyPlan } from "@/config/companyPlans";
  
 
 interface CompanyDetail {
@@ -257,12 +258,15 @@ const AdminCompanyDetail = () => {
   };
 
   const getPlanBadge = (plan: string) => {
-    const variants: Record<string, string> = {
-      free: "bg-gray-500/10 text-gray-700 border-gray-500/20",
-      pro: "bg-blue-500/10 text-blue-700 border-blue-500/20",
-      enterprise: "bg-purple-500/10 text-purple-700 border-purple-500/20",
+    const palette: Record<string, string> = {
+      basic: "bg-slate-500/10 text-slate-700 border-slate-500/20",
+      empresa: "bg-blue-500/10 text-blue-700 border-blue-500/20",
+      pro: "bg-indigo-500/10 text-indigo-700 border-indigo-500/20",
+      advanced: "bg-purple-500/10 text-purple-700 border-purple-500/20",
+      custom: "bg-emerald-500/10 text-emerald-700 border-emerald-500/20",
     };
-    return variants[plan] || variants.free;
+    const key = normalizeCompanyPlan(plan);
+    return palette[key];
   };
 
   if (loading) {
@@ -288,6 +292,8 @@ const AdminCompanyDetail = () => {
     );
   }
 
+  const planInfo = getCompanyPlanDefinition(company.plan);
+
   return (
     <AdminLayout>
       <div className="space-y-6 animate-fade-in">
@@ -309,7 +315,7 @@ const AdminCompanyDetail = () => {
                   {company.status}
                 </Badge>
                 <Badge className={getPlanBadge(company.plan)}>
-                  {company.plan.toUpperCase()}
+                  {planInfo.label}
                 </Badge>
               </div>
             </div>
@@ -337,6 +343,26 @@ const AdminCompanyDetail = () => {
               <p className="text-sm text-muted-foreground">Fecha de creación</p>
               <p className="font-medium">
                 {new Date(company.created_at).toLocaleDateString()}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Plan</p>
+              <p className="font-medium">
+                {planInfo.label} · {planInfo.price}
+              </p>
+              {planInfo.maxEmployees !== null && (
+                <p className="text-xs text-muted-foreground">
+                  Máx. {planInfo.maxEmployees} empleados
+                </p>
+              )}
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Uso actual</p>
+              <p className="font-medium">
+                {company.stats.users_count}{" "}
+                {planInfo.maxEmployees === null
+                  ? "empleados (sin límite)"
+                  : `de ${planInfo.maxEmployees} empleados`}
               </p>
             </div>
           </div>

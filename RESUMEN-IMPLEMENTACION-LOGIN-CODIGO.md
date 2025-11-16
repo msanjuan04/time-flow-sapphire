@@ -26,11 +26,7 @@
 
 ### 📋 Códigos de Usuarios
 
-| Email | Código | Rol |
-|-------|--------|-----|
-| `gnerai@gneraitiq.com` | **521332** | Superadmin |
-| `cortadamarc13@gmail.com` | **033797** | Owner |
-| `marcsanjuansard@gmail.com` | **447407** | Worker |
+
 
 ## 🚀 Próximos Pasos
 

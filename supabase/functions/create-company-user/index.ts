@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.81.0";
+import { getPlanLimit } from "../_shared/company-plan.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -61,7 +62,7 @@ serve(async (req) => {
     // Verify company exists
     const { data: company, error: companyError } = await supabaseAdmin
       .from('companies')
-      .select('id')
+      .select('id, plan')
       .eq('id', company_id)
       .single();
 
@@ -123,4 +124,16 @@ serve(async (req) => {
     );
   }
 });
-
+    const planLimit = getPlanLimit(company.plan);
+    if (planLimit !== null) {
+      const { count: activeMembers } = await supabaseAdmin
+        .from('memberships')
+        .select('*', { count: 'exact', head: true })
+        .eq('company_id', company_id);
+      if ((activeMembers || 0) >= planLimit) {
+        return new Response(
+          JSON.stringify({ error: "Plan limit reached for this company" }),
+          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }

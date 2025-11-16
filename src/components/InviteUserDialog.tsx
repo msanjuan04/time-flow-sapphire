@@ -32,6 +32,8 @@ interface InviteUserDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
+  slotsAvailable?: number | null;
+  planLimit?: number | null;
 }
 
 interface Center {
@@ -44,7 +46,13 @@ interface Team {
   name: string;
 }
 
-const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogProps) => {
+const InviteUserDialog = ({
+  open,
+  onOpenChange,
+  onSuccess,
+  slotsAvailable = null,
+  planLimit = null,
+}: InviteUserDialogProps) => {
   const { companyId } = useMembership();
   const { isSuperadmin } = useSuperadmin();
   const [loading, setLoading] = useState(false);
@@ -58,6 +66,7 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
   const [centers, setCenters] = useState<Center[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const limitReached = planLimit !== null && (slotsAvailable ?? 0) <= 0;
 
   const fetchCenters = useCallback(async () => {
     if (!companyId) return;
@@ -132,6 +141,11 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
 
     if (!companyId) {
       toast.error("No se pudo obtener la información de la empresa");
+      return;
+    }
+
+    if (!isSuperadmin && limitReached) {
+      toast.error("Has alcanzado el máximo de empleados permitidos por tu plan.");
       return;
     }
 
@@ -243,6 +257,20 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
           </DialogDescription>
         </DialogHeader>
 
+        {planLimit !== null && (
+          <div className="rounded-2xl border border-dashed p-3 text-sm">
+            <p className="font-semibold">Capacidad disponible</p>
+            <p className="text-muted-foreground">
+              Puedes activar {Math.max(slotsAvailable ?? 0, 0)} de {planLimit} empleados con tu plan.
+            </p>
+            {limitReached && !isSuperadmin && (
+              <p className="text-destructive text-xs mt-1">
+                Has alcanzado el límite. Amplía tu plan para invitar a más personas.
+              </p>
+            )}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -334,7 +362,10 @@ const InviteUserDialog = ({ open, onOpenChange, onSuccess }: InviteUserDialogPro
             >
               Cancelar
             </Button>
-            <Button type="submit" disabled={loading || !companyId}>
+            <Button
+              type="submit"
+              disabled={loading || !companyId || (!isSuperadmin && limitReached)}
+            >
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {!companyId ? "Cargando..." : "Enviar Invitación"}
             </Button>

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { requireSuperadmin, writeAudit, extractRequestMetadata } from "../_shared/admin.ts";
 import { handleCorsOptions, createJsonResponse, createErrorResponse } from "../_shared/cors.ts";
+import { getPlanLimit } from "../_shared/company-plan.ts";
 
 interface CreateInviteRequest {
   company_id: string;
@@ -37,7 +38,7 @@ serve(async (req) => {
     // Ensure company exists
     const { data: company, error: companyErr } = await supabase
       .from("companies")
-      .select("id")
+      .select("id, plan")
       .eq("id", companyId)
       .maybeSingle();
     if (companyErr || !company) {
@@ -152,3 +153,13 @@ serve(async (req) => {
     return createErrorResponse("Failed to create invite", 500);
   }
 });
+    const planLimit = getPlanLimit(company.plan);
+    if (planLimit !== null) {
+      const { count: memberCount } = await supabase
+        .from("memberships")
+        .select("*", { count: "exact", head: true })
+        .eq("company_id", companyId);
+      if ((memberCount || 0) >= planLimit) {
+        return createErrorResponse("Plan limit reached for this company", 409);
+      }
+    }

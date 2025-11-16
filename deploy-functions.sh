@@ -13,6 +13,7 @@ echo ""
 FUNCTIONS=(
   "clock"
   "create-invite"
+  "accept-invite"
   "resend-invite"
   "revoke-invite"
   "list-invites"
@@ -83,4 +84,3 @@ if [ $FAILED -eq 0 ]; then
 else
   echo "⚠️  Algunas funciones fallaron. Revisa los errores arriba."
 fi
-

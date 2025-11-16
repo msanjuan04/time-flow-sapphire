@@ -476,6 +476,7 @@ export type Database = {
       }
       invites: {
         Row: {
+          accepted_at: string | null
           center_id: string | null
           company_id: string
           created_at: string
@@ -489,6 +490,7 @@ export type Database = {
           token: string
         }
         Insert: {
+          accepted_at?: string | null
           center_id?: string | null
           company_id: string
           created_at?: string
@@ -502,6 +504,7 @@ export type Database = {
           token: string
         }
         Update: {
+          accepted_at?: string | null
           center_id?: string | null
           company_id?: string
           created_at?: string

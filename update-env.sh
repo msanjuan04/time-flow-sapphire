@@ -26,6 +26,19 @@ else
   read -p "   Pega tu anon key aquí: " ANON_KEY
 fi
 
+# Leer el Mapbox token actual si existe
+if [ -f .env ]; then
+  CURRENT_MAPBOX_TOKEN=$(grep "VITE_MAPBOX_PUBLIC_TOKEN" .env | cut -d '=' -f2 | tr -d ' ')
+  if [ -n "$CURRENT_MAPBOX_TOKEN" ] && [ "$CURRENT_MAPBOX_TOKEN" != "REEMPLAZA_CON_TU_MAPBOX_PUBLIC_TOKEN" ]; then
+    echo "✅ Manteniendo tu Mapbox token actual: ${CURRENT_MAPBOX_TOKEN:0:20}..."
+    MAPBOX_TOKEN="$CURRENT_MAPBOX_TOKEN"
+  else
+    MAPBOX_TOKEN="REEMPLAZA_CON_TU_MAPBOX_PUBLIC_TOKEN"
+  fi
+else
+  MAPBOX_TOKEN="REEMPLAZA_CON_TU_MAPBOX_PUBLIC_TOKEN"
+fi
+
 # Crear/actualizar el archivo .env
 cat > .env << EOF
 # Supabase Configuration
@@ -34,6 +47,11 @@ cat > .env << EOF
 VITE_SUPABASE_URL=${SUPABASE_URL}
 VITE_SUPABASE_PUBLISHABLE_KEY=${ANON_KEY}
 VITE_SUPABASE_PROJECT_ID=${PROJECT_ID}
+
+# Mapbox Configuration
+# Obtén tu token público en: https://account.mapbox.com/access-tokens/
+# El token debe tener permisos para usar Mapbox GL JS
+VITE_MAPBOX_PUBLIC_TOKEN=${MAPBOX_TOKEN}
 EOF
 
 echo ""
@@ -43,6 +61,12 @@ echo "📋 Valores configurados:"
 echo "   VITE_SUPABASE_URL=${SUPABASE_URL}"
 echo "   VITE_SUPABASE_PUBLISHABLE_KEY=${ANON_KEY:0:30}..."
 echo "   VITE_SUPABASE_PROJECT_ID=${PROJECT_ID}"
+echo "   VITE_MAPBOX_PUBLIC_TOKEN=${MAPBOX_TOKEN:0:30}..."
+echo ""
+if [ "$MAPBOX_TOKEN" = "REEMPLAZA_CON_TU_MAPBOX_PUBLIC_TOKEN" ]; then
+  echo "⚠️  IMPORTANTE: Configura VITE_MAPBOX_PUBLIC_TOKEN en .env"
+  echo "   Obtén tu token en: https://account.mapbox.com/access-tokens/"
+fi
 echo ""
 echo "🔍 Verifica el contenido con: cat .env"
 
