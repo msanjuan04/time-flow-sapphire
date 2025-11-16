@@ -33,6 +33,7 @@ FUNCTIONS=(
   "admin-list-logs"
   "admin-list-users"
   "admin-set-company-status"
+  "admin-set-company-plan"
   "admin-stats"
   "admin-stop-impersonate"
   "admin-transfer-ownership"

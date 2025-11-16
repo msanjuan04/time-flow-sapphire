@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, UserCog, Search, Loader2, Plus, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, UserCog, Search, Loader2, Plus, CheckCircle2, Users } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useImpersonation } from "@/hooks/useImpersonation";
 import { toast } from "sonner";
@@ -27,7 +27,9 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import {
   COMPANY_PLANS,
+  CompanyPlanDefinition,
   CompanyPlanId,
+  UNIVERSAL_PLAN_FEATURES,
   getCompanyPlanDefinition,
   getCompanyPlanLimit,
   normalizeCompanyPlan,
@@ -42,6 +44,11 @@ interface Company {
   users_count?: number;
   last_event_at?: string | null;
   owner_email?: string | null;
+}
+
+interface PlanSelectionGridProps {
+  selectedPlan: CompanyPlanId;
+  onSelectPlan: (planId: CompanyPlanId) => void;
 }
 
 const AdminCompanies = () => {
@@ -86,10 +93,31 @@ const AdminCompanies = () => {
     if (!name) return;
     setCreating(true);
     try {
-      const { error } = await (supabase as any).functions.invoke("admin-create-company", {
+      const { data, error } = await (supabase as any).functions.invoke("admin-create-company", {
         body: { name, plan: newCompanyPlan },
       });
       if (error) throw error;
+      const createdCompany = data?.company;
+      if (createdCompany) {
+        const normalizedCreatedPlan = normalizeCompanyPlan(createdCompany.plan);
+        if (normalizedCreatedPlan !== newCompanyPlan) {
+          try {
+            const { error: planError } = await (supabase as any).functions.invoke(
+              "admin-set-company-plan",
+              {
+                body: { company_id: createdCompany.id, plan: newCompanyPlan },
+              }
+            );
+            if (planError) {
+              console.warn("Failed to correct company plan:", planError);
+              toast.message("Empresa creada, pero el plan no se pudo ajustar automáticamente.");
+            }
+          } catch (planError) {
+            console.warn("Admin set company plan not available:", planError);
+            toast.message("Empresa creada, revisa el plan manualmente.");
+          }
+        }
+      }
       setCreateOpen(false);
       setNewCompanyName("");
       setNewCompanyPlan("empresa");
@@ -285,89 +313,168 @@ const AdminCompanies = () => {
 
       {/* Create Company Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="glass-card">
-          <DialogHeader>
-            <DialogTitle>Nueva empresa</DialogTitle>
-            <DialogDescription>Introduce el nombre de la empresa</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-6">
-            <Input
-              placeholder="Nombre de la empresa"
-              value={newCompanyName}
-              onChange={(e) => setNewCompanyName(e.target.value)}
-            />
-            <div className="space-y-3">
-              <div>
-                <p className="text-sm font-semibold">Selecciona el plan</p>
-                <p className="text-xs text-muted-foreground">
-                  Define el número máximo de empleados que podrá gestionar esta empresa.
-                </p>
-              </div>
-              <div className="grid gap-3">
-                {["basic", "empresa", "pro", "advanced", "custom"].map((planId) => {
-                  const plan = COMPANY_PLANS[planId as CompanyPlanId];
-                  const selected = newCompanyPlan === plan.id;
-                  return (
-                    <button
-                      key={plan.id}
-                      type="button"
-                      onClick={() => setNewCompanyPlan(plan.id)}
-                      className={`text-left rounded-2xl border px-4 py-4 transition hover:border-primary/60 ${
-                        selected ? "border-primary bg-primary/5 shadow-sm" : "border-border"
-                      }`}
-                    >
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <p className="text-lg font-semibold">{plan.label}</p>
-                            {plan.highlight && (
-                              <span className="text-[11px] uppercase tracking-wide text-primary font-semibold">
-                                Más popular
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-sm text-muted-foreground">{plan.description}</p>
+        <DialogContent className="max-w-4xl w-full overflow-hidden rounded-3xl border-none bg-white p-0 shadow-2xl">
+          <div className="flex max-h-[90vh] flex-col">
+            <DialogHeader className="border-b px-6 py-6">
+              <DialogTitle className="text-2xl font-semibold">Nueva empresa</DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground">
+                Introduce el nombre de la empresa
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex-1 overflow-y-auto px-6 py-6">
+              <div className="space-y-6">
+                <Input
+                  placeholder="Nombre de la empresa"
+                  value={newCompanyName}
+                  onChange={(e) => setNewCompanyName(e.target.value)}
+                />
+                <section className="space-y-5">
+                  <div>
+                    <p className="text-lg font-semibold">Selecciona el plan</p>
+                    <p className="text-sm text-muted-foreground">
+                      Define el número máximo de empleados que podrá gestionar esta empresa.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-primary/10 bg-primary/5 px-5 py-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary">
+                      Todos los planes incluyen
+                    </p>
+                    <div className="mt-3 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2">
+                      {UNIVERSAL_PLAN_FEATURES.map((feature) => (
+                        <div key={feature} className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-primary" />
+                          {feature}
                         </div>
-                        <div className="text-right">
-                          <p className="text-lg font-semibold">{plan.price}</p>
-                          {plan.maxEmployees !== null && (
-                            <p className="text-xs text-muted-foreground">
-                              Máx. {plan.maxEmployees} empleados
-                            </p>
-                          )}
-                          {plan.maxEmployees === null && (
-                            <p className="text-xs text-muted-foreground">Sin límite</p>
-                          )}
-                        </div>
-                      </div>
-                      <ul className="mt-3 grid gap-1 text-sm text-muted-foreground sm:grid-cols-2">
-                        {plan.features.map((feature) => (
-                          <li key={feature} className="flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-primary" />
-                            {feature}
-                          </li>
-                        ))}
-                      </ul>
-                      {selected && (
-                        <p className="text-xs text-primary mt-3 font-medium">
-                          Plan seleccionado
-                        </p>
-                      )}
-                    </button>
-                  );
-                })}
+                      ))}
+                    </div>
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      El precio solo varía según la cantidad máxima de empleados permitidos.
+                    </p>
+                  </div>
+                  <PlanSelectionGrid
+                    selectedPlan={newCompanyPlan}
+                    onSelectPlan={(planId) => setNewCompanyPlan(planId)}
+                  />
+                </section>
               </div>
             </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setCreateOpen(false)} disabled={creating}>Cancelar</Button>
-              <Button onClick={handleCreateCompany} disabled={creating || !newCompanyName.trim()}>
-                {creating && <Loader2 className="w-4 h-4 mr-2 animate-spin"/>}
-                Crear
-              </Button>
+            <div className="border-t px-6 py-4">
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setCreateOpen(false)} disabled={creating}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleCreateCompany} disabled={creating || !newCompanyName.trim()}>
+                  {creating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Crear
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+};
+
+const standardPlanOrder: CompanyPlanId[] = ["basic", "empresa", "pro", "advanced"];
+
+const PlanSelectionGrid = ({ selectedPlan, onSelectPlan }: PlanSelectionGridProps) => {
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {standardPlanOrder.map((planId) => {
+          const plan = COMPANY_PLANS[planId];
+          return (
+            <PlanCard
+              key={planId}
+              plan={plan}
+              selected={selectedPlan === planId}
+              onSelect={onSelectPlan}
+            />
+          );
+        })}
+      </div>
+      <PlanCard
+        plan={COMPANY_PLANS.custom}
+        selected={selectedPlan === "custom"}
+        onSelect={onSelectPlan}
+      />
+    </div>
+  );
+};
+
+interface PlanCardProps {
+  plan: CompanyPlanDefinition;
+  selected: boolean;
+  onSelect: (planId: CompanyPlanId) => void;
+}
+
+const PlanCard = ({ plan, selected, onSelect }: PlanCardProps) => {
+  const employeeLabel =
+    plan.maxEmployees !== null ? `Hasta ${plan.maxEmployees} empleados` : "Sin límite de empleados";
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onSelect(plan.id);
+    }
+  };
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      onClick={() => onSelect(plan.id)}
+      onKeyDown={handleKeyDown}
+      className={`rounded-2xl border bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
+        selected ? "border-primary bg-primary/5 ring-1 ring-primary/30" : "border-border"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <p className="text-lg font-semibold">{plan.label}</p>
+          <p className="text-sm text-muted-foreground">{plan.description}</p>
+        </div>
+        {plan.highlight && (
+          <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-primary">
+            Más popular
+          </span>
+        )}
+      </div>
+
+      <div className="mt-4 flex items-baseline justify-between gap-3">
+        <p className="text-3xl font-bold">{plan.price}</p>
+        <span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-foreground/80">
+          {employeeLabel}
+        </span>
+      </div>
+
+      <p className="mt-3 text-sm text-muted-foreground">Todas las funcionalidades incluidas.</p>
+
+      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+        <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+          <Users className="h-4 w-4 text-primary" />
+          {employeeLabel}
+        </span>
+        {selected ? (
+          <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+            Plan seleccionado
+          </span>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={(event) => {
+              event.stopPropagation();
+              onSelect(plan.id);
+            }}
+          >
+            Seleccionar plan
+          </Button>
+        )}
+      </div>
     </div>
   );
 };

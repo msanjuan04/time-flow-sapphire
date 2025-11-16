@@ -10,27 +10,29 @@ export interface CompanyPlanDefinition {
   highlight?: boolean;
 }
 
+export const UNIVERSAL_PLAN_FEATURES: string[] = [
+  "Geolocalización y fichaje en tiempo real",
+  "Informes y reportes completos",
+  "App móvil y accesos web",
+  "Soporte incluido",
+];
+
 export const COMPANY_PLANS: Record<CompanyPlanId, CompanyPlanDefinition> = {
   basic: {
     id: "basic",
     label: "Básico",
     price: "€119/año",
     maxEmployees: 5,
-    description: "Hasta 5 empleados",
-    features: ["Geolocalización", "Informes básicos", "App móvil", "Soporte por email"],
+    description: "Incluye todas las funcionalidades para equipos de hasta 5 empleados.",
+    features: UNIVERSAL_PLAN_FEATURES,
   },
   empresa: {
     id: "empresa",
     label: "Empresa",
     price: "€189/año",
     maxEmployees: 10,
-    description: "Hasta 10 empleados",
-    features: [
-      "Todo lo de Básico",
-      "Informes avanzados",
-      "Gestión de vacaciones",
-      "Soporte prioritario",
-    ],
+    description: "Todas las funcionalidades con un límite de hasta 10 empleados.",
+    features: UNIVERSAL_PLAN_FEATURES,
     highlight: true,
   },
   pro: {
@@ -38,39 +40,24 @@ export const COMPANY_PLANS: Record<CompanyPlanId, CompanyPlanDefinition> = {
     label: "Pro",
     price: "€289/año",
     maxEmployees: 20,
-    description: "Hasta 20 empleados",
-    features: [
-      "Todo lo de Empresa",
-      "API personalizada",
-      "Integraciones avanzadas",
-      "Soporte 24/7",
-    ],
+    description: "Pensado para equipos medianos de hasta 20 empleados.",
+    features: UNIVERSAL_PLAN_FEATURES,
   },
   advanced: {
     id: "advanced",
     label: "Avanzado",
     price: "€499/año",
     maxEmployees: 50,
-    description: "Hasta 50 empleados",
-    features: [
-      "Todo lo de Pro",
-      "Múltiples ubicaciones",
-      "Dashboard personalizado",
-      "Gestor de cuenta",
-    ],
+    description: "Para organizaciones que necesitan hasta 50 empleados.",
+    features: UNIVERSAL_PLAN_FEATURES,
   },
   custom: {
     id: "custom",
     label: "Plan Custom",
     price: "Contactar",
     maxEmployees: null,
-    description: "Más de 50 empleados",
-    features: [
-      "Todo lo de Avanzado",
-      "Planes a medida",
-      "Formación personalizada",
-      "Condiciones especiales",
-    ],
+    description: "Solución personalizada para más de 50 empleados.",
+    features: UNIVERSAL_PLAN_FEATURES,
   },
 };
 

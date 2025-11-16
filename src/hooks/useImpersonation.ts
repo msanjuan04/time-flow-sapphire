@@ -78,8 +78,14 @@ export const useImpersonation = (): UseImpersonationReturn => {
     []
   );
 
+  const clearImpersonationState = () => {
+    localStorage.removeItem(IMPERSONATION_KEY);
+    setImpersonationData(null);
+  };
+
   const stopImpersonation = useCallback(async () => {
     setLoading(true);
+    let serverStopped = false;
     try {
       const currentData = impersonationData;
 
@@ -91,24 +97,22 @@ export const useImpersonation = (): UseImpersonationReturn => {
 
       if (error) {
         console.error("Stop impersonation error:", error);
-        toast.error("Error al detener impersonación");
-        return;
+        toast.error("No se pudo notificar al servidor, saliendo localmente…");
+      } else {
+        serverStopped = true;
+        toast.success("Impersonación detenida");
       }
-
-      // Clear impersonation data
-      localStorage.removeItem(IMPERSONATION_KEY);
-      setImpersonationData(null);
-
-      toast.success("Impersonación detenida");
-
-      // Reload to restore normal view
-      setTimeout(() => {
-        window.location.href = "/";
-      }, 500);
     } catch (error) {
       console.error("Failed to stop impersonation:", error);
-      toast.error("Error al detener impersonación");
+      toast.error("Error al detener impersonación, saliendo localmente…");
     } finally {
+      clearImpersonationState();
+
+      // Reload to restore normal view even if API failed
+      setTimeout(() => {
+        window.location.href = "/";
+      }, serverStopped ? 400 : 800);
+
       setLoading(false);
     }
   }, [impersonationData]);

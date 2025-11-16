@@ -39,6 +39,19 @@ serve(async (req) => {
       return createErrorResponse("Failed to create company", 500);
     }
 
+    if (company.plan !== plan) {
+      const { error: planUpdateError } = await supabase
+        .from("companies")
+        .update({ plan })
+        .eq("id", company.id);
+
+      if (planUpdateError) {
+        console.error("Failed to enforce selected plan:", planUpdateError);
+      } else {
+        company.plan = plan;
+      }
+    }
+
     await writeAudit(supabase, {
       actor_user_id: user.id,
       action: "admin_create_company",
