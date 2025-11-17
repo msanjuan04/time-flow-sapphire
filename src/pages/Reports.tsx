@@ -63,6 +63,7 @@ interface EmployeeStats {
   correct_checks: number;
   incidents: number;
   punctuality_score: number;
+  company_id: string;
 }
 
 interface Center {
@@ -627,37 +628,33 @@ const Reports = () => {
 
   // Prepare chart data
   const hoursChartData = employeeStats
+    .filter((stat) => stat.company_id === companyId)
+    .sort((a, b) => b.total_hours - a.total_hours)
     .slice(0, 10)
     .map((stat) => ({
-      name: stat.full_name.split(" ")[0],
+      name: stat.full_name || stat.email,
       hours: parseFloat(stat.total_hours.toFixed(1)),
     }));
 
   const punctualityChartData = employeeStats
+    .filter((stat) => stat.company_id === companyId)
+    .sort((a, b) => b.punctuality_score - a.punctuality_score)
     .slice(0, 5)
     .map((stat) => ({
-      name: stat.full_name.split(" ")[0],
+      name: stat.full_name || stat.email,
       score: parseFloat(stat.punctuality_score.toFixed(1)),
     }));
 
+  const companyStats = employeeStats.filter((stat) => stat.company_id === companyId);
+
   const totalStats = {
-    totalHours: employeeStats.reduce((sum, s) => sum + s.total_hours, 0),
-    totalEmployees: employeeStats.length,
-    avgPunctuality: employeeStats.length > 0
-      ? employeeStats.reduce((sum, s) => sum + s.punctuality_score, 0) / employeeStats.length
+    totalHours: companyStats.reduce((sum, s) => sum + s.total_hours, 0),
+    totalEmployees: companyStats.length,
+    avgPunctuality: companyStats.length > 0
+      ? companyStats.reduce((sum, s) => sum + s.punctuality_score, 0) / companyStats.length
       : 0,
-    totalIncidents: employeeStats.reduce((sum, s) => sum + s.incidents, 0),
+    totalIncidents: companyStats.reduce((sum, s) => sum + s.incidents, 0),
   };
-
-  const correctnessRate = employeeStats.length > 0
-    ? (employeeStats.reduce((sum, s) => sum + s.correct_checks, 0) / 
-       employeeStats.reduce((sum, s) => sum + s.total_days, 0)) * 100
-    : 0;
-
-  const statusData = [
-    { name: "Correctos", value: correctnessRate },
-    { name: "Con incidencias", value: 100 - correctnessRate },
-  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
@@ -1004,33 +1001,6 @@ const Reports = () => {
             </ResponsiveContainer>
           </Card>
 
-          {/* Correctness Pie Chart */}
-          <Card className="glass-card p-6">
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-              <FileText className="w-5 h-5 text-primary" />
-              Fichajes correctos vs incidencias
-            </h2>
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={statusData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, value }) => `${name}: ${value.toFixed(1)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {statusData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
-          </Card>
         </div>
 
         {/* Employee Stats Table */}

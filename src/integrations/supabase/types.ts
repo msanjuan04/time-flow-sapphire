@@ -690,6 +690,8 @@ export type Database = {
           expected_hours: number
           id: string
           notes: string | null
+          start_time: string | null
+          end_time: string | null
           updated_at: string
           user_id: string
         }
@@ -701,6 +703,8 @@ export type Database = {
           expected_hours?: number
           id?: string
           notes?: string | null
+          start_time?: string | null
+          end_time?: string | null
           updated_at?: string
           user_id: string
         }
@@ -712,10 +716,73 @@ export type Database = {
           expected_hours?: number
           id?: string
           notes?: string | null
+          start_time?: string | null
+          end_time?: string | null
           updated_at?: string
           user_id?: string
         }
         Relationships: []
+      }
+      schedule_adjustments_history: {
+        Row: {
+          applied_from: string
+          changed_at: string
+          company_id: string
+          created_by: string | null
+          expected_hours: number
+          id: string
+          start_time: string | null
+          end_time: string | null
+          reason: string | null
+          user_id: string
+        }
+        Insert: {
+          applied_from: string
+          changed_at?: string
+          company_id: string
+          created_by?: string | null
+          expected_hours: number
+          id?: string
+          start_time?: string | null
+          end_time?: string | null
+          reason?: string | null
+          user_id: string
+        }
+        Update: {
+          applied_from?: string
+          changed_at?: string
+          company_id?: string
+          created_by?: string | null
+          expected_hours?: number
+          id?: string
+          start_time?: string | null
+          end_time?: string | null
+          reason?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_adjustments_history_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_adjustments_history_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_adjustments_history_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       superadmins: {
         Row: {

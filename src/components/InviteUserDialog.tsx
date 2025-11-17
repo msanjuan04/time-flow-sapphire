@@ -66,6 +66,14 @@ const InviteUserDialog = ({
   const [centers, setCenters] = useState<Center[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
+  const [centerDialogOpen, setCenterDialogOpen] = useState(false);
+  const [newCenterName, setNewCenterName] = useState("");
+  const [creatingCenter, setCreatingCenter] = useState(false);
+  const [centerDialogError, setCenterDialogError] = useState("");
+  const [teamDialogOpen, setTeamDialogOpen] = useState(false);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [creatingTeam, setCreatingTeam] = useState(false);
+  const [teamDialogError, setTeamDialogError] = useState("");
   const limitReached = planLimit !== null && (slotsAvailable ?? 0) <= 0;
 
   const fetchCenters = useCallback(async () => {
@@ -92,41 +100,98 @@ const InviteUserDialog = ({
     if (data) setTeams(data);
   }, [companyId]);
 
-  const handleCreateCenter = useCallback(async () => {
-    if (!companyId) return;
-    const name = window.prompt("Nombre del nuevo centro");
-    if (!name || !name.trim()) return;
-    const { data, error } = await supabase
-      .from("centers")
-      .insert({ company_id: companyId, name: name.trim() })
-      .select("id, name")
-      .single();
-    if (error) {
-      toast.error("No se pudo crear el centro");
-      return;
-    }
-    await fetchCenters();
-    if (data?.id) setCenterId(data.id);
-    toast.success("Centro creado");
-  }, [companyId, fetchCenters]);
+  const handleCreateCenter = useCallback(() => {
+    setCenterDialogError("");
+    setNewCenterName("");
+    setCenterDialogOpen(true);
+  }, []);
 
-  const handleCreateTeam = useCallback(async () => {
+  const handleCenterDialogOpenChange = useCallback((open: boolean) => {
+    setCenterDialogOpen(open);
+    if (!open) {
+      setCenterDialogError("");
+      setNewCenterName("");
+    }
+  }, []);
+
+  const handleCenterDialogSubmit = useCallback(async () => {
     if (!companyId) return;
-    const name = window.prompt("Nombre del nuevo equipo");
-    if (!name || !name.trim()) return;
-    const { data, error } = await supabase
-      .from("teams")
-      .insert({ company_id: companyId, name: name.trim() })
-      .select("id, name")
-      .single();
-    if (error) {
-      toast.error("No se pudo crear el equipo");
+    const trimmed = newCenterName.trim();
+    if (!trimmed) {
+      setCenterDialogError("Introduce un nombre para el centro");
       return;
     }
-    await fetchTeams();
-    if (data?.id) setTeamId(data.id);
-    toast.success("Equipo creado");
-  }, [companyId, fetchTeams]);
+
+    setCreatingCenter(true);
+    setCenterDialogError("");
+    try {
+      const { data, error } = await supabase
+        .from("centers")
+        .insert({ company_id: companyId, name: trimmed })
+        .select("id, name")
+        .single();
+
+      if (error) throw error;
+      await fetchCenters();
+      if (data?.id) {
+        setCenterId(data.id);
+      }
+      toast.success("Centro creado");
+      setCenterDialogOpen(false);
+      setNewCenterName("");
+    } catch (error) {
+      console.error("Failed to create center", error);
+      setCenterDialogError("No se pudo crear el centro. Intenta de nuevo.");
+    } finally {
+      setCreatingCenter(false);
+    }
+  }, [companyId, fetchCenters, newCenterName]);
+
+  const handleCreateTeam = useCallback(() => {
+    setTeamDialogError("");
+    setNewTeamName("");
+    setTeamDialogOpen(true);
+  }, []);
+
+  const handleTeamDialogOpenChange = useCallback((open: boolean) => {
+    setTeamDialogOpen(open);
+    if (!open) {
+      setTeamDialogError("");
+      setNewTeamName("");
+    }
+  }, []);
+
+  const handleTeamDialogSubmit = useCallback(async () => {
+    if (!companyId) return;
+    const trimmed = newTeamName.trim();
+    if (!trimmed) {
+      setTeamDialogError("Introduce un nombre para el equipo");
+      return;
+    }
+
+    setCreatingTeam(true);
+    setTeamDialogError("");
+    try {
+      const { data, error } = await supabase
+        .from("teams")
+        .insert({ company_id: companyId, name: trimmed })
+        .select("id, name")
+        .single();
+      if (error) throw error;
+      await fetchTeams();
+      if (data?.id) {
+        setTeamId(data.id);
+      }
+      toast.success("Equipo creado");
+      setTeamDialogOpen(false);
+      setNewTeamName("");
+    } catch (error) {
+      console.error("Failed to create team", error);
+      setTeamDialogError("No se pudo crear el equipo. Intenta de nuevo.");
+    } finally {
+      setCreatingTeam(false);
+    }
+  }, [companyId, fetchTeams, newTeamName]);
 
   useEffect(() => {
     if (open && companyId) {
@@ -371,6 +436,66 @@ const InviteUserDialog = ({
             </Button>
           </div>
         </form>
+        <Dialog open={centerDialogOpen} onOpenChange={handleCenterDialogOpenChange}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Crear centro</DialogTitle>
+              <DialogDescription>
+                Registra un nuevo centro de trabajo para asignarlo a tus empleados.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="newCenterName">Nombre del centro</Label>
+                <Input
+                  id="newCenterName"
+                  value={newCenterName}
+                  onChange={(e) => setNewCenterName(e.target.value)}
+                  placeholder="Ej. Oficina Madrid Norte"
+                />
+                {centerDialogError && <p className="text-sm text-destructive">{centerDialogError}</p>}
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="ghost" onClick={() => handleCenterDialogOpenChange(false)} disabled={creatingCenter}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleCenterDialogSubmit} disabled={creatingCenter}>
+                  {creatingCenter ? <Loader2 className="w-4 h-4 animate-spin" /> : "Guardar centro"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+        <Dialog open={teamDialogOpen} onOpenChange={handleTeamDialogOpenChange}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Crear equipo</DialogTitle>
+              <DialogDescription>
+                Agrupa a tus empleados en equipos para facilitar la gestión diaria.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label htmlFor="newTeamName">Nombre del equipo</Label>
+                <Input
+                  id="newTeamName"
+                  value={newTeamName}
+                  onChange={(e) => setNewTeamName(e.target.value)}
+                  placeholder="Ej. Equipo de soporte"
+                />
+                {teamDialogError && <p className="text-sm text-destructive">{teamDialogError}</p>}
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button type="button" variant="ghost" onClick={() => handleTeamDialogOpenChange(false)} disabled={creatingTeam}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleTeamDialogSubmit} disabled={creatingTeam}>
+                  {creatingTeam ? <Loader2 className="w-4 h-4 animate-spin" /> : "Guardar equipo"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );

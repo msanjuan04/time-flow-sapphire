@@ -25,6 +25,7 @@ import {
   Send,
   Ban,
   Loader2,
+  Clock3,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -47,6 +48,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { getCompanyPlanDefinition } from "@/config/companyPlans";
+import { FunctionsHttpError } from "@supabase/functions-js";
+import ScheduleHoursDialog from "@/components/ScheduleHoursDialog";
 
 /* --------------------------- utilidades locales --------------------------- */
 const exportCSV = (filename: string, headers: string[], rows: (string | number)[][]) => {
@@ -95,6 +98,7 @@ interface Employee {
   email: string;
   full_name: string | null;
   role: string;
+  is_active: boolean;
   center_id: string | null;
   team_id: string | null;
   center_name: string | null;
@@ -143,6 +147,7 @@ const Employees = () => {
   const { companyId, role, membership } = useMembership();
   const { isSuperadmin } = useSuperadmin();
   const canManageInvites = isSuperadmin || role === "owner" || role === "admin";
+  const canManageSchedules = role === "owner" || role === "admin";
 
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployees, setFilteredEmployees] = useState<Employee[]>([]);
@@ -155,6 +160,9 @@ const Employees = () => {
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [scheduleEmployee, setScheduleEmployee] = useState<Employee | null>(null);
+  const [statusUpdates, setStatusUpdates] = useState<Record<string, boolean>>({});
   const [companyHeadcount, setCompanyHeadcount] = useState(0);
   const planInfo = getCompanyPlanDefinition(membership?.company?.plan);
   const planLimit = planInfo.maxEmployees;
@@ -559,7 +567,7 @@ const Employees = () => {
       const userIds = membershipRows.map((m) => m.user_id);
       const { data: profileRows, error: profilesError } = await supabase
         .from("profiles")
-        .select("id, email, full_name, center_id, team_id")
+        .select("id, email, full_name, center_id, team_id, is_active")
         .in("id", userIds);
       if (profilesError) throw profilesError;
 
@@ -613,6 +621,7 @@ const Employees = () => {
             email: profile.email,
             full_name: profile.full_name,
             role: m.role,
+            is_active: profile.is_active ?? true,
             center_id: profile.center_id,
             team_id: profile.team_id,
             center_name: profile.center_id ? centerMap[profile.center_id] ?? null : null,
@@ -701,6 +710,61 @@ const Employees = () => {
     fetchInvites();
   };
 
+  const handleStatusChange = async (employee: Employee, nextValue: boolean) => {
+    if (!nextValue && user?.id === employee.id) {
+      toast.error("No puedes desactivar tu propia cuenta.");
+      return;
+    }
+
+    if (!nextValue) {
+      const confirmed = window.confirm(
+        `¿Seguro que deseas desactivar a ${employee.full_name || employee.email}? El usuario no podrá fichar hasta que lo reactives.`
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setStatusUpdates((prev) => ({ ...prev, [employee.id]: nextValue }));
+
+    try {
+      if (nextValue) {
+        const { error } = await supabase.functions.invoke(`reactivate-person/${employee.id}`, {
+          body: { send_invite: false },
+        });
+        if (error) throw error;
+        toast.success("Usuario reactivado correctamente");
+      } else {
+        const { error } = await supabase.functions.invoke(`delete-person/${employee.id}`, {
+          body: {},
+        });
+        if (error) throw error;
+        toast.success("Usuario desactivado correctamente");
+      }
+
+      setEmployees((prev) =>
+        prev.map((emp) => (emp.id === employee.id ? { ...emp, is_active: nextValue } : emp))
+      );
+      setFilteredEmployees((prev) =>
+        prev.map((emp) => (emp.id === employee.id ? { ...emp, is_active: nextValue } : emp))
+      );
+      setSelectedEmployee((prev) =>
+        prev && prev.id === employee.id ? { ...prev, is_active: nextValue } : prev
+      );
+
+      await fetchEmployees();
+    } catch (error) {
+      const message = await getFunctionErrorMessage(error);
+      toast.error(message);
+    } finally {
+      setStatusUpdates((prev) => {
+        const updated = { ...prev };
+        delete updated[employee.id];
+        return updated;
+      });
+    }
+  };
+
   const getRoleBadgeColor = (r: Exclude<RoleFilter, "all">) =>
     ({
       owner: "bg-primary text-primary-foreground",
@@ -767,9 +831,38 @@ const getEmployeeStatus = (eventType: string | null) => {
   }
 };
 
+const getFunctionErrorMessage = async (error: unknown) => {
+  if (error instanceof FunctionsHttpError && error.context) {
+    try {
+      const details = await error.context.json();
+      if (typeof details?.error === "string") return details.error;
+      if (typeof details?.message === "string") return details.message;
+    } catch {
+      // Ignore JSON parsing errors and fall back to the generic message
+    }
+    return "La función devolvió un error desconocido.";
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return "No se pudo completar la acción solicitada.";
+};
+
   const handleEdit = (employee: Employee) => {
     setSelectedEmployee(employee);
     setEditDialogOpen(true);
+  };
+
+  const handleOpenSchedule = (employee: Employee) => {
+    setScheduleEmployee(employee);
+    setScheduleDialogOpen(true);
+  };
+
+  const handleScheduleDialogChange = (open: boolean) => {
+    setScheduleDialogOpen(open);
+    if (!open) {
+      setScheduleEmployee(null);
+    }
   };
 
   const handleOpenDetails = async (employee: Employee) => {
@@ -1042,6 +1135,7 @@ const getEmployeeStatus = (eventType: string | null) => {
                   <TableHead>Rol</TableHead>
                   <TableHead>Centro</TableHead>
                   <TableHead>Equipo</TableHead>
+                  <TableHead>Estado</TableHead>
                   <TableHead>Ubicación</TableHead>
                   <TableHead>Último fichaje</TableHead>
                   <TableHead className="text-right">Acciones</TableHead>
@@ -1061,6 +1155,12 @@ const getEmployeeStatus = (eventType: string | null) => {
                       <TableCell><Skeleton className="h-4 w-28" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-28" /></TableCell>
                       <TableCell>
+                        <div className="flex flex-col items-end gap-2">
+                          <Skeleton className="h-5 w-12" />
+                          <Skeleton className="h-3 w-16" />
+                        </div>
+                      </TableCell>
+                      <TableCell>
                         <div className="space-y-1">
                           <Skeleton className="h-4 w-24" />
                           <Skeleton className="h-3 w-32" />
@@ -1074,7 +1174,7 @@ const getEmployeeStatus = (eventType: string | null) => {
                   ))
                 ) : filteredEmployees.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8">
+                    <TableCell colSpan={8} className="py-8">
                       <Card className="glass-card p-10 text-center">
                         <div className="flex flex-col items-center gap-2">
                           <UsersIcon className="w-8 h-8 text-primary" />
@@ -1111,6 +1211,31 @@ const getEmployeeStatus = (eventType: string | null) => {
 
                       <TableCell>{employee.center_name || <span className="text-muted-foreground">-</span>}</TableCell>
                       <TableCell>{employee.team_name || <span className="text-muted-foreground">-</span>}</TableCell>
+
+                      <TableCell>
+                        {(() => {
+                          const pendingStatus = statusUpdates[employee.id];
+                          const displayActive = pendingStatus ?? employee.is_active;
+                          const isUpdatingStatus = pendingStatus !== undefined;
+                          const labelId = `status-${employee.id}`;
+                          return (
+                            <div className="flex flex-col items-end gap-1">
+                              <Switch
+                                id={labelId}
+                                checked={displayActive}
+                                onCheckedChange={(value) => handleStatusChange(employee, value)}
+                                disabled={isUpdatingStatus}
+                              />
+                              <div className="flex items-center gap-1 text-xs">
+                                <span className={displayActive ? "text-emerald-600" : "text-destructive"}>
+                                  {displayActive ? "Activo" : "Desactivado"}
+                                </span>
+                                {isUpdatingStatus && <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </TableCell>
 
                       {/* Ubicación */}
                       <TableCell>
@@ -1171,6 +1296,12 @@ const getEmployeeStatus = (eventType: string | null) => {
 
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
+                          {canManageSchedules && (
+                            <Button variant="secondary" size="sm" onClick={() => handleOpenSchedule(employee)}>
+                              <Clock3 className="w-4 h-4 mr-2" />
+                              Ajustar jornada
+                            </Button>
+                          )}
                           <Button variant="outline" size="sm" onClick={() => handleOpenDetails(employee)}>
                             Ver ficha
                           </Button>
@@ -1226,6 +1357,15 @@ const getEmployeeStatus = (eventType: string | null) => {
 
       {selectedEmployee && (
         <EditUserDialog open={editDialogOpen} onOpenChange={setEditDialogOpen} employee={selectedEmployee} onSuccess={fetchEmployees} />
+      )}
+
+      {canManageSchedules && scheduleEmployee && (
+        <ScheduleHoursDialog
+          key={scheduleEmployee.id}
+          open={scheduleDialogOpen}
+          onOpenChange={handleScheduleDialogChange}
+          employee={scheduleEmployee}
+        />
       )}
 
       {/* Ficha del empleado */}
@@ -1380,7 +1520,7 @@ const getEmployeeStatus = (eventType: string | null) => {
                       )}
                     </div>
                   </TabsContent>
-                  <TabsContent value="map" className="space-y-4" forceMount>
+                  <TabsContent value="map" className="space-y-4">
                     <div className="grid grid-cols-1 lg:grid-cols-5 gap-3">
                       <div className="flex flex-col gap-1">
                         <Label className="text-xs">Fecha inicio</Label>

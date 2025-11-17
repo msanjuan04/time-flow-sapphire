@@ -1,7 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Download, Calendar, Clock, TrendingUp, FileText } from "lucide-react";
+import { ArrowLeft, Download, Calendar, Clock, TrendingUp, FileText, Info } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -17,12 +17,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import type { Database } from "@/integrations/supabase/types";
 
 interface WorkSession {
   clock_in_time: string;
   clock_out_time: string | null;
   total_work_duration: unknown;
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const HISTORY_ENTRIES = 30;
+
+type ScheduleHistoryRow = Database["public"]["Tables"]["schedule_adjustments_history"]["Row"];
+
+const parseTimeToMinutes = (time: string | null) => {
+  if (!time) return null;
+  const [h, m] = time.split(":").map((v) => Number(v));
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+};
+
+const hoursFromHistory = (entry: ScheduleHistoryRow) => {
+  const start = parseTimeToMinutes(entry.start_time ?? null);
+  const end = parseTimeToMinutes(entry.end_time ?? null);
+  if (start === null || end === null) {
+    return Number(entry.expected_hours ?? 0);
+  }
+  return Math.max(0, (end - start) / 60);
+};
+
+const isWeekday = (date: Date) => {
+  const dow = date.getDay();
+  return dow !== 0 && dow !== 6;
+};
 
 const WorkerReports = () => {
   const { user } = useAuth();
@@ -32,33 +59,33 @@ const WorkerReports = () => {
   const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState<"week" | "month">("week");
   const [totalHours, setTotalHours] = useState(0);
-  const [expectedHours, setExpectedHours] = useState(40); // Default 40h/week
+  const [expectedHours, setExpectedHours] = useState(40); // Default fallback
+  const [currentSchedule, setCurrentSchedule] = useState<{ hours: number; reason: string | null; changedAt: string | null; startTime: string | null; endTime: string | null } | null>(null);
   const [sessions, setSessions] = useState<WorkSession[]>([]);
+  const [weeklyEntries, setWeeklyEntries] = useState<Array<{ date: Date; sessions: WorkSession[] }>>([]);
 
-  useEffect(() => {
-    if (user && companyId) {
-      fetchWorkerData();
-    }
-  }, [user, companyId, period]);
-
-  const fetchWorkerData = async () => {
+  const fetchWorkerData = useCallback(async () => {
+    if (!user?.id || !companyId) return;
     setLoading(true);
     try {
       const now = new Date();
       let startDate: Date;
+      let endDate: Date;
 
       if (period === "week") {
-        // Get start of week (Monday)
         const dayOfWeek = now.getDay();
         const diff = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
         startDate = new Date(now);
         startDate.setDate(now.getDate() - diff);
         startDate.setHours(0, 0, 0, 0);
-        setExpectedHours(40); // 40h per week
+        endDate = new Date(startDate);
+        endDate.setDate(startDate.getDate() + 6);
+        endDate.setHours(23, 59, 59, 999);
       } else {
-        // Get start of month
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        setExpectedHours(160); // ~160h per month (4 weeks)
+        startDate.setHours(0, 0, 0, 0);
+        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        endDate.setHours(23, 59, 59, 999);
       }
 
       const { data: sessionsData } = await supabase
@@ -67,28 +94,140 @@ const WorkerReports = () => {
         .eq("user_id", user?.id)
         .eq("company_id", companyId)
         .gte("clock_in_time", startDate.toISOString())
+        .lte("clock_in_time", endDate.toISOString())
         .order("clock_in_time", { ascending: false });
 
-      setSessions(sessionsData || []);
+      const sessionsList = sessionsData || [];
+      setSessions(sessionsList);
 
       // Calculate total hours
       let total = 0;
       sessionsData?.forEach((session) => {
-        if (session.clock_in_time && session.clock_out_time) {
-          const hours = (new Date(session.clock_out_time).getTime() - 
-                        new Date(session.clock_in_time).getTime()) / (1000 * 60 * 60);
+        if (session.clock_in_time) {
+          const start = new Date(session.clock_in_time).getTime();
+          const end = session.clock_out_time ? new Date(session.clock_out_time).getTime() : Date.now();
+          const hours = Math.max(0, (end - start) / (1000 * 60 * 60));
           total += hours;
         }
       });
 
       setTotalHours(total);
+
+      // Fetch expected hours from scheduled_hours for the same range
+      const startDateISO = startDate.toISOString().slice(0, 10);
+      const endDateISO = endDate.toISOString().slice(0, 10);
+      const { data: scheduledRows, error: scheduledError } = await supabase
+        .from("scheduled_hours")
+        .select("expected_hours, date")
+        .eq("user_id", user?.id)
+        .gte("date", startDateISO)
+        .lte("date", endDateISO);
+
+      if (scheduledError) {
+        console.error("Error fetching scheduled hours:", scheduledError);
+      }
+
+      let historyRows: ScheduleHistoryRow[] = [];
+      let latestScheduleSummary: { hours: number; reason: string | null; changedAt: string | null; startTime: string | null; endTime: string | null } | null = null;
+      try {
+        const { data: historyData, error: historyError } = await supabase
+          .from("schedule_adjustments_history")
+          .select("expected_hours, reason, changed_at, applied_from, start_time, end_time")
+          .eq("user_id", user?.id)
+          .eq("company_id", companyId)
+          .order("changed_at", { ascending: false })
+          .limit(HISTORY_ENTRIES);
+
+        if (historyError) {
+          if (historyError.code !== "PGRST205") {
+            console.error("Error fetching schedule history:", historyError);
+          }
+        } else {
+          historyRows = historyData ?? [];
+        }
+      } catch (historyException) {
+        console.error("Unexpected error loading schedule history:", historyException);
+      }
+
+      if (historyRows.length > 0) {
+        const latest = historyRows[0];
+        latestScheduleSummary = {
+          hours: hoursFromHistory(latest),
+          reason: latest.reason,
+          changedAt: latest.changed_at,
+          startTime: latest.start_time ?? null,
+          endTime: latest.end_time ?? null,
+        };
+        setCurrentSchedule(latestScheduleSummary);
+      } else {
+        latestScheduleSummary = null;
+        setCurrentSchedule(null);
+      }
+
+      const scheduleMap = new Map<string, number>();
+      (scheduledRows || []).forEach((row) => {
+        const hours = Number(row.expected_hours ?? 0);
+        scheduleMap.set(row.date, hours);
+      });
+
+      const daysInPeriod = Math.floor((endDate.getTime() - startDate.getTime()) / DAY_MS) + 1;
+      let computedExpected = 0;
+      let workdayCount = 0;
+
+      const fallbackDailyHours = latestScheduleSummary?.hours ?? 8;
+
+      for (let i = 0; i < daysInPeriod; i++) {
+        const day = new Date(startDate);
+        day.setDate(startDate.getDate() + i);
+        if (!isWeekday(day)) continue;
+        workdayCount += 1;
+        const iso = day.toISOString().slice(0, 10);
+        const explicit = scheduleMap.get(iso);
+        if (explicit !== undefined) {
+          computedExpected += Number(explicit ?? fallbackDailyHours);
+        } else {
+          computedExpected += fallbackDailyHours;
+        }
+      }
+
+      const fallbackValue =
+        workdayCount > 0
+          ? computedExpected
+          : fallbackDailyHours * (period === "week" ? 5 : Math.max(20, Math.round((daysInPeriod * 5) / 7)));
+      setExpectedHours(workdayCount > 0 ? computedExpected : fallbackValue);
+
+      if (period === "week") {
+        const buckets: Array<{ date: Date; sessions: WorkSession[] }> = [];
+        for (let i = 0; i < 7; i++) {
+          const day = new Date(startDate);
+          day.setDate(startDate.getDate() + i);
+          day.setHours(0, 0, 0, 0);
+          const daySessions = sessionsList.filter((session) => {
+            if (!session.clock_in_time) return false;
+            const sessionDate = new Date(session.clock_in_time);
+            return (
+              sessionDate.getFullYear() === day.getFullYear() &&
+              sessionDate.getMonth() === day.getMonth() &&
+              sessionDate.getDate() === day.getDate()
+            );
+          });
+          buckets.push({ date: new Date(day), sessions: daySessions });
+        }
+        setWeeklyEntries(buckets);
+      } else {
+        setWeeklyEntries([]);
+      }
     } catch (error) {
       console.error("Error fetching worker data:", error);
       toast.error("Error al cargar los datos");
     } finally {
       setLoading(false);
     }
-  };
+  }, [companyId, period, user?.id]);
+
+  useEffect(() => {
+    fetchWorkerData();
+  }, [fetchWorkerData]);
 
   // Export helpers (cliente, no tocan backend)
   const exportCSVLocal = () => {
@@ -96,7 +235,13 @@ const WorkerReports = () => {
     const rows = sessions.map((s) => {
       const start = s.clock_in_time ? new Date(s.clock_in_time) : null;
       const end = s.clock_out_time ? new Date(s.clock_out_time) : null;
-      const hours = start && end ? ((end.getTime() - start.getTime()) / (1000 * 60 * 60)).toFixed(2) : "";
+      const hours =
+        start && (end || true)
+          ? (
+              ((end ? end.getTime() : Date.now()) - start.getTime()) /
+              (1000 * 60 * 60)
+            ).toFixed(2)
+          : "";
       return [
         start ? start.toISOString().slice(0, 10) : "",
         start ? start.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "",
@@ -114,7 +259,13 @@ const WorkerReports = () => {
     const rows = sessions.map((s) => {
       const start = s.clock_in_time ? new Date(s.clock_in_time) : null;
       const end = s.clock_out_time ? new Date(s.clock_out_time) : null;
-      const hours = start && end ? ((end.getTime() - start.getTime()) / (1000 * 60 * 60)).toFixed(2) : "";
+      const hours =
+        start && (end || true)
+          ? (
+              ((end ? end.getTime() : Date.now()) - start.getTime()) /
+              (1000 * 60 * 60)
+            ).toFixed(2)
+          : "";
       return `<tr>
         <td>${start ? start.toISOString().slice(0, 10) : ""}</td>
         <td>${start ? start.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : ""}</td>
@@ -140,7 +291,7 @@ const WorkerReports = () => {
   };
 
   const hoursRemaining = Math.max(0, expectedHours - totalHours);
-  const progress = Math.min(100, (totalHours / expectedHours) * 100);
+  const progress = expectedHours > 0 ? Math.min(100, (totalHours / expectedHours) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
@@ -189,6 +340,38 @@ const WorkerReports = () => {
             </DropdownMenu>
           </div>
         </motion.div>
+
+        {/* Jornada asignada */}
+        <Card className="glass-card p-6 flex flex-col gap-2">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <Info className="w-5 h-5 text-primary" />
+              <div>
+                <p className="text-sm text-muted-foreground">Jornada asignada</p>
+                <h2 className="text-xl font-semibold">
+                  {currentSchedule ? `${currentSchedule.hours.toFixed(2)} h/día` : "Sin definir"}
+                </h2>
+                {currentSchedule?.startTime && currentSchedule?.endTime && (
+                  <p className="text-sm text-muted-foreground">
+                    Horario: {currentSchedule.startTime} – {currentSchedule.endTime}
+                  </p>
+                )}
+              </div>
+            </div>
+            {currentSchedule?.changedAt && (
+              <p className="text-xs text-muted-foreground">
+                Actualizado el {new Date(currentSchedule.changedAt).toLocaleString("es-ES")}
+              </p>
+            )}
+          </div>
+          {currentSchedule?.reason ? (
+            <p className="text-sm text-muted-foreground">Motivo: {currentSchedule.reason}</p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Esta jornada se actualizará automáticamente cuando tu empresa realice cambios.
+            </p>
+          )}
+        </Card>
 
         {/* Period Selector */}
         <Card className="glass-card p-6">
@@ -271,59 +454,89 @@ const WorkerReports = () => {
           </div>
         </Card>
 
-        {/* Recent Sessions */}
-        <Card className="glass-card p-6">
-          <h2 className="text-lg font-semibold mb-4">Fichajes Recientes</h2>
-          <div className="space-y-3">
-            {loading ? (
-              <p className="text-center text-muted-foreground py-8">Cargando...</p>
-            ) : sessions.length === 0 ? (
-              <p className="text-center text-muted-foreground py-8">
-                No hay fichajes en este período
-              </p>
-            ) : (
-              sessions.slice(0, 10).map((session, index) => {
-                const fmtHM = (ms: number) => {
-                  const mins = Math.max(0, Math.round(ms / 60000));
-                  const h = Math.floor(mins / 60).toString().padStart(2, '0');
-                  const m = (mins % 60).toString().padStart(2, '0');
-                  return `${h}:${m}`;
-                };
-                const date = new Date(session.clock_in_time);
-                const durationLabel = session.clock_out_time
-                  ? fmtHM(new Date(session.clock_out_time).getTime() - date.getTime())
-                  : "En curso";
-
-                return (
-                  <div
-                    key={index}
-                    className="flex justify-between items-center p-4 bg-secondary/5 rounded-lg hover:bg-secondary/10 smooth-transition"
-                  >
-                    <div>
-                      <p className="font-medium">
-                        {date.toLocaleDateString("es-ES", {
-                          weekday: "long",
-                          year: "numeric",
-                          month: "long",
-                          day: "numeric",
-                        })}
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        {date.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
-                        {session.clock_out_time && (
-                          <> - {new Date(session.clock_out_time).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}</>
-                        )}
-                      </p>
+        {/* Sessions */}
+        {period === "week" ? (
+          <Card className="glass-card p-6">
+            <h2 className="text-lg font-semibold mb-4">Fichajes de la semana</h2>
+            <div className="space-y-3">
+              {weeklyEntries.map((entry) => (
+                <div key={entry.date.toISOString()} className="rounded-lg border p-3 space-y-2 bg-secondary/5">
+                  <p className="text-sm font-semibold">
+                    {entry.date.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" })}
+                  </p>
+                  {entry.sessions.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">Sin fichajes en este día.</p>
+                  ) : (
+                    entry.sessions.map((session, index) => {
+                      const start = new Date(session.clock_in_time);
+                      const end = session.clock_out_time ? new Date(session.clock_out_time) : null;
+                      const duration =
+                        end && start ? Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60)).toFixed(2) : null;
+                      return (
+                        <div
+                          key={`${session.clock_in_time}-${index}`}
+                          className="flex items-center justify-between rounded-md bg-background/70 px-3 py-2 text-sm"
+                        >
+                          <span>
+                            {start.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}{" "}
+                            {end && <>- {end.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}</>}
+                          </span>
+                          <span className="font-semibold text-primary">
+                            {duration ? `${duration}h` : "En curso"}
+                          </span>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              ))}
+            </div>
+          </Card>
+        ) : (
+          <Card className="glass-card p-6">
+            <h2 className="text-lg font-semibold mb-4">Fichajes recientes</h2>
+            <div className="space-y-3">
+              {loading ? (
+                <p className="text-center text-muted-foreground py-8">Cargando...</p>
+              ) : sessions.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">No hay fichajes en este período</p>
+              ) : (
+                sessions.map((session, index) => {
+                  const start = new Date(session.clock_in_time);
+                  const end = session.clock_out_time ? new Date(session.clock_out_time) : null;
+                  const duration =
+                    end && start ? Math.max(0, (end.getTime() - start.getTime()) / (1000 * 60 * 60)).toFixed(2) : null;
+                  return (
+                    <div
+                      key={`${session.clock_in_time}-${index}`}
+                      className="flex justify-between items-center p-4 bg-secondary/5 rounded-lg hover:bg-secondary/10 smooth-transition"
+                    >
+                      <div>
+                        <p className="font-medium">
+                          {start.toLocaleDateString("es-ES", {
+                            weekday: "long",
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                          })}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {start.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+                          {end && (
+                            <> - {end.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}</>
+                          )}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-lg font-bold text-primary">{duration ? `${duration}h` : "En curso"}</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-lg font-bold text-primary">{typeof durationLabel === 'string' ? durationLabel : `${durationLabel}`} {durationLabel !== 'En curso' ? 'h' : ''}</p>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </Card>
+                  );
+                })
+              )}
+            </div>
+          </Card>
+        )}
       </div>
     </div>
   );

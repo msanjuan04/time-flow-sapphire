@@ -1,8 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { printHTML } from "@/lib/exports";
-import { Button } from "@/components/ui/button";
 
 const Legal = () => {
   return (
@@ -12,51 +10,13 @@ const Legal = () => {
           <div>
             <h1 className="text-2xl font-bold">Información legal, privacidad y consentimientos</h1>
             <p className="text-muted-foreground mt-2">
-              Plantillas base para cumplir con el RDL 8/2019, RGPD y LOPDGDD. Cada empresa usuaria de la plataforma es responsable del tratamiento y debe revisar/ajustar los datos identificativos.
+              Información sobre el cumplimiento del RDL 8/2019, RGPD y LOPDGDD. Cada empresa usuaria de la plataforma es responsable del tratamiento de los datos de su personal.
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Badge variant="outline">Registro de jornada</Badge>
               <Badge variant="outline">RGPD/LOPDGDD</Badge>
               <Badge variant="outline">Consentimientos</Badge>
               <Badge variant="outline">Retención</Badge>
-            </div>
-            {/* Acciones principales visibles */}
-            <div className="mt-4 flex items-center gap-3 flex-wrap">
-              <Button
-                onClick={() => {
-                  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8" /><title>Plantilla Legal</title></head><body>
-                  <h1>Información legal y privacidad</h1>
-                  <div>Plantilla para empresa responsable · ${new Date().toLocaleString('es-ES')}</div>
-                  <h2>Aviso legal</h2>
-                  <p>Responsable: [EMPRESA TITULAR], CIF/NIF [CIF], domicilio [DIRECCIÓN], email [EMAIL].</p>
-                  <h2>Política de privacidad</h2>
-                  <p>Finalidades: registro de jornada, gestión de incidencias, informes y opcionalmente geolocalización/foto.</p>
-                  <p>Base jurídica: obligación legal, contrato, interés legítimo y, en su caso, consentimiento.</p>
-                  <p>Conservación: al menos 4 años para registros de jornada.</p>
-                  <h2>Política de cookies</h2>
-                  <p>Cookies esenciales para sesión/preferencias. Sin publicidad salvo activación expresa de la empresa.</p>
-                  <h2>Consentimientos</h2>
-                  <p>Geolocalización/foto opcionales y revocables. Firma/acuse mensual disponible.</p>
-                  <h2>Conservación y auditoría</h2>
-                  <p>Revisiones y cambios quedan auditados (quién/cuándo/motivo).</p>
-                  <h2>Derechos</h2>
-                  <p>La persona trabajadora puede ejercer sus derechos ante la empresa responsable o la AEPD.</p>
-                  </body></html>`;
-                  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'plantilla-legal.html';
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(url);
-                }}
-              >Descargar plantilla</Button>
-              <span className="text-sm text-muted-foreground">
-                Tras rellenarla, envíala a {" "}
-                <a className="underline" href="mailto:gnerai@gneraitiq.com">gnerai@gneraitiq.com</a>
-              </span>
             </div>
           </div>
 
@@ -69,52 +29,6 @@ const Legal = () => {
               <a href="#retencion" className="underline hover:text-primary">Conservación y auditoría</a>
               <a href="#derechos" className="underline hover:text-primary">Derechos de las personas</a>
             </nav>
-            <div className="flex items-center gap-3">
-              <button
-                className="text-sm underline hover:text-primary"
-                onClick={() => {
-                  const body = `
-                    <h1>Información legal y privacidad</h1>
-                    <div class='muted'>Plantilla para empresa responsable · ${new Date().toLocaleString('es-ES')}</div>
-                    <h2>Aviso legal</h2>
-                    <p>Responsable: [EMPRESA TITULAR], CIF/NIF [CIF], domicilio [DIRECCIÓN], email [EMAIL].</p>
-                    <h2>Política de privacidad</h2>
-                    <p>Finalidades: registro de jornada, gestión de incidencias, informes y opcionalmente geolocalización/foto.</p>
-                    <p>Base jurídica: obligación legal, contrato, interés legítimo y, en su caso, consentimiento.</p>
-                    <p>Conservación: al menos 4 años para registros de jornada.</p>
-                    <h2>Política de cookies</h2>
-                    <p>Cookies esenciales para sesión/preferencias. Sin publicidad salvo activación expresa de la empresa.</p>
-                    <h2>Consentimientos</h2>
-                    <p>Geolocalización/foto opcionales y revocables. Firma/acuse mensual disponible.</p>
-                    <h2>Conservación y auditoría</h2>
-                    <p>Revisiones y cambios quedan auditados (quién/cuándo/motivo).</p>
-                    <h2>Derechos</h2>
-                    <p>La persona trabajadora puede ejercer sus derechos ante la empresa responsable o la AEPD.</p>
-                  `;
-                  printHTML('Legal · Plantilla', body);
-                }}
-              >Imprimir / Guardar como PDF</button>
-              <button
-                className="text-sm underline hover:text-primary"
-                onClick={() => {
-                  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8" /><title>Plantilla Legal</title></head><body>
-                  <h1>Información legal y privacidad</h1>
-                  <p>Responsable: [EMPRESA TITULAR], CIF/NIF [CIF], domicilio [DIRECCIÓN], email [EMAIL].</p>
-                  <h2>Política de privacidad</h2>
-                  <p>Finalidades: registro de jornada, incidencias, informes; geolocalización/foto opcionales.</p>
-                  </body></html>`;
-                  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'plantilla-legal.html';
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(url);
-                }}
-              >Descargar .HTML</button>
-            </div>
           </div>
 
           <Separator />
@@ -125,7 +39,7 @@ const Legal = () => {
               El responsable del tratamiento de los datos será, en cada caso, la empresa que contrata y utiliza la plataforma para gestionar el registro de jornada de su personal.
             </p>
             <div className="text-sm leading-relaxed">
-              <p><strong>Responsable:</strong> [EMPRESA TITULAR], CIF/NIF [CIF], domicilio [DIRECCIÓN], email de contacto [EMAIL].</p>
+              <p><strong>Responsable:</strong> La empresa titular que utiliza la plataforma (cada empresa debe proporcionar sus datos identificativos: nombre, CIF/NIF, domicilio y email de contacto).</p>
               <p><strong>Finalidad de la web/app:</strong> gestión y cumplimiento de la obligación de registro de jornada, gestión de incidencias y elaboración de informes.</p>
             </div>
           </section>
@@ -142,7 +56,7 @@ const Legal = () => {
               <p><strong>5) Transferencias internacionales</strong> — Si existieran, se amparan en cláusulas contractuales tipo y medidas complementarias. Consulte al administrador de su empresa por la lista de subencargados actualizada.</p>
               <p><strong>6) Plazos de conservación</strong> — Los registros de jornada se conservan al menos 4 años (o el plazo que resulte aplicable). Los logs de auditoría y revisiones se conservan como prueba de integridad durante el mismo periodo o el que la empresa determine.</p>
               <p><strong>7) Derechos</strong> — Puede ejercer acceso, rectificación, supresión, limitación, oposición y portabilidad ante su empresa (responsable del tratamiento). También puede reclamar ante la AEPD.</p>
-              <p><strong>8) Contacto DPO/privacidad</strong> — [EMAIL DPO o CONTACTO PRIVACIDAD DE LA EMPRESA].</p>
+              <p><strong>8) Contacto DPO/privacidad</strong> — Cada empresa debe proporcionar el email de contacto del Delegado de Protección de Datos (DPO) o del responsable de privacidad de la empresa.</p>
             </div>
           </section>
 
@@ -159,7 +73,7 @@ const Legal = () => {
           <Separator />
 
           <section id="consentimientos" className="space-y-3">
-            <h2 className="text-xl font-semibold">Textos de consentimiento (plantillas)</h2>
+            <h2 className="text-xl font-semibold">Textos de consentimiento</h2>
             <div className="space-y-4 text-sm leading-relaxed">
               <div>
                 <h3 className="font-medium">1) Geolocalización en fichajes (opcional)</h3>
@@ -213,46 +127,7 @@ const Legal = () => {
           <Separator />
 
           <section className="space-y-2 text-xs text-muted-foreground">
-            <p>Estas plantillas son orientativas y deben ser adaptadas por cada empresa (responsable del tratamiento) a su realidad organizativa, proveedores y flujos de datos.</p>
-            <div className="flex items-center gap-3 flex-wrap">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => {
-                  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8" /><title>Plantilla Legal</title></head><body>
-                  <h1>Información legal y privacidad</h1>
-                  <div>Plantilla para empresa responsable · ${new Date().toLocaleString('es-ES')}</div>
-                  <h2>Aviso legal</h2>
-                  <p>Responsable: [EMPRESA TITULAR], CIF/NIF [CIF], domicilio [DIRECCIÓN], email [EMAIL].</p>
-                  <h2>Política de privacidad</h2>
-                  <p>Finalidades: registro de jornada, gestión de incidencias, informes y opcionalmente geolocalización/foto.</p>
-                  <p>Base jurídica: obligación legal, contrato, interés legítimo y, en su caso, consentimiento.</p>
-                  <p>Conservación: al menos 4 años para registros de jornada.</p>
-                  <h2>Política de cookies</h2>
-                  <p>Cookies esenciales para sesión/preferencias. Sin publicidad salvo activación expresa de la empresa.</p>
-                  <h2>Consentimientos</h2>
-                  <p>Geolocalización/foto opcionales y revocables. Firma/acuse mensual disponible.</p>
-                  <h2>Conservación y auditoría</h2>
-                  <p>Revisiones y cambios quedan auditados (quién/cuándo/motivo).</p>
-                  <h2>Derechos</h2>
-                  <p>La persona trabajadora puede ejercer sus derechos ante la empresa responsable o la AEPD.</p>
-                  </body></html>`;
-                  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = 'plantilla-legal.html';
-                  document.body.appendChild(a);
-                  a.click();
-                  document.body.removeChild(a);
-                  URL.revokeObjectURL(url);
-                }}
-              >Descargar plantilla</Button>
-              <span>
-                Tras rellenarla, envíala a {" "}
-                <a className="underline" href="mailto:gnerai@gneraitiq.com">gnerai@gneraitiq.com</a>. El SuperAdmin archivará el documento en tu ficha de empresa.
-              </span>
-            </div>
+            <p>Esta información es orientativa. Cada empresa (responsable del tratamiento) debe adaptar estos contenidos a su realidad organizativa, proveedores y flujos de datos específicos.</p>
           </section>
         </Card>
       </div>

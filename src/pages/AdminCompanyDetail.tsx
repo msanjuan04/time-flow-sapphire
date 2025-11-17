@@ -18,6 +18,8 @@ import { useImpersonation } from "@/hooks/useImpersonation";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { getCompanyPlanDefinition, normalizeCompanyPlan } from "@/config/companyPlans";
  
@@ -66,6 +68,9 @@ const AdminCompanyDetail = () => {
   const [legalFiles, setLegalFiles] = useState<Array<{ name:string; path:string; url?:string; size?:number }>>([]);
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [planDialogOpen, setPlanDialogOpen] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<string>("");
+  const [updatingPlan, setUpdatingPlan] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -213,6 +218,39 @@ const AdminCompanyDetail = () => {
     toast.success("Equipo creado");
   };
 
+  const handleUpdatePlan = async () => {
+    if (!id || !selectedPlan) return;
+    const nextPlanInfo = getCompanyPlanDefinition(selectedPlan);
+    if (
+      nextPlanInfo.maxEmployees !== null &&
+      company?.stats.users_count !== undefined &&
+      company.stats.users_count > nextPlanInfo.maxEmployees
+    ) {
+      toast.error(
+        `El plan ${nextPlanInfo.label} permite hasta ${nextPlanInfo.maxEmployees} usuarios y ahora mismo hay ${company.stats.users_count}.`
+      );
+      return;
+    }
+
+    setUpdatingPlan(true);
+    try {
+      const { error } = await supabase.functions.invoke("admin-update-company-plan", {
+        body: { company_id: id, plan: selectedPlan },
+      });
+      if (error) throw error;
+      toast.success("Plan actualizado");
+      setPlanDialogOpen(false);
+      setCompany((prev) => (prev ? { ...prev, plan: selectedPlan } : prev));
+      await fetchCompanyDetail();
+    } catch (error) {
+      console.error("Failed to update plan:", error);
+      const message = error instanceof Error ? error.message : "No se pudo actualizar el plan";
+      toast.error(message);
+    } finally {
+      setUpdatingPlan(false);
+    }
+  };
+
   const fetchMembers = async () => {
     if (!id) return;
     try {
@@ -293,6 +331,14 @@ const AdminCompanyDetail = () => {
   }
 
   const planInfo = getCompanyPlanDefinition(company.plan);
+  const planDialogInfo = getCompanyPlanDefinition(selectedPlan || company.plan);
+  const availablePlans = [
+    { value: "basic", label: "Básico" },
+    { value: "empresa", label: "Empresa" },
+    { value: "pro", label: "Pro" },
+    { value: "advanced", label: "Avanzado" },
+    { value: "custom", label: "Custom" },
+  ];
 
   return (
     <AdminLayout>
@@ -355,6 +401,17 @@ const AdminCompanyDetail = () => {
                   Máx. {planInfo.maxEmployees} empleados
                 </p>
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2"
+                onClick={() => {
+                  setSelectedPlan(company.plan);
+                  setPlanDialogOpen(true);
+                }}
+              >
+                Ajustar plan
+              </Button>
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Uso actual</p>
@@ -367,6 +424,49 @@ const AdminCompanyDetail = () => {
             </div>
           </div>
         </Card>
+        <Dialog open={planDialogOpen} onOpenChange={setPlanDialogOpen}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Actualizar plan</DialogTitle>
+              <DialogDescription>Ajusta el plan para ampliar límites y funcionalidades.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-1">
+                <Label>Plan</Label>
+                <Select value={selectedPlan} onValueChange={setSelectedPlan}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona un plan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availablePlans.map((plan) => (
+                      <SelectItem key={plan.value} value={plan.value}>
+                        {plan.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Card className="p-3 bg-muted/50 border-dashed">
+                <p className="font-semibold">{planDialogInfo.label}</p>
+                <p className="text-sm text-muted-foreground">{planDialogInfo.description}</p>
+                <p className="text-sm mt-1">Precio: {planDialogInfo.price}</p>
+                {planDialogInfo.maxEmployees !== null ? (
+                  <p className="text-xs text-muted-foreground">Máx. {planDialogInfo.maxEmployees} empleados</p>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Sin límite de empleados</p>
+                )}
+              </Card>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setPlanDialogOpen(false)} disabled={updatingPlan}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleUpdatePlan} disabled={updatingPlan || !selectedPlan}>
+                  {updatingPlan ? <Loader2 className="w-4 h-4 animate-spin" /> : "Actualizar"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Invite Users */}
         <Card className="glass-card p-6">

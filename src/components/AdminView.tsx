@@ -229,6 +229,44 @@ const AdminView = () => {
     setRecentEvents(events);
   }, [companyId]);
 
+  useEffect(() => {
+    if (!companyId) return undefined;
+
+    const channel = supabase
+      .channel(`owner-dashboard-${companyId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "work_sessions",
+          filter: `company_id=eq.${companyId}`,
+        },
+        () => {
+          fetchStats();
+          fetchWeeklyData();
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "time_events",
+          filter: `company_id=eq.${companyId}`,
+        },
+        () => {
+          fetchStats();
+          fetchRecentEvents();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [companyId, fetchStats, fetchWeeklyData, fetchRecentEvents]);
+
   const fetchAllData = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!companyId) return;
