@@ -35,6 +35,7 @@ const CompanyDashboardPage = lazy(() => import("./pages/CompanyDashboard"));
 const WorkerClockPage = lazy(() => import("./pages/WorkerClock"));
 const WorkerHistoryPage = lazy(() => import("./pages/WorkerHistory"));
 const IncidentsPage = lazy(() => import("./pages/Incidents"));
+const PrintViewPage = lazy(() => import("./pages/PrintView"));
 
 const queryClient = new QueryClient();
 
@@ -89,6 +90,7 @@ const App = () => (
             <Route path="/logout" element={<LogoutPage />} />
             <Route path="/legal" element={<LegalPage />} />
             <Route path="/access-issue" element={<AccessIssuePage />} />
+            <Route path="/print/:id" element={<PrintViewPage />} />
 
             <Route
               path="/dashboard"

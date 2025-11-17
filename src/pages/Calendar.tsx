@@ -158,6 +158,12 @@ const WorkerCalendar = () => {
           const minutes = parseInt(parts[2], 10);
           totalMinutes += hours * 60 + minutes;
         }
+      } else if (s.clock_in_time) {
+        const start = parseISO(s.clock_in_time).getTime();
+        const end = s.clock_out_time ? parseISO(s.clock_out_time).getTime() : Date.now();
+        if (!Number.isNaN(start) && !Number.isNaN(end) && end > start) {
+          totalMinutes += Math.floor((end - start) / (1000 * 60));
+        }
       }
     });
     return totalMinutes / 60;

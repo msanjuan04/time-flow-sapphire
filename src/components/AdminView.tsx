@@ -512,7 +512,7 @@ const AdminView = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <Card className="glass-card p-6 hover-scale smooth-transition">
             <div className="flex items-center justify-between">
               <div>
@@ -552,20 +552,6 @@ const AdminView = () => {
               </div>
               <div className="w-12 h-12 bg-amber-500/10 rounded-xl flex items-center justify-center">
                 <AlertCircle className="w-6 h-6 text-amber-600" />
-              </div>
-            </div>
-          </Card>
-
-          <Card className="glass-card p-6 hover-scale smooth-transition">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Horas totales hoy</p>
-                <p className="text-3xl font-bold mt-1">
-                  {stats.totalHoursToday.toFixed(1)}h
-                </p>
-              </div>
-              <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
-                <TrendingUp className="w-6 h-6 text-primary" />
               </div>
             </div>
           </Card>

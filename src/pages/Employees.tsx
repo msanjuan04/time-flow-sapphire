@@ -18,7 +18,6 @@ import {
   Edit,
   Download,
   CalendarDays,
-  FileText,
   Users as UsersIcon,
   MapPin,
   RefreshCcw,
@@ -61,15 +60,6 @@ const exportCSV = (filename: string, headers: string[], rows: (string | number)[
   URL.revokeObjectURL(url);
 };
 
-const printHTML = (title: string, html: string) => {
-  const w = window.open("", "_blank");
-  if (!w) return;
-  w.document.write(`<html><head><title>${title}</title><meta charset="utf-8"/></head><body>${html}</body></html>`);
-  w.document.close();
-  w.focus();
-  w.print();
-  w.close();
-};
 
 const WEEKDAY_OPTIONS = [
   { value: "all", label: "Todos los días" },
@@ -333,22 +323,6 @@ const Employees = () => {
     exportCSV("empleados", headers, rows);
   };
 
-  const handleExportPDF = () => {
-    const header = `<h1>Listado de empleados</h1><div class='muted'>${new Date().toLocaleString("es-ES")} · ${filteredEmployees.length} registros</div>`;
-    const rows = filteredEmployees.map(e =>
-      `<tr>
-        <td>${e.full_name || ""}</td>
-        <td>${e.email}</td>
-        <td>${e.role}</td>
-        <td>${e.center_name || ""}</td>
-        <td>${e.team_name || ""}</td>
-        <td>${e.last_event || ""}</td>
-        <td>${e.last_event_time || ""}</td>
-      </tr>`
-    ).join("");
-    const table = `<table><thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Centro</th><th>Equipo</th><th>Último evento</th><th>Hora último evento</th></tr></thead><tbody>${rows}</tbody></table>`;
-    printHTML("Empleados · GTiQ", `${header}${table}`);
-  };
 
   const handleExportEmployeeCSV = () => {
     if (!selectedEmployee) return;
@@ -1114,9 +1088,6 @@ const getFunctionErrorMessage = async (error: unknown) => {
               <DropdownMenuContent align="end">
                 <DropdownMenuItem onClick={handleExportCSV}>
                   <Download className="w-4 h-4 mr-2" /> CSV
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={handleExportPDF}>
-                  <FileText className="w-4 h-4 mr-2" /> PDF
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

@@ -85,14 +85,7 @@ const Legal = () => {
                 </p>
               </div>
               <div>
-                <h3 className="font-medium">2) Fotografía de verificación (opcional)</h3>
-                <p>
-                  “Autorizo la toma de una fotografía en el momento del fichaje para verificar mi identidad y evitar
-                  usos indebidos. El tratamiento es opcional y basado en mi consentimiento, revocable en cualquier momento.”
-                </p>
-              </div>
-              <div>
-                <h3 className="font-medium">3) Firma/acuse mensual</h3>
+                <h3 className="font-medium">2) Firma/acuse mensual</h3>
                 <p>
                   “Declaro haber revisado mi registro de jornada del mes [MES/AÑO] y lo considero conforme. En caso de disconformidad,
                   podré dejar constancia (‘disputa’) y solicitar rectificación. Se generará un acuse con fecha y huella del resumen.”

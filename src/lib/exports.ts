@@ -18,37 +18,31 @@ export const exportCSV = (filename: string, headers: string[], rows: (string | n
 };
 
 export const printHTML = (title: string, body: string) => {
-  const win = window.open("", "_blank", "noopener,noreferrer,width=1024,height=768");
-  if (!win) return;
-  win.document.open();
-  win.document.write(`<!doctype html>
-  <html lang="es">
-    <head>
-      <meta charset="utf-8" />
-      <title>${title}</title>
-      <meta name="viewport" content="width=device-width, initial-scale=1" />
-      <style>
-        :root { --fg:#0f172a; --muted:#64748b; --border:#e2e8f0; --accent:#0ea5e9; }
-        body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, sans-serif; color: var(--fg); }
-        .wrap { max-width: 1024px; margin: 24px auto; padding: 0 16px; }
-        h1 { font-size: 20px; margin: 0 0 4px; }
-        .muted { color: var(--muted); font-size: 12px; }
-        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-        th, td { border: 1px solid var(--border); padding: 8px 10px; font-size: 12px; text-align: left; }
-        th { background: #f8fafc; }
-        footer { margin-top: 16px; font-size: 11px; color: var(--muted); }
-      </style>
-    </head>
-    <body>
-      <div class="wrap">
-        ${body}
-        <footer>
-          Este documento incluye datos de registro horario. Las correcciones deben mantenerse auditadas. Conservación mínima conforme a RDL 8/2019.
-        </footer>
-      </div>
-      <script>window.onload = () => setTimeout(() => window.print(), 100);</script>
-    </body>
-  </html>`);
-  win.document.close();
-};
+  if (typeof window === "undefined") {
+    throw new Error("popup-blocked");
+  }
 
+  const payloadId =
+    (typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? (crypto as Crypto).randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+
+  try {
+    sessionStorage.setItem(
+      `print:${payloadId}`,
+      JSON.stringify({
+        title,
+        body,
+      })
+    );
+  } catch (error) {
+    throw new Error("storage-failed");
+  }
+
+  const url = `${window.location.origin}/print/${payloadId}`;
+  const win = window.open(url, "_blank", "noopener,noreferrer,width=1024,height=768");
+  if (!win || win.closed || typeof win.closed === "undefined") {
+    sessionStorage.removeItem(`print:${payloadId}`);
+    throw new Error("popup-blocked");
+  }
+};

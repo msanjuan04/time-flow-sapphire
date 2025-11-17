@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Download, Calendar, Clock, TrendingUp, FileText, Info } from "lucide-react";
+import { ArrowLeft, Download, Calendar, Clock, TrendingUp, Info } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -9,7 +9,9 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { exportCSV, printHTML } from "@/lib/exports";
+import { exportCSV } from "@/lib/exports";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import html2pdf from "html2pdf.js";
 import {
   Select,
   SelectContent,
@@ -63,6 +65,9 @@ const WorkerReports = () => {
   const [currentSchedule, setCurrentSchedule] = useState<{ hours: number; reason: string | null; changedAt: string | null; startTime: string | null; endTime: string | null } | null>(null);
   const [sessions, setSessions] = useState<WorkSession[]>([]);
   const [weeklyEntries, setWeeklyEntries] = useState<Array<{ date: Date; sessions: WorkSession[] }>>([]);
+  const reportRef = useRef<HTMLDivElement | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState("");
 
   const fetchWorkerData = useCallback(async () => {
     if (!user?.id || !companyId) return;
@@ -253,49 +258,38 @@ const WorkerReports = () => {
     toast.success("CSV exportado");
   };
 
-  const exportPDFLocal = () => {
-    const header = `<h1>Mis horas (${period === 'week' ? 'semanal' : 'mensual'})</h1>
-      <div class='muted'>${membership?.company.name || 'Empresa'} · ${user?.email || ''} · ${new Date().toLocaleString("es-ES")} · ${sessions.length} fichajes</div>`;
-    const rows = sessions.map((s) => {
-      const start = s.clock_in_time ? new Date(s.clock_in_time) : null;
-      const end = s.clock_out_time ? new Date(s.clock_out_time) : null;
-      const hours =
-        start && (end || true)
-          ? (
-              ((end ? end.getTime() : Date.now()) - start.getTime()) /
-              (1000 * 60 * 60)
-            ).toFixed(2)
-          : "";
-      return `<tr>
-        <td>${start ? start.toISOString().slice(0, 10) : ""}</td>
-        <td>${start ? start.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : ""}</td>
-        <td>${end ? end.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : ""}</td>
-        <td>${hours}</td>
-      </tr>`;
-    }).join("");
-    const table = `<table><thead><tr><th>Fecha</th><th>Entrada</th><th>Salida</th><th>Horas</th></tr></thead><tbody>${rows}</tbody></table>`;
-    const signatures = `
-      <div style="display:flex;gap:32px;justify-content:space-between;margin-top:24px">
-        <div style="flex:1;text-align:center">
-          <div style="border-top:1px solid #cbd5e1; padding-top:6px;">Firma del trabajador</div>
-        </div>
-        <div style="flex:1;text-align:center">
-          <div style="border-top:1px solid #cbd5e1; padding-top:6px;">Firma y sello de la empresa</div>
-        </div>
-      </div>`;
-    printHTML("Mis horas · GTiQ", `${header}${table}${signatures}`);
+  const handleDownloadPDF = () => {
+    if (!reportRef.current) {
+      toast.error("No se encontró el contenido a exportar.");
+      return;
+    }
+    const options = {
+      margin: 10,
+      filename: "informe-gtiq.pdf",
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    };
+    html2pdf().set(options).from(reportRef.current).save();
+    setPreviewOpen(false);
   };
 
-  const exportPDF = async () => {
-    toast.error("La exportación avanzada estará disponible próximamente");
+  const handlePreviewPDF = () => {
+    if (!reportRef.current) {
+      toast.error("No se encontró el contenido del informe.");
+      return;
+    }
+    setPreviewHtml(reportRef.current.innerHTML);
+    setPreviewOpen(true);
   };
+
 
   const hoursRemaining = Math.max(0, expectedHours - totalHours);
   const progress = expectedHours > 0 ? Math.min(100, (totalHours / expectedHours) * 100) : 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
-      <div className="max-w-4xl mx-auto space-y-6 pt-8">
+      <div className="max-w-4xl mx-auto pt-8 space-y-6">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -320,6 +314,9 @@ const WorkerReports = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <Button variant="outline" className="hover-scale" onClick={handlePreviewPDF}>
+              <Download className="w-4 h-4 mr-2" /> Descargar PDF
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="hover-scale">
@@ -330,17 +327,11 @@ const WorkerReports = () => {
                 <DropdownMenuItem onClick={exportCSVLocal}>
                   <Download className="w-4 h-4 mr-2" /> CSV
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={exportPDFLocal}>
-                  <FileText className="w-4 h-4 mr-2" /> PDF simple
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={exportPDF}>
-                  <FileText className="w-4 h-4 mr-2" /> PDF avanzado
-                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </motion.div>
-
+        <div ref={reportRef} className="space-y-6">
         {/* Jornada asignada */}
         <Card className="glass-card p-6 flex flex-col gap-2">
           <div className="flex items-start justify-between gap-4">
@@ -537,7 +528,28 @@ const WorkerReports = () => {
             </div>
           </Card>
         )}
+        </div>
       </div>
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Vista previa del informe</DialogTitle>
+            <DialogDescription>Revisa el contenido antes de descargar el PDF.</DialogDescription>
+          </DialogHeader>
+          <div
+            className="border rounded-md p-4 bg-background/70 space-y-4"
+            dangerouslySetInnerHTML={{ __html: previewHtml }}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPreviewOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleDownloadPDF}>
+              Descargar PDF
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

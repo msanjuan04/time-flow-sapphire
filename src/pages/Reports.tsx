@@ -3,6 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -28,6 +29,7 @@ import {
   Users,
   ArrowLeft,
   MapPin,
+  CalendarClock,
 } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -38,7 +40,9 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { exportCSV, printHTML } from "@/lib/exports";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { exportCSV } from "@/lib/exports";
+import html2pdf from "html2pdf.js";
 import {
   BarChart,
   Bar,
@@ -78,16 +82,126 @@ interface Employee {
 }
 
 interface ClockInLocation {
-  id: string;
+  id?: string;
   user_id: string;
   event_time: string;
-  latitude: number;
-  longitude: number;
+  event_type: string;
+  latitude?: number;
+  longitude?: number;
   profiles?: {
     full_name: string | null;
     email: string | null;
+    center_id?: string | null;
   } | null;
 }
+
+interface SessionLike {
+  user_id: string;
+  clock_in_time: string;
+  clock_out_time: string | null;
+  total_pause_duration?: number;
+  profiles?: {
+    id?: string;
+    full_name: string | null;
+    email: string | null;
+    center_id: string | null;
+  };
+}
+
+const buildSessionsFromEvents = (events: ClockInLocation[]) => {
+  if (!events || events.length === 0) return [];
+
+  const sessions: SessionLike[] = [];
+  const grouped = new Map<string, ClockInLocation[]>();
+
+  events.forEach((event) => {
+    if (!grouped.has(event.user_id)) grouped.set(event.user_id, []);
+    grouped.get(event.user_id)!.push(event);
+  });
+
+  grouped.forEach((userEvents) => {
+    userEvents.sort(
+      (a, b) => new Date(a.event_time).getTime() - new Date(b.event_time).getTime()
+    );
+
+    let current: {
+      clockIn?: Date;
+      pauseStart?: Date | null;
+      pauseMs: number;
+      profile: SessionLike["profiles"];
+    } | null = null;
+
+    userEvents.forEach((event) => {
+      if (event.event_type === "clock_in") {
+        if (current?.clockIn) {
+          sessions.push({
+            user_id: event.user_id,
+            clock_in_time: current.clockIn.toISOString(),
+            clock_out_time: null,
+            total_pause_duration: current.pauseMs,
+            profiles: current.profile,
+          });
+        }
+        current = {
+          clockIn: new Date(event.event_time),
+          pauseStart: null,
+          pauseMs: 0,
+          profile: {
+            full_name: event.profiles?.full_name ?? null,
+            email: event.profiles?.email ?? null,
+            center_id: event.profiles?.center_id ?? null,
+            id: event.user_id,
+          },
+        };
+        return;
+      }
+
+      if (!current || !current.clockIn) return;
+
+      if (event.event_type === "pause_start") {
+        current.pauseStart = new Date(event.event_time);
+        return;
+      }
+
+      if (event.event_type === "pause_end" && current.pauseStart) {
+        current.pauseMs += new Date(event.event_time).getTime() - current.pauseStart.getTime();
+        current.pauseStart = null;
+        return;
+      }
+
+      if (event.event_type === "clock_out") {
+        const clockOut = new Date(event.event_time);
+        let pauseMs = current.pauseMs;
+
+        if (current.pauseStart) {
+          pauseMs += clockOut.getTime() - current.pauseStart.getTime();
+        }
+
+        sessions.push({
+          user_id: event.user_id,
+          clock_in_time: current.clockIn.toISOString(),
+          clock_out_time: clockOut.toISOString(),
+          total_pause_duration: pauseMs,
+          profiles: current.profile,
+        });
+
+        current = null;
+      }
+    });
+
+    if (current?.clockIn) {
+      sessions.push({
+        user_id: current.profile?.id || userEvents[0].user_id,
+        clock_in_time: current.clockIn.toISOString(),
+        clock_out_time: null,
+        total_pause_duration: current.pauseMs,
+        profiles: current.profile,
+      });
+    }
+  });
+
+  return sessions;
+};
 
 const CHART_COLORS = ["hsl(var(--primary))", "hsl(var(--secondary))", "#10b981", "#f59e0b", "#ef4444"];
 const WEEKDAY_LABELS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
@@ -125,6 +239,18 @@ const Reports = () => {
   const [centers, setCenters] = useState<Center[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [sessionsRaw, setSessionsRaw] = useState<any[]>([]);
+  const reportRef = useRef<HTMLDivElement | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState("");
+  const [scheduleReminderDismissed, setScheduleReminderDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return localStorage.getItem("scheduleReminderDismissed") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const showScheduleReminder = !scheduleReminderDismissed && !loading && employeeStats.length === 0;
   
   // Filters
   const [startDate, setStartDate] = useState(() => {
@@ -159,6 +285,15 @@ const Reports = () => {
       ),
     [filteredMapEvents]
   );
+
+  const dismissScheduleReminder = () => {
+    setScheduleReminderDismissed(true);
+    try {
+      localStorage.setItem("scheduleReminderDismissed", "1");
+    } catch {
+      // ignore storage issues
+    }
+  };
   const uniqueEmployeesOnMap = useMemo(() => {
     return new Set(filteredMapEvents.map((event) => event.user_id)).size;
   }, [filteredMapEvents]);
@@ -188,6 +323,7 @@ const Reports = () => {
           id,
           user_id,
           event_time,
+          event_type,
           latitude,
           longitude
         `)
@@ -381,16 +517,15 @@ const Reports = () => {
       }
 
       const { data: sessions } = await query;
-      setSessionsRaw(sessions || []);
 
-      // Get time events for punctuality analysis
+      // Get time events for punctuality analysis (also used for fallback sessions)
       let eventsQuery = supabase
         .from("time_events")
         .select(`
           user_id,
           event_type,
           event_time,
-          profiles!inner(center_id)
+          profiles!inner(id, full_name, email, center_id)
         `)
         .eq("company_id", companyId)
         .gte("event_time", `${startDate}T00:00:00`)
@@ -405,6 +540,14 @@ const Reports = () => {
       }
 
       const { data: events } = await eventsQuery;
+
+      let sessionsData: SessionLike[] = (sessions as SessionLike[]) || [];
+
+      if ((!sessionsData || sessionsData.length === 0) && events && events.length > 0) {
+        sessionsData = buildSessionsFromEvents(events as ClockInLocation[]);
+      }
+
+      setSessionsRaw(sessionsData);
 
       // Get incidents
       let incidentsQuery = supabase
@@ -423,28 +566,37 @@ const Reports = () => {
       // Process data by user
       const userStatsMap = new Map<string, EmployeeStats>();
 
-      sessions?.forEach((session: any) => {
+      sessionsData?.forEach((session) => {
         const userId = session.user_id;
+        const profileInfo = session.profiles || {
+          full_name: "Empleado",
+          email: "",
+          center_id: null,
+        };
         if (!userStatsMap.has(userId)) {
           userStatsMap.set(userId, {
             user_id: userId,
-            full_name: session.profiles.full_name || session.profiles.email,
-            email: session.profiles.email,
+            full_name: profileInfo.full_name || profileInfo.email || "Empleado",
+            email: profileInfo.email || "",
             total_hours: 0,
             total_days: 0,
             avg_delay: 0,
             correct_checks: 0,
             incidents: 0,
             punctuality_score: 100,
+            company_id: companyId || "unknown",
           });
         }
 
         const stats = userStatsMap.get(userId)!;
         
         // Calculate hours
-        if (session.clock_in_time && session.clock_out_time) {
-          const hours = (new Date(session.clock_out_time).getTime() - new Date(session.clock_in_time).getTime()) / (1000 * 60 * 60);
-          stats.total_hours += hours;
+        if (session.clock_in_time) {
+          const start = new Date(session.clock_in_time).getTime();
+          const end = session.clock_out_time ? new Date(session.clock_out_time).getTime() : Date.now();
+          const pauseMs = Number(session.total_pause_duration ?? 0);
+          const duration = Math.max(0, end - start - (isNaN(pauseMs) ? 0 : pauseMs));
+          stats.total_hours += duration / (1000 * 60 * 60);
           stats.total_days += 1;
         }
       });
@@ -526,31 +678,31 @@ const Reports = () => {
     toast.success("Reporte exportado correctamente");
   };
 
-  const exportToPDF = () => {
-    const centerLabel = selectedCenter === "all" ? "Todos los centros" : (centers.find(c => c.id === selectedCenter)?.name || "Centro");
-    const header = `<h1>Registro de jornada (${startDate} a ${endDate})</h1>
-      <div class='muted'>${membership?.company.name || "Empresa"} · ${centerLabel} · ${new Date().toLocaleString("es-ES")} · ${employeeStats.length} empleados</div>`;
-    const rows = employeeStats.map((s) => `<tr>
-      <td>${s.full_name}</td>
-      <td>${s.email}</td>
-      <td>${s.total_hours.toFixed(2)}</td>
-      <td>${s.total_days}</td>
-      <td>${s.avg_delay.toFixed(0)}</td>
-      <td>${s.correct_checks}</td>
-      <td>${s.incidents}</td>
-      <td>${s.punctuality_score.toFixed(1)}</td>
-    </tr>`).join("");
-    const table = `<table><thead><tr><th>Empleado</th><th>Email</th><th>Horas</th><th>Días</th><th>Retraso (min)</th><th>Correctos</th><th>Incidencias</th><th>Puntualidad</th></tr></thead><tbody>${rows}</tbody></table>`;
-    const signatures = `
-      <div style="display:flex;gap:32px;justify-content:space-between;margin-top:24px">
-        <div style="flex:1;text-align:center">
-          <div style="border-top:1px solid #cbd5e1; padding-top:6px;">Firma y sello de la empresa</div>
-        </div>
-        <div style="flex:1;text-align:center">
-          <div style="border-top:1px solid #cbd5e1; padding-top:6px;">Visto por representación legal de las personas trabajadoras</div>
-        </div>
-      </div>`;
-    printHTML("Registro de jornada · GTiQ", `${header}${table}${signatures}`);
+  const handleDownloadPDF = () => {
+    if (!reportRef.current) {
+      toast.error("No se encontró el contenido del informe para generar el PDF");
+      return;
+    }
+
+    const options = {
+      margin: 10,
+      filename: "informe-gtiq.pdf",
+      image: { type: "jpeg", quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+    };
+
+    html2pdf().set(options).from(reportRef.current).save();
+    setPreviewOpen(false);
+  };
+
+  const handlePreviewPDF = () => {
+    if (!reportRef.current) {
+      toast.error("No se encontró el contenido del informe.");
+      return;
+    }
+    setPreviewHtml(reportRef.current.innerHTML);
+    setPreviewOpen(true);
   };
 
   // Paquete legal mensual (requiere centro seleccionado y mes completo)
@@ -573,7 +725,12 @@ const Reports = () => {
     const rows = sessionsRaw.map((s: any) => {
       const start = s.clock_in_time ? new Date(s.clock_in_time) : null;
       const end = s.clock_out_time ? new Date(s.clock_out_time) : null;
-      const hours = start && end ? ((end.getTime() - start.getTime()) / (1000 * 60 * 60)).toFixed(2) : "";
+      const pauseMs = Number(s.total_pause_duration ?? 0);
+      const durationMs =
+        start && (end || true)
+          ? (end ? end.getTime() : Date.now()) - start.getTime() - (isNaN(pauseMs) ? 0 : pauseMs)
+          : 0;
+      const hours = start ? (Math.max(0, durationMs) / (1000 * 60 * 60)).toFixed(2) : "";
       return [
         start ? start.toISOString().slice(0, 10) : end ? end.toISOString().slice(0, 10) : "",
         s.profiles?.full_name || s.profiles?.email || "",
@@ -588,30 +745,6 @@ const Reports = () => {
     exportCSV(`paquete_${label}_${ym}`, headers, rows);
   };
 
-  const exportMonthlyPDF = () => {
-    const center = centers.find((c) => c.id === selectedCenter);
-    const ym = startDate.slice(0, 7);
-    const header = `<h1>Resumen mensual · ${center?.name || "Centro"} (${ym})</h1>
-      <div class='muted'>${membership?.company.name || "Empresa"} · ${new Date().toLocaleString("es-ES")} · ${employeeStats.length} empleados</div>`;
-    const rows = employeeStats.map((s) => `<tr>
-      <td>${s.full_name}</td>
-      <td>${s.email}</td>
-      <td>${s.total_days}</td>
-      <td>${s.total_hours.toFixed(2)}</td>
-    </tr>`).join("");
-    const table = `<table><thead><tr><th>Empleado</th><th>Email</th><th>Días</th><th>Horas</th></tr></thead><tbody>${rows}</tbody></table>`;
-    const signatures = `
-      <div style="display:flex;gap:32px;justify-content:space-between;margin-top:24px">
-        <div style="flex:1;text-align:center">
-          <div style="border-top:1px solid #cbd5e1; padding-top:6px;">Firma y sello de la empresa</div>
-        </div>
-        <div style="flex:1;text-align:center">
-          <div style="border-top:1px solid #cbd5e1; padding-top:6px;">Visto por representación legal de las personas trabajadoras</div>
-        </div>
-      </div>`;
-    printHTML(`Resumen mensual ${ym} · GTiQ`, `${header}${table}${signatures}`);
-  };
-
   const exportMonthlyPackage = () => {
     if (selectedCenter === "all") {
       toast.error("Selecciona un centro para generar el paquete mensual");
@@ -622,8 +755,7 @@ const Reports = () => {
       return;
     }
     exportMonthlyCSV();
-    exportMonthlyPDF();
-    toast.success("Paquete mensual generado (CSV + PDF)");
+    toast.success("Paquete mensual generado (CSV)");
   };
 
   // Prepare chart data
@@ -658,7 +790,8 @@ const Reports = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
-      <div className="max-w-7xl mx-auto space-y-6 pt-8">
+      <div className="max-w-7xl mx-auto pt-8">
+        <div ref={reportRef} className="space-y-6">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -684,26 +817,51 @@ const Reports = () => {
               </p>
             </div>
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="hover-scale">
-                <Download className="w-4 h-4 mr-2" /> Exportar
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={exportToCSV}>
-                <Download className="w-4 h-4 mr-2" /> CSV
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={exportToPDF}>
-                <FileText className="w-4 h-4 mr-2" /> PDF
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={exportMonthlyPackage}>
-                <FileText className="w-4 h-4 mr-2" /> Paquete legal mensual (CSV + PDF)
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handlePreviewPDF} className="hover-scale">
+              <Download className="w-4 h-4 mr-2" /> Descargar PDF
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="hover-scale">
+                  <Download className="w-4 h-4 mr-2" /> Exportar
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={exportToCSV}>
+                  <Download className="w-4 h-4 mr-2" /> CSV
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={exportMonthlyPackage}>
+                  <FileText className="w-4 h-4 mr-2" /> Paquete legal mensual (CSV)
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </motion.div>
+
+        {showScheduleReminder && (
+          <Alert className="glass-card border-primary/30 bg-primary/5">
+            <AlertTitle className="flex items-center gap-2 text-primary">
+              <CalendarClock className="w-4 h-4" />
+              Configura tus jornadas y turnos
+            </AlertTitle>
+            <AlertDescription className="mt-2 flex flex-col gap-3 md:flex-row md:items-center md:justify-between text-sm">
+              <span>
+                Aún no detectamos ningún horario planificado para tu empresa. Configura calendarios,
+                turnos o ausencias para que los reportes muestren horas previstas y alertas.
+              </span>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => navigate("/manager-calendar")}>
+                  Abrir calendario
+                </Button>
+                <Button variant="ghost" size="sm" onClick={dismissScheduleReminder}>
+                  Omitir
+                </Button>
+              </div>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Filters */}
         <Card className="glass-card p-6">
@@ -1080,7 +1238,26 @@ const Reports = () => {
           </div>
         </Card>
       </div>
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Vista previa del informe</DialogTitle>
+            <DialogDescription>Revisa el contenido antes de descargar el PDF.</DialogDescription>
+          </DialogHeader>
+          <div
+            className="border rounded-md p-4 bg-background/70 space-y-4"
+            dangerouslySetInnerHTML={{ __html: previewHtml }}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPreviewOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleDownloadPDF}>Descargar PDF</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  </div>
   );
 };
 
