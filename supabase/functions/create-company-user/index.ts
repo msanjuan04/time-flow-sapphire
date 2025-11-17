@@ -73,6 +73,20 @@ serve(async (req) => {
       );
     }
 
+    const planLimit = getPlanLimit(company.plan);
+    if (planLimit !== null) {
+      const { count: activeMembers } = await supabaseAdmin
+        .from('memberships')
+        .select('*', { count: 'exact', head: true })
+        .eq('company_id', company_id);
+      if ((activeMembers || 0) >= planLimit) {
+        return new Response(
+          JSON.stringify({ error: "Plan limit reached for this company" }),
+          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // Create membership
     const { error: membershipError } = await supabaseAdmin
       .from('memberships')
@@ -124,16 +138,3 @@ serve(async (req) => {
     );
   }
 });
-    const planLimit = getPlanLimit(company.plan);
-    if (planLimit !== null) {
-      const { count: activeMembers } = await supabaseAdmin
-        .from('memberships')
-        .select('*', { count: 'exact', head: true })
-        .eq('company_id', company_id);
-      if ((activeMembers || 0) >= planLimit) {
-        return new Response(
-          JSON.stringify({ error: "Plan limit reached for this company" }),
-          { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-    }

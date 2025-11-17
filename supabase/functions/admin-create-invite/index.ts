@@ -45,6 +45,17 @@ serve(async (req) => {
       return createErrorResponse("Company not found", 404);
     }
 
+    const planLimit = getPlanLimit(company.plan);
+    if (planLimit !== null) {
+      const { count: memberCount } = await supabase
+        .from("memberships")
+        .select("*", { count: "exact", head: true })
+        .eq("company_id", companyId);
+      if ((memberCount || 0) >= planLimit) {
+        return createErrorResponse("Plan limit reached for this company", 409);
+      }
+    }
+
     // Check existing membership
     const { data: existingMembership } = await supabase
       .from("memberships")
@@ -153,13 +164,3 @@ serve(async (req) => {
     return createErrorResponse("Failed to create invite", 500);
   }
 });
-    const planLimit = getPlanLimit(company.plan);
-    if (planLimit !== null) {
-      const { count: memberCount } = await supabase
-        .from("memberships")
-        .select("*", { count: "exact", head: true })
-        .eq("company_id", companyId);
-      if ((memberCount || 0) >= planLimit) {
-        return createErrorResponse("Plan limit reached for this company", 409);
-      }
-    }

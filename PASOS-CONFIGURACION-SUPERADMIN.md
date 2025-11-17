@@ -41,7 +41,7 @@ El script debería mostrar:
 
 ```
 ✅ Superadmin listo: gnerai@gneraitiq.com (ID ...)
-🔐 Código de acceso: 739421
+🔐 Código de acceso: 521332
 ```
 
 ### Paso 5: Probar Login

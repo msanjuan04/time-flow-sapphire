@@ -31,6 +31,16 @@ import {
   getCompanyPlanDefinition,
   normalizeCompanyPlan,
 } from "@/config/companyPlans";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type PlanKey = "basic" | "empresa" | "pro" | "advanced" | "custom";
 type BillingPeriod = "yearly";
@@ -124,15 +134,19 @@ const AdminCompanies = () => {
   const [selectedPlan, setSelectedPlan] = useState<PlanKey | null>(null);
   const [planError, setPlanError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Company | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   useEffect(() => {
     fetchCompanies();
   }, []);
 
   useEffect(() => {
-    if (!createOpen) {
-      setSelectedPlan(null);
+    if (createOpen) {
+      setSelectedPlan((prev) => prev ?? "basic");
       setPlanError(null);
+    } else {
+      setSelectedPlan(null);
     }
   }, [createOpen]);
 
@@ -171,40 +185,22 @@ const AdminCompanies = () => {
         body: {
           name,
           plan: planKey,
-          plan_key: planKey,
-          max_employees: plan.maxEmployees,
-          billing_period: plan.billingPeriod,
-          yearly_price: plan.yearlyPrice,
         },
       });
       if (error) throw error;
       const createdCompany = data?.company;
-      if (createdCompany) {
-        const normalizedCreatedPlan = normalizeCompanyPlan(createdCompany.plan);
-        if (normalizedCreatedPlan !== planKey) {
-          try {
-            const { error: planError } = await (supabase as any).functions.invoke(
-              "admin-set-company-plan",
-              {
-                body: { company_id: createdCompany.id, plan: planKey },
-              }
-            );
-            if (planError) {
-              console.warn("Failed to correct company plan:", planError);
-              toast.message("Empresa creada, pero el plan no se pudo ajustar automáticamente.");
-            }
-          } catch (planError) {
-            console.warn("Admin set company plan not available:", planError);
-            toast.message("Empresa creada, revisa el plan manualmente.");
-          }
-        }
-      }
       setCreateOpen(false);
       setNewCompanyName("");
       setSelectedPlan(null);
       setPlanError(null);
       fetchCompanies();
-      toast.success("Empresa creada correctamente");
+      const limitMessage =
+        plan.maxEmployees === null
+          ? "Plan sin límite de empleados."
+          : `Hasta ${plan.maxEmployees} empleados en este plan.`;
+      toast.success("Empresa creada correctamente", {
+        description: `${plan.label} · ${limitMessage}`,
+      });
     } catch (e: any) {
       console.error(e);
       toast.error(e?.message || "Error al crear empresa");
@@ -221,6 +217,28 @@ const AdminCompanies = () => {
     setSelectedPlan(planId);
     if (planError) {
       setPlanError(null);
+    }
+  };
+
+  const handleDeleteCompany = async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
+    try {
+      const { error } = await (supabase as any).functions.invoke("admin-delete-company", {
+        body: { company_id: deleteTarget.id },
+      });
+      if (error) throw error;
+      toast.success(`Empresa eliminada`, {
+        description: `${deleteTarget.name} se eliminó correctamente`,
+      });
+      setDeleteTarget(null);
+      fetchCompanies();
+    } catch (err: any) {
+      console.error("Failed to delete company:", err);
+      const message = err?.message || "No se pudo eliminar la empresa";
+      toast.error(message);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -389,6 +407,14 @@ const AdminCompanies = () => {
                           >
                             Ver
                           </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => setDeleteTarget(company)}
+                            className="hover-scale"
+                          >
+                            Eliminar
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
@@ -465,28 +491,50 @@ const AdminCompanies = () => {
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => (!open && !deleteLoading ? setDeleteTarget(null) : undefined)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Eliminar empresa</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget
+                ? `¿Seguro que quieres eliminar ${deleteTarget.name}? Esta acción borra todos los datos asociados a la empresa y no se puede deshacer.`
+                : "Esta acción no se puede deshacer."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleteLoading} onClick={() => setDeleteTarget(null)}>
+              Cancelar
+            </AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button variant="destructive" onClick={handleDeleteCompany} disabled={deleteLoading}>
+                {deleteLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Eliminar
+              </Button>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
 
 const PLAN_ORDER: PlanKey[] = ["basic", "empresa", "pro", "advanced", "custom"];
 
-const PlanSelectionGrid = ({ selectedPlan, onSelectPlan, disabled }: PlanSelectionGridProps) => {
-  return (
-    <div className="grid auto-rows-fr grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-      {PLAN_ORDER.map((planKey) => (
-        <PlanCard
-          key={planKey}
-          planKey={planKey}
-          plan={PLANS[planKey]}
-          selected={selectedPlan === planKey}
-          onSelect={onSelectPlan}
-          disabled={disabled}
-        />
-      ))}
-    </div>
-  );
-};
+const PlanSelectionGrid = ({ selectedPlan, onSelectPlan, disabled }: PlanSelectionGridProps) => (
+  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+    {PLAN_ORDER.map((planKey) => (
+      <PlanCard
+        key={planKey}
+        planKey={planKey}
+        plan={PLANS[planKey]}
+        selected={selectedPlan === planKey}
+        onSelect={onSelectPlan}
+        disabled={disabled}
+      />
+    ))}
+  </div>
+);
 
 interface PlanCardProps {
   planKey: PlanKey;
@@ -508,6 +556,8 @@ const PlanCard = ({ planKey, plan, selected, onSelect, disabled }: PlanCardProps
     plan.yearlyPrice === null
       ? "Contactar"
       : `${currencyFormatter.format(plan.yearlyPrice)}/${plan.billingPeriod === "yearly" ? "año" : plan.billingPeriod}`;
+  const planDefinition = getCompanyPlanDefinition(planKey);
+  const featureList = planDefinition.features;
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -533,52 +583,47 @@ const PlanCard = ({ planKey, plan, selected, onSelect, disabled }: PlanCardProps
           : "hover:-translate-y-0.5 hover:border-primary/60 hover:shadow-md focus-visible:ring-2 focus-visible:ring-primary/50"
       } ${selected ? "border-primary bg-primary/5 ring-2 ring-primary/30" : "border-border"}`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <p className="text-lg font-semibold">{plan.label}</p>
-          <p className="text-sm text-muted-foreground">{plan.description}</p>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-xl font-semibold">{plan.label}</p>
+            <p className="text-sm text-muted-foreground">{plan.description}</p>
+          </div>
+          {plan.highlight && (
+            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-primary">
+              Más popular
+            </span>
+          )}
         </div>
-        {plan.highlight && (
-          <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-primary">
-            Más popular
+
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <p className="text-3xl font-bold">{priceLabel}</p>
+          <span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-foreground/80">
+            {employeeLabel}
           </span>
-        )}
+        </div>
+
+        <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
+          {featureList.map((feature) => (
+            <li key={feature} className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4 text-primary" />
+              {feature}
+            </li>
+          ))}
+        </ul>
       </div>
 
-      <div className="mt-4 flex items-baseline justify-between gap-3">
-        <p className="text-3xl font-bold">{priceLabel}</p>
-        <span className="rounded-full bg-muted px-3 py-1 text-xs font-semibold text-foreground/80">
-          {employeeLabel}
-        </span>
-      </div>
-
-      <p className="mt-3 text-sm text-muted-foreground">{plan.description}</p>
-
-      <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-6">
-        <span className="inline-flex items-center gap-2 text-sm text-muted-foreground">
+      <div className="mt-auto flex items-center justify-between gap-3 pt-6">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Users className="h-4 w-4 text-primary" />
           {employeeLabel}
-        </span>
-        {selected ? (
-          <span className="inline-flex items-center rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-            Plan seleccionado
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`h-2.5 w-2.5 rounded-full ${selected ? "bg-primary" : "bg-muted-foreground/40"}`} />
+          <span className="text-xs font-medium text-muted-foreground">
+            {selected ? "Plan seleccionado" : "Haz clic para elegir"}
           </span>
-        ) : (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={disabled}
-            onClick={(event) => {
-              event.stopPropagation();
-              if (!disabled) {
-                onSelect(planKey);
-              }
-            }}
-          >
-            Seleccionar plan
-          </Button>
-        )}
+        </div>
       </div>
     </div>
   );

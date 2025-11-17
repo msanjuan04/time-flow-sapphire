@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,47 +35,41 @@ const AdminUsers = () => {
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
 
-  const handleSearch = async () => {
-    if (!searchQuery.trim()) {
-      toast.error("Ingresa un email para buscar");
-      return;
-    }
-
+  const fetchUsers = async (query?: string) => {
     setLoading(true);
-    setSearched(true);
     try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select(`
-          id,
-          email,
-          full_name,
-          created_at,
-          memberships(
-            role,
-            company:companies(name)
-          )
-        `)
-        .ilike("email", `%${searchQuery}%`)
-        .limit(50);
+      const { data, error } = await supabase.functions.invoke<{ users: UserResult[] }>("admin-search-users", {
+        body: { query: query || null },
+      });
 
       if (error) {
-        console.error("Error searching users:", error);
-        toast.error("Error al buscar usuarios");
+        console.error("Error fetching users:", error);
+        toast.error("No se pudieron cargar los usuarios");
         return;
       }
 
-      setResults(data || []);
-      
-      if (!data || data.length === 0) {
-        toast.info("No se encontraron usuarios");
+      const users = data?.users || [];
+      setResults(users);
+      if (query && users.length === 0) {
+        toast.info("No se encontraron usuarios con ese término");
       }
     } catch (error) {
-      console.error("Failed to search users:", error);
-      toast.error("Error al buscar usuarios");
+      console.error("Failed to fetch users:", error);
+      toast.error("No se pudieron cargar los usuarios");
     } finally {
       setLoading(false);
+      setSearched(true);
     }
+  };
+
+  useEffect(() => {
+    fetchUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleSearch = () => {
+    const query = searchQuery.trim() || undefined;
+    fetchUsers(query);
   };
 
   const getRoleBadgeColor = (role: string) => {
@@ -95,7 +89,7 @@ const AdminUsers = () => {
         <div>
           <h1 className="text-2xl font-bold">Gestión de Usuarios</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Buscar usuarios por email
+            Revisa todos los usuarios registrados o utiliza el buscador para filtrar rápidamente.
           </p>
         </div>
 
@@ -123,7 +117,7 @@ const AdminUsers = () => {
         {searched && (
           <Card className="glass-card p-6">
             <h2 className="text-lg font-semibold mb-4">
-              Resultados ({results.length})
+              Usuarios ({results.length})
             </h2>
             {loading ? (
               <div className="flex items-center justify-center py-12">
