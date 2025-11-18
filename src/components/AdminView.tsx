@@ -11,12 +11,31 @@ import NotificationBell from "@/components/NotificationBell";
 import { CompanySelector } from "@/components/CompanySelector";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { DEMO_COMPANY_IDS } from "@/config/demo";
 
 interface DailyStats {
   date: string;
   hours: number;
   checkIns: number;
 }
+
+const mockWeeklyData: DailyStats[] = [
+  { date: "lun", hours: 7.8, checkIns: 12 },
+  { date: "mar", hours: 8.1, checkIns: 14 },
+  { date: "mié", hours: 7.5, checkIns: 11 },
+  { date: "jue", hours: 8.6, checkIns: 15 },
+  { date: "vie", hours: 7.9, checkIns: 13 },
+  { date: "sáb", hours: 5.2, checkIns: 6 },
+  { date: "dom", hours: 4.6, checkIns: 4 },
+];
+
+const mockStats = {
+  activeUsers: 24,
+  todayCheckIns: 68,
+  pendingIncidents: 2,
+  totalHoursToday: 182,
+  totalHoursWeek: 950,
+};
 
 interface WorkSessionRecord {
   clock_in_time: string | null;
@@ -50,6 +69,7 @@ const DASHBOARD_REFRESH_MS = 60000;
 const AdminView = () => {
   const { signOut } = useAuth();
   const { companyId, membership, loading: membershipLoading } = useMembership();
+  const isDemoCompany = companyId ? DEMO_COMPANY_IDS.includes(companyId) : false;
   const navigate = useNavigate();
   const [stats, setStats] = useState({
     activeUsers: 0,
@@ -360,6 +380,13 @@ const AdminView = () => {
 
   const hasWeeklyHours = weeklyData.some((day) => day.hours > 0);
   const hasWeeklyCheckIns = weeklyData.some((day) => day.checkIns > 0);
+  const usingMockWeeklyData = isDemoCompany || !hasWeeklyHours;
+  const usingMockCheckIns = isDemoCompany || !hasWeeklyCheckIns;
+  const weeklyChartData = usingMockWeeklyData ? mockWeeklyData : weeklyData;
+  const weeklyCheckInChartData = usingMockCheckIns ? mockWeeklyData : weeklyData;
+  const shouldUseMockStats =
+    isDemoCompany || (stats.activeUsers === 0 && stats.todayCheckIns === 0 && stats.totalHoursWeek === 0);
+  const statsDisplay = shouldUseMockStats ? mockStats : stats;
 
   if (loading || membershipLoading || !companyId) {
     return (
@@ -517,7 +544,7 @@ const AdminView = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Trabajadores activos</p>
-                <p className="text-3xl font-bold mt-1">{stats.activeUsers}</p>
+                <p className="text-3xl font-bold mt-1">{statsDisplay.activeUsers}</p>
               </div>
               <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
                 <Users className="w-6 h-6 text-primary" />
@@ -529,7 +556,7 @@ const AdminView = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Fichajes de hoy</p>
-                <p className="text-3xl font-bold mt-1">{stats.todayCheckIns}</p>
+                <p className="text-3xl font-bold mt-1">{statsDisplay.todayCheckIns}</p>
               </div>
               <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
                 <Calendar className="w-6 h-6 text-primary" />
@@ -541,7 +568,7 @@ const AdminView = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Incidencias pendientes</p>
-                <p className="text-3xl font-bold mt-1">{stats.pendingIncidents}</p>
+                <p className="text-3xl font-bold mt-1">{statsDisplay.pendingIncidents}</p>
                 <Button
                   variant="link"
                   className="px-0 text-sm text-primary"
@@ -556,7 +583,6 @@ const AdminView = () => {
             </div>
           </Card>
         </div>
-
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Hours Chart */}
@@ -565,35 +591,28 @@ const AdminView = () => {
               <BarChart3 className="w-5 h-5 text-primary" />
               Horas trabajadas - Última semana
             </h2>
-            {hasWeeklyHours ? (
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={weeklyData}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: "hsl(var(--muted-foreground))" }}
-                  />
-                  <YAxis tick={{ fill: "hsl(var(--muted-foreground))" }} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                    }}
-                  />
-                  <Bar
-                    dataKey="hours"
-                    fill="hsl(var(--primary))"
-                    radius={[8, 8, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-[250px] flex flex-col items-center justify-center text-muted-foreground text-sm">
-                <p>Sin datos registrados para esta semana.</p>
-                <p>Cuando tus empleados registren horas las verás aquí.</p>
-              </div>
-            )}
+            <ResponsiveContainer width="100%" height={250}>
+              <BarChart data={weeklyChartData}>
+                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fill: "hsl(var(--muted-foreground))" }}
+                />
+                <YAxis tick={{ fill: "hsl(var(--muted-foreground))" }} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "8px",
+                  }}
+                />
+                <Bar
+                  dataKey="hours"
+                  fill="hsl(var(--primary))"
+                  radius={[8, 8, 0, 0]}
+                />
+              </BarChart>
+            </ResponsiveContainer>
           </Card>
 
           {/* Check-ins Chart */}
@@ -602,37 +621,30 @@ const AdminView = () => {
               <TrendingUp className="w-5 h-5 text-primary" />
               Fichajes - Última semana
             </h2>
-            {hasWeeklyCheckIns ? (
-              <ResponsiveContainer width="100%" height={250}>
-                <LineChart data={weeklyData}>
-                  <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fill: "hsl(var(--muted-foreground))" }}
-                  />
-                  <YAxis tick={{ fill: "hsl(var(--muted-foreground))" }} />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="checkIns"
-                    stroke="hsl(var(--primary))"
-                    strokeWidth={2}
-                    dot={{ fill: "hsl(var(--primary))" }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-[250px] flex flex-col items-center justify-center text-muted-foreground text-sm">
-                <p>Aún no hay fichajes esta semana.</p>
-                <p>Cuando existan registros los verás en esta gráfica.</p>
-              </div>
-            )}
+            <ResponsiveContainer width="100%" height={250}>
+              <LineChart data={weeklyCheckInChartData}>
+                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fill: "hsl(var(--muted-foreground))" }}
+                />
+                <YAxis tick={{ fill: "hsl(var(--muted-foreground))" }} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: "hsl(var(--card))",
+                    border: "1px solid hsl(var(--border))",
+                    borderRadius: "8px",
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="checkIns"
+                  stroke="hsl(var(--primary))"
+                  strokeWidth={2}
+                  dot={{ fill: "hsl(var(--primary))" }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
           </Card>
         </div>
 
@@ -685,25 +697,25 @@ const AdminView = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center p-4 rounded-xl bg-primary/5">
               <p className="text-2xl font-bold text-primary">
-                {stats.totalHoursWeek.toFixed(1)}h
+                {statsDisplay.totalHoursWeek.toFixed(1)}h
               </p>
               <p className="text-sm text-muted-foreground mt-1">Horas totales</p>
             </div>
             <div className="text-center p-4 rounded-xl bg-primary/5">
               <p className="text-2xl font-bold text-primary">
-                {weeklyData.reduce((sum, day) => sum + day.checkIns, 0)}
+                {weeklyCheckInChartData.reduce((sum, day) => sum + day.checkIns, 0)}
               </p>
               <p className="text-sm text-muted-foreground mt-1">Fichajes</p>
             </div>
             <div className="text-center p-4 rounded-xl bg-primary/5">
               <p className="text-2xl font-bold text-primary">
-                {stats.activeUsers}
+                {statsDisplay.activeUsers}
               </p>
               <p className="text-sm text-muted-foreground mt-1">Activos ahora</p>
             </div>
             <div className="text-center p-4 rounded-xl bg-amber-500/10">
               <p className="text-2xl font-bold text-amber-600">
-                {stats.pendingIncidents}
+                {statsDisplay.pendingIncidents}
               </p>
               <p className="text-sm text-muted-foreground mt-1">Incidencias</p>
             </div>

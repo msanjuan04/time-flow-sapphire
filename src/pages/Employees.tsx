@@ -47,6 +47,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { getCompanyPlanDefinition } from "@/config/companyPlans";
+import { DEMO_COMPANY_IDS, DEMO_SHOWCASE_HEADCOUNT } from "@/config/demo";
 import { FunctionsHttpError } from "@supabase/functions-js";
 import ScheduleHoursDialog from "@/components/ScheduleHoursDialog";
 
@@ -160,6 +161,11 @@ const Employees = () => {
   const planUsagePercent = planLimit ? Math.min((companyHeadcount / planLimit) * 100, 100) : 0;
   const planLimitReached = planLimit !== null && remainingSlots === 0;
   const inviteDisabled = planLimit !== null && planLimitReached && !isSuperadmin;
+  const isDemoCompany = companyId ? DEMO_COMPANY_IDS.includes(companyId) : false;
+  const displayHeadcount = isDemoCompany ? DEMO_SHOWCASE_HEADCOUNT : companyHeadcount;
+  const displayRemainingSlots = planLimit === null ? null : Math.max(planLimit - displayHeadcount, 0);
+  const displayPlanUsagePercent = planLimit ? Math.min((displayHeadcount / planLimit) * 100, 100) : 0;
+  const displayPlanLimitReached = planLimit !== null && displayRemainingSlots === 0;
 
   // Ficha de empleado
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -878,7 +884,7 @@ const getFunctionErrorMessage = async (error: unknown) => {
             <div>
               <h1 className="text-2xl font-bold">Gestión de Empleados</h1>
               <p className="text-sm text-muted-foreground">
-                {companyHeadcount} empleados en total
+                {displayHeadcount} empleados en total
               </p>
             </div>
           </div>
@@ -905,7 +911,7 @@ const getFunctionErrorMessage = async (error: unknown) => {
                   <div>
                     <p className="text-sm text-muted-foreground">Empleados activos</p>
                     <p className="text-3xl font-semibold">
-                      {companyHeadcount}
+                      {displayHeadcount}
                       {planLimit !== null && (
                         <span className="text-base font-normal text-muted-foreground">
                           {" "}
@@ -916,7 +922,7 @@ const getFunctionErrorMessage = async (error: unknown) => {
                   </div>
                   {planLimit !== null && (
                     <p className="text-sm text-muted-foreground text-right">
-                      Restantes: <span className="font-semibold">{remainingSlots}</span>
+                      Restantes: <span className="font-semibold">{displayRemainingSlots}</span>
                     </p>
                   )}
                 </div>
@@ -925,7 +931,7 @@ const getFunctionErrorMessage = async (error: unknown) => {
                     <div className="h-2 rounded-full bg-muted overflow-hidden">
                       <div
                         className="h-full bg-primary transition-all duration-300"
-                        style={{ width: `${planUsagePercent}%` }}
+                        style={{ width: `${displayPlanUsagePercent}%` }}
                       />
                     </div>
                   </div>
@@ -939,14 +945,14 @@ const getFunctionErrorMessage = async (error: unknown) => {
             {planLimit !== null && (
               <div
                 className={`rounded-2xl border px-4 py-3 text-sm ${
-                  planLimitReached
+                  displayPlanLimitReached
                     ? "border-destructive/50 bg-destructive/5 text-destructive"
                     : "border-primary/30 bg-primary/5 text-primary"
                 }`}
               >
-                {planLimitReached
+                {displayPlanLimitReached
                   ? "Has alcanzado el máximo de empleados de tu plan. Contacta con soporte o amplía tu plan para añadir más personas."
-                  : `Puedes invitar a ${remainingSlots} empleado${remainingSlots === 1 ? "" : "s"} más dentro del plan ${planInfo.label}.`}
+                  : `Puedes invitar a ${displayRemainingSlots} empleado${displayRemainingSlots === 1 ? "" : "s"} más dentro del plan ${planInfo.label}.`}
               </div>
             )}
           </Card>
@@ -1321,7 +1327,7 @@ const getFunctionErrorMessage = async (error: unknown) => {
           open={inviteDialogOpen}
           onOpenChange={setInviteDialogOpen}
           onSuccess={handleInviteSuccess}
-          slotsAvailable={planLimit === null ? null : remainingSlots}
+          slotsAvailable={planLimit === null ? null : displayRemainingSlots}
           planLimit={planLimit}
         />
       )}

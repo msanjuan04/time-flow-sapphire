@@ -1,0 +1,4 @@
+export const DEMO_COMPANY_IDS = ["669f0726-bf30-4275-84db-d76324d590f3"];
+
+export const DEMO_SHOWCASE_HEADCOUNT = 34;
+

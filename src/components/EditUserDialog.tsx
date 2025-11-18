@@ -124,29 +124,28 @@ const EditUserDialog = ({ open, onOpenChange, employee, onSuccess }: EditUserDia
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!companyId) {
+      toast.error("No encontramos tu empresa para actualizar el usuario");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // Update profile
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({
+      const { error } = await supabase.functions.invoke("update-employee", {
+        body: {
+          company_id: companyId,
+          user_id: employee.id,
           full_name: fullName.trim(),
+          role,
           center_id: centerId || null,
           team_id: teamId || null,
-        })
-        .eq("id", employee.id);
+        },
+      });
 
-      if (profileError) throw profileError;
-
-      // Update membership role
-      const { error: membershipError } = await supabase
-        .from("memberships")
-        .update({ role: role as "owner" | "manager" | "worker" })
-        .eq("user_id", employee.id)
-        .eq("company_id", companyId);
-
-      if (membershipError) throw membershipError;
+      if (error) {
+        throw new Error(error.message || "Error al actualizar usuario");
+      }
 
       toast.success("Usuario actualizado correctamente");
       onSuccess();

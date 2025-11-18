@@ -37,6 +37,7 @@ FUNCTIONS=(
   "admin-stats"
   "admin-stop-impersonate"
   "admin-transfer-ownership"
+  "update-employee"
 )
 
 echo "📦 Funciones a desplegar: ${#FUNCTIONS[@]}"

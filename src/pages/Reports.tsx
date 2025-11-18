@@ -426,9 +426,11 @@ const Reports = () => {
       zoomControl: true,
     });
 
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "&copy; OpenStreetMap contributors",
+    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png", {
+      attribution:
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
       maxZoom: 19,
+      crossOrigin: true,
     }).addTo(mapInstance);
 
     leafletMapRef.current = mapInstance;
@@ -705,6 +707,7 @@ const Reports = () => {
   const buildPrintableClone = () => {
     if (!reportRef.current) return null;
     const clone = reportRef.current.cloneNode(true) as HTMLElement;
+    clone.classList.add("printable-report");
     const selectedSet = new Set(selectedPdfSections);
     clone.querySelectorAll<HTMLElement>("[data-report-section]").forEach((section) => {
       const sectionId = section.getAttribute("data-report-section");
@@ -754,7 +757,7 @@ const Reports = () => {
       margin: 10,
       filename: "informe-gtiq.pdf",
       image: { type: "jpeg", quality: 0.98 },
-      html2canvas: { scale: 2 },
+      html2canvas: { scale: 2, useCORS: true },
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     };
 
@@ -1106,9 +1109,9 @@ const Reports = () => {
                 </Select>
               </div>
             </div>
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr),320px]">
-              <div className="rounded-xl border bg-muted/30 overflow-hidden min-h-[360px] relative">
-                <div ref={mapContainerRef} className="w-full h-[360px]" />
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1.75fr),minmax(240px,320px)]">
+              <div className="rounded-xl border bg-muted/30 overflow-hidden relative min-h-[520px] lg:min-h-[620px]">
+                <div ref={mapContainerRef} className="absolute inset-0" />
                 {mapLoading && (
                   <div className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground bg-background/80 backdrop-blur-sm">
                     Cargando ubicaciones...
@@ -1392,7 +1395,7 @@ const Reports = () => {
       </div>
     </div>
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-full max-w-5xl lg:max-w-[90vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Vista previa del informe</DialogTitle>
             <DialogDescription>Revisa el contenido antes de descargar el PDF.</DialogDescription>
