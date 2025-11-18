@@ -109,6 +109,21 @@ interface SessionLike {
   };
 }
 
+interface EmployeesReportData {
+  startDate: string;
+  endDate: string;
+  employees: EmployeeStats[];
+  sessions: SessionLike[];
+  centers: Center[];
+  filters: {
+    center: string;
+    employee: string;
+  };
+  clockEvents?: ClockInLocation[];
+  geoAddressMap?: Record<string, string>;
+  selectedSections?: string[];
+}
+
 const buildSessionsFromEvents = (events: ClockInLocation[]) => {
   if (!events || events.length === 0) return [];
 
@@ -237,6 +252,589 @@ const getEventColor = (type: string) => {
       return "#3b82f6";
   }
 };
+
+const escapeHtml = (value: string) => {
+  if (!value) return "";
+  return value
+    .toString()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+};
+
+const formatReportDate = (value: string) => {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleDateString("es-ES", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  });
+};
+
+const formatCoordinate = (latitude: number, longitude: number) => {
+  const lat = Number.isFinite(latitude) ? latitude.toFixed(4) : "-";
+  const lon = Number.isFinite(longitude) ? longitude.toFixed(4) : "-";
+  return `${lat}, ${lon}`;
+};
+
+const GEO_KEY_PRECISION = 4;
+
+const makeGeoKey = (latitude: number, longitude: number) => {
+  return `${latitude.toFixed(GEO_KEY_PRECISION)},${longitude.toFixed(GEO_KEY_PRECISION)}`;
+};
+
+const parseGeoKey = (key: string) => {
+  const [latStr, lngStr] = key.split(",");
+  const lat = Number(latStr);
+  const lng = Number(lngStr);
+  return { lat, lng };
+};
+
+const labelFromGeoKey = (key: string, geoAddressMap?: Record<string, string>) => {
+  if (geoAddressMap && geoAddressMap[key]) {
+    return geoAddressMap[key];
+  }
+  const { lat, lng } = parseGeoKey(key);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return key;
+  }
+  return formatCoordinate(lat, lng);
+};
+
+const buildAddressLabel = (
+  address:
+    | Record<string, string | null | undefined>
+    | null
+    | undefined,
+  fallback: string
+) => {
+  if (!address) return fallback;
+  const streetSource =
+    address.road ||
+    address.street ||
+    address.residential ||
+    address.path ||
+    address.pedestrian;
+  const street = [streetSource, address.house_number]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const locality =
+    address.city ||
+    address.town ||
+    address.village ||
+    address.hamlet ||
+    address.suburb ||
+    address.neighbourhood ||
+    address.municipality ||
+    address.county;
+  const region = address.state || address.province || address.region;
+  const parts: string[] = [];
+  if (street) parts.push(street);
+  if (locality) parts.push(locality);
+  const label = parts.join(", ");
+  if (label && region) {
+    return `${label} (${region})`;
+  }
+  return label || fallback;
+};
+
+const buildEmployeesReportHtml = (reportData: EmployeesReportData) => {
+  const {
+    startDate,
+    endDate,
+    employees,
+    sessions,
+    centers,
+    filters,
+    clockEvents = [],
+    geoAddressMap = {},
+    selectedSections = ["context", "summary", "table"],
+  } = reportData;
+
+  const wants = (section: string) => selectedSections.includes(section);
+  const includeContext = wants("context");
+  const includeSummary = wants("summary");
+  const includeMap = wants("map");
+  const includeCharts = wants("charts");
+  // Mantener siempre la tabla como parte del informe para garantizar la legibilidad.
+  const includeTable = true;
+
+  const docTitle = "Informe de fichajes de trabajadores";
+  const dateRangeLabel = `${formatReportDate(startDate)} – ${formatReportDate(endDate)}`;
+  const totalEmployees = employees.length;
+  const totalHours = employees.reduce((sum, emp) => sum + emp.total_hours, 0);
+  const totalIncidents = employees.reduce((sum, emp) => sum + emp.incidents, 0);
+  const avgPunctuality =
+    totalEmployees > 0
+      ? employees.reduce((sum, emp) => sum + emp.punctuality_score, 0) / totalEmployees
+      : 0;
+
+  const formatHours = (hours: number) =>
+    hours.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const centerMap = new Map<string, string>();
+  centers.forEach((center) => {
+    centerMap.set(center.id, center.name);
+  });
+
+  const resolveCenterLabel = (centerId?: string | null) => {
+    if (!centerId) return "Sin centro registrado";
+    return centerMap.get(centerId) || "Centro sin nombre";
+  };
+
+  type SessionSummary = {
+    count: number;
+    locationCounts: Record<string, number>;
+  };
+
+  const sessionSummary = new Map<string, SessionSummary>();
+  const globalLocations = new Map<string, number>();
+  const geoEvents = (clockEvents || []).filter(
+    (event) => typeof event.latitude === "number" && typeof event.longitude === "number"
+  );
+  const geoLocationTotals = new Map<string, number>();
+  const employeeGeoLocations = new Map<string, Map<string, number>>();
+
+  sessions.forEach((session) => {
+    const location = resolveCenterLabel(session.profiles?.center_id ?? null);
+    globalLocations.set(location, (globalLocations.get(location) ?? 0) + 1);
+    const summary = sessionSummary.get(session.user_id) ?? {
+      count: 0,
+      locationCounts: {},
+    };
+    summary.count += 1;
+    summary.locationCounts[location] = (summary.locationCounts[location] ?? 0) + 1;
+    sessionSummary.set(session.user_id, summary);
+  });
+
+  geoEvents.forEach((event) => {
+    const latitude = Number(event.latitude);
+    const longitude = Number(event.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return;
+    const geoKey = makeGeoKey(latitude, longitude);
+    geoLocationTotals.set(geoKey, (geoLocationTotals.get(geoKey) ?? 0) + 1);
+    const userMap = employeeGeoLocations.get(event.user_id) ?? new Map<string, number>();
+    userMap.set(geoKey, (userMap.get(geoKey) ?? 0) + 1);
+    employeeGeoLocations.set(event.user_id, userMap);
+  });
+
+  const sortedEmployees = [...employees].sort((a, b) => b.total_hours - a.total_hours);
+
+  const employeeRows =
+    sortedEmployees
+      .map((stat) => {
+        const summary = sessionSummary.get(stat.user_id);
+        const locationEntries = summary
+          ? Object.entries(summary.locationCounts).sort((a, b) => b[1] - a[1]).slice(0, 3)
+          : [];
+        const geoEntry = employeeGeoLocations.get(stat.user_id);
+        const geoEntriesRaw = geoEntry
+          ? Array.from(geoEntry.entries())
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 3)
+          : [];
+        const geoEntries = geoEntriesRaw.map(([key, count]) => ({
+          key,
+          count,
+          label: labelFromGeoKey(key, geoAddressMap),
+        }));
+
+        const centerSection = locationEntries.length
+          ? `<div class="location-group">
+              <p class="location-label">Centros</p>
+              <ul class="location-list">
+                ${locationEntries
+                  .map(
+                    ([location, count]) =>
+                      `<li><span>${escapeHtml(location)}</span><strong>${count} fichajes</strong></li>`
+                  )
+                  .join("")}
+              </ul>
+            </div>`
+          : "";
+
+        const geoSection = geoEntries.length
+          ? `<div class="location-group">
+              <p class="location-label">Coordenadas</p>
+              <ul class="location-list">
+                ${geoEntries
+                  .map(
+                    ({ key, label, count }) =>
+                      `<li><span>${escapeHtml(label)}</span><strong>${count} fichajes</strong></li>`
+                  )
+                  .join("")}
+              </ul>
+            </div>`
+          : "";
+
+        const locationsHtml =
+          centerSection || geoSection
+            ? `${centerSection}${geoSection}`
+            : `<p class="muted">Sin ubicaciones registradas</p>`;
+
+        const locationDetails = locationEntries.length
+          ? locationEntries.map(([location, count]) => `${count} en ${location}`).join(", ")
+          : "";
+        const geoDetails = geoEntries.length
+          ? geoEntries.map(({ label, count }) => `${count} en ${label}`).join(", ")
+          : "";
+        const detailParts: string[] = [];
+        if (summary) {
+          detailParts.push(
+            `${summary.count} fichajes – ${locationDetails || "ubicaciones sin registrar"}`
+          );
+        }
+        if (geoDetails) {
+          detailParts.push(`Geo: ${geoDetails}`);
+        }
+        const detailsText = detailParts.length ? detailParts.join(" | ") : "Sin fichajes detallados";
+
+        const workerName = stat.full_name || stat.email || "Empleado";
+        return `<tr>
+          <td>${escapeHtml(workerName)}</td>
+          <td>${stat.email ? escapeHtml(stat.email) : "—"}</td>
+          <td>${formatHours(stat.total_hours)} h</td>
+          <td>${locationsHtml}</td>
+          <td>${escapeHtml(detailsText)}</td>
+        </tr>`;
+      })
+      .join("") ||
+    `<tr><td colspan="5" class="muted">No hay datos disponibles para este período.</td></tr>`;
+
+  const summarySection = includeSummary
+    ? `<section class="report-section">
+        <h2>Resumen general</h2>
+        <div class="summary-grid">
+          <div class="summary-card">
+            <p class="summary-label">Trabajadores incluidos</p>
+            <p class="summary-value">${totalEmployees}</p>
+          </div>
+          <div class="summary-card">
+            <p class="summary-label">Horas totales registradas</p>
+            <p class="summary-value">${formatHours(totalHours)} h</p>
+          </div>
+          <div class="summary-card">
+            <p class="summary-label">Incidencias registradas</p>
+            <p class="summary-value">${totalIncidents}</p>
+          </div>
+          <div class="summary-card">
+            <p class="summary-label">Puntualidad promedio</p>
+            <p class="summary-value">${avgPunctuality.toFixed(1)}%</p>
+          </div>
+        </div>
+      </section>`
+    : "";
+
+  const contextSection = includeContext
+    ? `<section class="report-section">
+        <h2>Contexto del informe</h2>
+        <div class="context-grid">
+          <p><strong>Período:</strong> ${escapeHtml(dateRangeLabel)}</p>
+          <p><strong>Centro:</strong> ${escapeHtml(filters.center)}</p>
+          <p><strong>Empleado:</strong> ${
+            filters.employee ? escapeHtml(filters.employee) : "Todos los empleados"
+          }</p>
+        </div>
+      </section>`
+    : "";
+
+  const topLocations = Array.from(globalLocations.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+  const topGeoLocations = Array.from(geoLocationTotals.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([key, count]) => ({
+      key,
+      count,
+      label: labelFromGeoKey(key, geoAddressMap),
+    }));
+
+  const mapSection = includeMap
+    ? `<section class="report-section">
+        <h2>Ubicaciones principales</h2>
+        <div class="locations-grid">
+          <div>
+            <h3>Centros</h3>
+            ${
+              topLocations.length
+                ? `<ul class="locations-list">
+                ${topLocations
+                  .map(
+                    ([location, count]) =>
+                      `<li><span>${escapeHtml(location)}</span><strong>${count} fichajes</strong></li>`
+                  )
+                  .join("")}
+              </ul>`
+                : `<p class="muted">No hay ubicaciones registradas en el período seleccionado.</p>`
+            }
+          </div>
+          <div>
+            <h3>Coordenadas geolocalizadas</h3>
+            ${
+              topGeoLocations.length
+                ? `<ul class="locations-list">
+                ${topGeoLocations
+                  .map(
+                    ({ key, label, count }) =>
+                      `<li><span>${escapeHtml(label)}</span><strong>${count} fichajes</strong></li>`
+                  )
+                  .join("")}
+              </ul>`
+                : `<p class="muted">No hay fichajes con ubicación geográfica.</p>`
+            }
+          </div>
+        </div>
+      </section>`
+    : "";
+
+  const topByHours = sortedEmployees.slice(0, 5);
+  const topByPunctuality = [...employees]
+    .sort((a, b) => b.punctuality_score - a.punctuality_score)
+    .slice(0, 5);
+
+  const chartsSection = includeCharts
+    ? `<section class="report-section">
+        <h2>Ranking de rendimiento</h2>
+        <div class="rankings-grid">
+          <div>
+            <h3>Más horas registradas</h3>
+            <ol>
+              ${
+                topByHours.length
+                  ? topByHours
+                      .map(
+                        (stat) =>
+                          `<li><span>${escapeHtml(stat.full_name || stat.email || "Empleado")}</span><strong>${formatHours(
+                            stat.total_hours
+                          )} h</strong></li>`
+                      )
+                      .join("")
+                  : "<li>Sin datos disponibles</li>"
+              }
+            </ol>
+          </div>
+          <div>
+            <h3>Mejor puntualidad</h3>
+            <ol>
+              ${
+                topByPunctuality.length
+                  ? topByPunctuality
+                      .map(
+                        (stat) =>
+                          `<li><span>${escapeHtml(stat.full_name || stat.email || "Empleado")}</span><strong>${stat.punctuality_score.toFixed(
+                            1
+                          )}%</strong></li>`
+                      )
+                      .join("")
+                  : "<li>Sin datos disponibles</li>"
+              }
+            </ol>
+          </div>
+        </div>
+      </section>`
+    : "";
+
+  const tableSection = includeTable
+    ? `<section class="report-section">
+        <h2>Detalle por trabajador</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Trabajador</th>
+              <th>Email</th>
+              <th>Horas totales</th>
+              <th>Ubicaciones</th>
+              <th>Detalles</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${employeeRows}
+          </tbody>
+        </table>
+      </section>`
+    : "";
+
+  return `<!DOCTYPE html>
+  <html lang="es">
+    <head>
+      <meta charset="UTF-8" />
+      <title>${escapeHtml(docTitle)}</title>
+      <style>
+        * {
+          box-sizing: border-box;
+        }
+        body {
+          font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+          margin: 0;
+          padding: 0;
+          background: #f8fafc;
+          color: #0f172a;
+        }
+        .report-container {
+          max-width: 900px;
+          margin: 0 auto;
+          padding: 32px;
+          background: white;
+        }
+        header {
+          text-align: center;
+          margin-bottom: 32px;
+        }
+        h1 {
+          margin: 0;
+          font-size: 28px;
+        }
+        h2 {
+          font-size: 18px;
+          margin-bottom: 12px;
+        }
+        h3 {
+          font-size: 15px;
+          margin-bottom: 8px;
+        }
+        .report-date {
+          margin-top: 8px;
+          color: #475569;
+        }
+        .report-section {
+          margin-bottom: 28px;
+        }
+        .summary-grid,
+        .rankings-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 16px;
+        }
+        .locations-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          gap: 16px;
+        }
+        .summary-card {
+          border: 1px solid #e2e8f0;
+          border-radius: 12px;
+          padding: 16px;
+          background: #f8fafc;
+        }
+        .location-group {
+          margin-bottom: 10px;
+        }
+        .location-label {
+          font-size: 11px;
+          text-transform: uppercase;
+          letter-spacing: 0.05em;
+          color: #64748b;
+          margin-bottom: 4px;
+        }
+        .location-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+        }
+        .location-list li {
+          display: flex;
+          justify-content: space-between;
+          font-size: 12px;
+          border-bottom: 1px dashed #e2e8f0;
+          padding: 4px 0;
+          gap: 12px;
+        }
+        .location-list li strong {
+          color: #0ea5e9;
+          font-weight: 600;
+        }
+        .summary-label {
+          text-transform: uppercase;
+          font-size: 11px;
+          letter-spacing: 0.05em;
+          color: #64748b;
+          margin-bottom: 6px;
+        }
+        .summary-value {
+          font-size: 20px;
+          font-weight: 600;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 12px;
+        }
+        th {
+          text-align: left;
+          font-size: 12px;
+          letter-spacing: 0.04em;
+          text-transform: uppercase;
+          color: #475569;
+          border-bottom: 1px solid #cbd5f5;
+          padding: 10px 8px;
+          background: #f1f5f9;
+        }
+        td {
+          padding: 12px 8px;
+          border-bottom: 1px solid #e2e8f0;
+          font-size: 13px;
+        }
+        .muted {
+          color: #94a3b8;
+          text-align: center;
+        }
+        .locations-list {
+          list-style: none;
+          padding: 0;
+          margin: 0;
+        }
+        .locations-list li {
+          display: flex;
+          justify-content: space-between;
+          padding: 10px 0;
+          border-bottom: 1px solid #e2e8f0;
+          font-size: 14px;
+        }
+        .locations-list li span {
+          color: #0f172a;
+        }
+        .locations-list li strong {
+          color: #0ea5e9;
+        }
+        .rankings-grid ol {
+          padding-left: 18px;
+          margin: 0;
+        }
+        .rankings-grid li {
+          display: flex;
+          justify-content: space-between;
+          padding: 6px 0;
+          border-bottom: 1px solid #e2e8f0;
+          font-size: 13px;
+        }
+        .context-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 8px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="report-container">
+        <header>
+          <h1>${escapeHtml(docTitle)}</h1>
+          <p class="report-date">${escapeHtml(dateRangeLabel)}</p>
+        </header>
+        ${contextSection}
+        ${summarySection}
+        ${mapSection}
+        ${chartsSection}
+        ${tableSection}
+      </div>
+    </body>
+  </html>`;
+};
 const Reports = () => {
   const { user } = useAuth();
   const { companyId, membership, loading: membershipLoading } = useMembership();
@@ -246,7 +844,8 @@ const Reports = () => {
   const [employeeStats, setEmployeeStats] = useState<EmployeeStats[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [sessionsRaw, setSessionsRaw] = useState<any[]>([]);
+  const [sessionsRaw, setSessionsRaw] = useState<SessionLike[]>([]);
+  const [geoAddressCache, setGeoAddressCache] = useState<Record<string, string>>({});
   const reportRef = useRef<HTMLDivElement | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
@@ -275,6 +874,7 @@ const Reports = () => {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<L.Map | null>(null);
   const leafletMarkersRef = useRef<L.Marker[]>([]);
+  const pendingGeoLookups = useRef<Set<string>>(new Set());
   const [mapEvents, setMapEvents] = useState<ClockInLocation[]>([]);
   const [mapLoading, setMapLoading] = useState(false);
   const [selectedWeekday, setSelectedWeekday] = useState<string>("all");
@@ -296,6 +896,115 @@ const Reports = () => {
       ),
     [filteredMapEvents]
   );
+  const topGeoLocations = useMemo(() => {
+    const counts = new Map<
+      string,
+      { count: number; latitude: number; longitude: number }
+    >();
+    filteredMapEvents.forEach((event) => {
+      if (typeof event.latitude !== "number" || typeof event.longitude !== "number") return;
+      const key = makeGeoKey(event.latitude, event.longitude);
+      if (!counts.has(key)) {
+        counts.set(key, {
+          count: 0,
+          latitude: event.latitude,
+          longitude: event.longitude,
+        });
+      }
+      counts.get(key)!.count += 1;
+    });
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1].count - a[1].count)
+      .slice(0, 6)
+      .map(([key, value]) => ({
+        key,
+        count: value.count,
+        label: geoAddressCache[key] ?? formatCoordinate(value.latitude, value.longitude),
+      }));
+  }, [filteredMapEvents, geoAddressCache]);
+
+  const getLocationLabel = useCallback(
+    (latitude?: number | null, longitude?: number | null) => {
+      if (typeof latitude !== "number" || typeof longitude !== "number") {
+        return "Ubicación no disponible";
+      }
+      const key = makeGeoKey(latitude, longitude);
+      return geoAddressCache[key] || formatCoordinate(latitude, longitude);
+    },
+    [geoAddressCache]
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const uniqueKeys = Array.from(
+      new Set(
+        filteredMapEvents
+          .map((event) => {
+            if (typeof event.latitude !== "number" || typeof event.longitude !== "number") {
+              return null;
+            }
+            return makeGeoKey(event.latitude, event.longitude);
+          })
+          .filter((key): key is string => Boolean(key))
+      )
+    );
+
+    const missingKeys = uniqueKeys.filter(
+      (key) => !geoAddressCache[key] && !pendingGeoLookups.current.has(key)
+    );
+    if (missingKeys.length === 0) return;
+
+    let cancelled = false;
+    const batch = missingKeys.slice(0, 6);
+
+    const fetchAddress = async (key: string) => {
+      pendingGeoLookups.current.add(key);
+      const coords = parseGeoKey(key);
+      try {
+        if (!Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) {
+          throw new Error("Invalid coordinates");
+        }
+        const params = new URLSearchParams({
+          lat: coords.lat.toString(),
+          lon: coords.lng.toString(),
+          format: "json",
+        });
+        const response = await fetch(`https://geocode.maps.co/reverse?${params.toString()}`, {
+          headers: {
+            Accept: "application/json",
+          },
+        });
+        if (!response.ok) {
+          throw new Error("Reverse geocoding failed");
+        }
+        const data = await response.json();
+        if (cancelled) return;
+        const fallback = data?.display_name || `Coordenadas ${formatCoordinate(coords.lat, coords.lng)}`;
+        const label = buildAddressLabel(data?.address, fallback);
+        setGeoAddressCache((prev) => ({
+          ...prev,
+          [key]: label || fallback,
+        }));
+      } catch (error) {
+        if (cancelled) return;
+        setGeoAddressCache((prev) => ({
+          ...prev,
+          [key]: `Coordenadas ${formatCoordinate(coords.lat, coords.lng)}`,
+        }));
+      } finally {
+        pendingGeoLookups.current.delete(key);
+      }
+    };
+
+    batch.forEach((key) => {
+      fetchAddress(key);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [filteredMapEvents, geoAddressCache]);
 
   const dismissScheduleReminder = () => {
     setScheduleReminderDismissed(true);
@@ -704,54 +1413,53 @@ const Reports = () => {
     toast.success("Reporte exportado correctamente");
   };
 
-  const buildPrintableClone = () => {
-    if (!reportRef.current) return null;
-    const clone = reportRef.current.cloneNode(true) as HTMLElement;
-    clone.classList.add("printable-report");
-    const selectedSet = new Set(selectedPdfSections);
-    clone.querySelectorAll<HTMLElement>("[data-report-section]").forEach((section) => {
-      const sectionId = section.getAttribute("data-report-section");
-      if (!sectionId) return;
-      if (!selectedSet.has(sectionId)) {
-        section.remove();
-      }
+  const getReportHtml = () => {
+    const companyEmployees = companyId
+      ? employeeStats.filter((stat) => stat.company_id === companyId)
+      : employeeStats;
+    if (companyEmployees.length === 0) {
+      return null;
+    }
+    const centerLabel =
+      selectedCenter === "all"
+        ? "Todos los centros"
+        : centers.find((center) => center.id === selectedCenter)?.name || "Centro no disponible";
+    const selectedEmp =
+      selectedEmployee === "all"
+        ? null
+        : employees.find((emp) => emp.id === selectedEmployee) || null;
+    const employeeLabel =
+      selectedEmployee === "all"
+        ? "Todos los empleados"
+        : selectedEmp?.full_name || selectedEmp?.email || "Empleado";
+
+    return buildEmployeesReportHtml({
+      startDate,
+      endDate,
+      employees: companyEmployees,
+      sessions: sessionsRaw,
+      centers,
+      filters: {
+        center: centerLabel,
+        employee: employeeLabel,
+      },
+      clockEvents: filteredMapEvents,
+      geoAddressMap: geoAddressCache,
+      selectedSections: selectedPdfSections,
     });
-    const wrapper = document.createElement("div");
-    wrapper.style.position = "fixed";
-    wrapper.style.inset = "0";
-    wrapper.style.zIndex = "-1";
-    wrapper.style.pointerEvents = "none";
-    wrapper.style.opacity = "0";
-    wrapper.style.overflow = "auto";
-    wrapper.style.backgroundColor = getComputedStyle(document.body).backgroundColor || "#ffffff";
-    wrapper.style.padding = "24px";
-
-    const paper = document.createElement("div");
-    paper.style.maxWidth = "210mm";
-    paper.style.margin = "0 auto";
-    paper.style.width = "100%";
-    paper.appendChild(clone);
-    wrapper.appendChild(paper);
-
-    return { wrapper, content: paper };
   };
 
   const handleDownloadPDF = async () => {
-    if (!reportRef.current) {
-      toast.error("No se encontró el contenido del informe para generar el PDF");
-      return;
-    }
     if (selectedPdfSections.length === 0) {
       toast.error("Selecciona al menos una sección antes de descargar el PDF");
       return;
     }
 
-    const printable = buildPrintableClone();
-    if (!printable) {
-      toast.error("No hay contenido disponible para exportar con los filtros seleccionados");
+    const reportHtml = getReportHtml();
+    if (!reportHtml) {
+      toast.error("No hay datos disponibles para generar el informe");
       return;
     }
-    document.body.appendChild(printable.wrapper);
 
     const options = {
       margin: 10,
@@ -762,34 +1470,38 @@ const Reports = () => {
     };
 
     try {
-      await html2pdf().set(options).from(printable.content).save();
+      await html2pdf().set(options).from(reportHtml).save();
       toast.success("Informe generado correctamente");
       setPreviewOpen(false);
     } catch (error) {
       console.error("Error generating PDF:", error);
       toast.error("No pudimos generar el PDF");
-    } finally {
-      printable.wrapper.remove();
     }
   };
 
   const handlePreviewPDF = () => {
-    if (!reportRef.current) {
-      toast.error("No se encontró el contenido del informe.");
-      return;
-    }
     if (selectedPdfSections.length === 0) {
       toast.error("Selecciona al menos una sección para la vista previa");
       return;
     }
-    const printable = buildPrintableClone();
-    if (!printable) {
-      toast.error("No hay contenido disponible para la vista previa");
+    const reportHtml = getReportHtml();
+    if (!reportHtml) {
+      toast.error("No hay datos disponibles para la vista previa");
       return;
     }
-    setPreviewHtml(printable.content.innerHTML);
-    printable.wrapper.remove();
-    setPreviewOpen(true);
+    try {
+      const parser = new DOMParser();
+      const parsed = parser.parseFromString(reportHtml, "text/html");
+      const inlineStyles = Array.from(parsed.head.querySelectorAll("style"))
+        .map((style) => style.outerHTML)
+        .join("");
+      const bodyContent = parsed.body.innerHTML;
+      setPreviewHtml(`${inlineStyles}${bodyContent}`);
+      setPreviewOpen(true);
+    } catch (error) {
+      console.error("Error building preview:", error);
+      toast.error("No pudimos preparar la vista previa");
+    }
   };
 
   // Paquete legal mensual (requiere centro seleccionado y mes completo)
@@ -1149,6 +1861,7 @@ const Reports = () => {
                   ) : (
                     filteredMapEvents.slice(0, 5).map((event) => {
                       const eventDate = new Date(event.event_time);
+                      const locationLabel = getLocationLabel(event.latitude, event.longitude);
                       return (
                         <div
                           key={event.id}
@@ -1174,6 +1887,10 @@ const Reports = () => {
                                   minute: "2-digit",
                                 })}
                               </p>
+                              <p className="text-xs text-muted-foreground flex items-center gap-1 mt-1">
+                                <MapPin className="w-3 h-3" />
+                                <span className="truncate">{locationLabel}</span>
+                              </p>
                             </div>
                           </div>
                           <a
@@ -1193,6 +1910,28 @@ const Reports = () => {
                     <p className="text-xs text-muted-foreground text-right">
                       Mostrando los últimos 5 registros
                     </p>
+                  )}
+                  {topGeoLocations.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Principales ubicaciones
+                      </p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {topGeoLocations.map((location) => (
+                          <div
+                            key={location.key}
+                            className="p-3 border rounded-lg bg-background/30"
+                          >
+                            <p className="text-sm font-medium leading-snug">
+                              {location.label}
+                            </p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {location.count} fichajes
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>

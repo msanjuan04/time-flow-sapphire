@@ -15,6 +15,7 @@ import { BackButton } from "@/components/BackButton";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import type { DayContentProps } from "react-day-picker";
 
 interface WorkSession {
   id: string;
@@ -201,11 +202,48 @@ const WorkerCalendar = () => {
     hasScheduled: (day: Date) => getExpectedHours(day) > 0,
   };
 
-  const modifiersStyles = {
-    hasWork: { backgroundColor: "hsl(var(--primary))", color: "white" },
-    hasAbsence: { backgroundColor: "hsl(var(--destructive))", color: "white" },
-    hasScheduled: { backgroundColor: "hsl(var(--secondary))" },
-  } as const;
+  const dayContent = ({ date: dayDate, activeModifiers }: DayContentProps) => {
+    const indicators: Array<{ key: string; className: string; label: string }> = [];
+    if (activeModifiers.hasAbsence) {
+      indicators.push({
+        key: "absence",
+        className: "calendar-status-dot calendar-status-dot-absence",
+        label: "Ausencia registrada",
+      });
+    }
+    if (activeModifiers.hasWork) {
+      indicators.push({
+        key: "work",
+        className: "calendar-status-dot calendar-status-dot-work",
+        label: "Día trabajado",
+      });
+    }
+    if (activeModifiers.hasScheduled) {
+      indicators.push({
+        key: "scheduled",
+        className: "calendar-status-dot calendar-status-dot-scheduled",
+        label: "Horas programadas",
+      });
+    }
+
+    return (
+      <div className="calendar-day-wrapper">
+        <span className="calendar-day-number">{dayDate.getDate()}</span>
+        {indicators.length > 0 && (
+          <div className="calendar-status-row">
+            {indicators.map((indicator) => (
+              <span
+                key={indicator.key}
+                className={indicator.className}
+                aria-label={indicator.label}
+                title={indicator.label}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (membershipLoading) {
     return (
@@ -229,35 +267,58 @@ const WorkerCalendar = () => {
       </div>
 
       <div className="grid md:grid-cols-2 gap-6">
-        <Card className="p-6">
-          <Calendar
-            mode="single"
-            selected={date}
-            onSelect={handleDateSelect}
-            locale={es}
-            modifiers={modifiers}
-            modifiersStyles={modifiersStyles}
-            className="rounded-md border pointer-events-auto"
-          />
+        <Card className="glass-card border-none shadow-none p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">Calendario mensual</p>
+              <h2 className="text-2xl font-semibold">
+                {format(date ?? new Date(), "MMMM yyyy", { locale: es })}
+              </h2>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">Selecciona un día</p>
+              <p className="text-sm font-medium">{format(date ?? new Date(), "PP", { locale: es })}</p>
+            </div>
+          </div>
+          <div className="rounded-2xl border bg-muted/30 p-2">
+            <Calendar
+              mode="single"
+              selected={date}
+              onSelect={handleDateSelect}
+              locale={es}
+              modifiers={modifiers}
+              components={{ DayContent: dayContent }}
+              className="w-full pointer-events-auto"
+            />
+          </div>
 
-          <div className="mt-4 space-y-2">
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: "hsl(var(--primary))" }} />
-              <span className="text-sm">Día trabajado</span>
+          <div className="pt-2 grid gap-2 sm:grid-cols-3">
+            <div className="calendar-legend-item">
+              <span className="calendar-status-dot calendar-status-dot-work" />
+              <div>
+                <p className="text-sm font-medium">Día trabajado</p>
+                <p className="text-xs text-muted-foreground">Registro de fichajes</p>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: "hsl(var(--destructive))" }} />
-              <span className="text-sm">Ausencia</span>
+            <div className="calendar-legend-item">
+              <span className="calendar-status-dot calendar-status-dot-absence" />
+              <div>
+                <p className="text-sm font-medium">Ausencia</p>
+                <p className="text-xs text-muted-foreground">Vacaciones o bajas</p>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-4 h-4 rounded" style={{ backgroundColor: "hsl(var(--secondary))" }} />
-              <span className="text-sm">Horas programadas</span>
+            <div className="calendar-legend-item">
+              <span className="calendar-status-dot calendar-status-dot-scheduled" />
+              <div>
+                <p className="text-sm font-medium">Horas programadas</p>
+                <p className="text-xs text-muted-foreground">Turnos asignados</p>
+              </div>
             </div>
           </div>
         </Card>
 
         {selectedDateData && date && (
-          <Card className="p-6">
+          <Card className="glass-card p-6 space-y-5">
             <h2 className="text-xl font-bold mb-4">
               {format(date, "d 'de' MMMM 'de' yyyy", { locale: es })}
             </h2>

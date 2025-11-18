@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useMembership } from "@/hooks/useMembership";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -27,11 +27,20 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { BackButton } from "@/components/BackButton";
+import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Employee {
   id: string;
   full_name: string;
   email: string;
+}
+
+interface WorkSession {
+  id: string;
+  clock_in_time: string;
+  clock_out_time: string | null;
+  total_work_duration: string | null;
 }
 
 interface ManagerTimeEvent {
@@ -55,8 +64,15 @@ interface AbsenceRecord {
   status: string;
 }
 
+interface DayOverview {
+  workedHours: number;
+  scheduledHours?: number;
+  absence?: AbsenceRecord;
+}
+
 const ManagerCalendar = () => {
   const { membership, loading: membershipLoading } = useMembership();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [searchParams] = useSearchParams();
@@ -75,6 +91,9 @@ const ManagerCalendar = () => {
   const [editingEvent, setEditingEvent] = useState<ManagerTimeEvent | null>(null);
   const [editEventType, setEditEventType] = useState<string>("clock_in");
   const [editEventTime, setEditEventTime] = useState<string>("");
+  const [quickHours, setQuickHours] = useState("8");
+  const [quickNote, setQuickNote] = useState("Jornada completa");
+  const [teamDayOverview, setTeamDayOverview] = useState<Record<string, DayOverview>>({});
 
   // Schedule hours form
   const [scheduleDate, setScheduleDate] = useState("");
@@ -171,6 +190,43 @@ const ManagerCalendar = () => {
     }
   };
 
+  const persistScheduledHours = async (
+    userId: string,
+    dateStr: string,
+    hours: number,
+    notes?: string
+  ) => {
+    if (!membership) {
+      throw new Error("Compañía no disponible");
+    }
+    const { data: existingSchedule } = await supabase
+      .from("scheduled_hours")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("date", dateStr)
+      .single();
+    if (existingSchedule) {
+      const { error } = await supabase
+        .from("scheduled_hours")
+        .update({
+          expected_hours: hours,
+          notes: notes ?? null,
+        })
+        .eq("id", existingSchedule.id);
+      if (error) throw error;
+      return;
+    }
+    const { error } = await supabase.from("scheduled_hours").insert({
+      user_id: userId,
+      company_id: membership.company_id,
+      date: dateStr,
+      expected_hours: hours,
+      notes: notes ?? null,
+      created_by: user?.id ?? membership.company_id,
+    });
+    if (error) throw error;
+  };
+
   const handleScheduleHours = async () => {
     if (!membership || !selectedEmployee || !scheduleDate) {
       toast.error("Por favor completa todos los campos requeridos");
@@ -178,46 +234,136 @@ const ManagerCalendar = () => {
     }
 
     try {
-      const { data: existingSchedule } = await supabase
-        .from("scheduled_hours")
-        .select("id")
-        .eq("user_id", selectedEmployee)
-        .eq("date", scheduleDate)
-        .single();
-
-      if (existingSchedule) {
-        const { error } = await supabase
-          .from("scheduled_hours")
-          .update({
-            expected_hours: parseFloat(expectedHours),
-            notes: scheduleNotes || null,
-          })
-          .eq("id", existingSchedule.id);
-
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from("scheduled_hours").insert({
-          user_id: selectedEmployee,
-          company_id: membership.company_id,
-          date: scheduleDate,
-          expected_hours: parseFloat(expectedHours),
-          notes: scheduleNotes || null,
-          created_by: membership.company_id, // Use company_id since we don't have user_id in membership
-        });
-
-        if (error) throw error;
-      }
-
+      const hoursValue = Number(expectedHours) || 0;
+      await persistScheduledHours(selectedEmployee, scheduleDate, hoursValue, scheduleNotes || undefined);
       toast.success("Horas programadas correctamente");
       setIsScheduleDialogOpen(false);
       setScheduleDate("");
       setExpectedHours("8");
       setScheduleNotes("");
+      await fetchCalendarData();
+      await fetchTeamDayOverview();
     } catch (error) {
       toast.error("Error al programar horas");
       console.error(error);
     }
   };
+
+  const handleQuickSchedule = async (hours: number, note?: string) => {
+    if (!membership || !selectedEmployee || !date) {
+      toast.error("Selecciona un empleado y una fecha primero");
+      return;
+    }
+    const dateStr = format(date, "yyyy-MM-dd");
+    try {
+      await persistScheduledHours(selectedEmployee, dateStr, hours, note);
+      toast.success("Horario actualizado rápidamente");
+      await fetchCalendarData();
+      await fetchTeamDayOverview();
+    } catch (error) {
+      toast.error("No se pudo aplicar el horario rápido");
+      console.error(error);
+    }
+  };
+
+  const fetchTeamDayOverview = useCallback(async () => {
+    if (!membership || !date) {
+      setTeamDayOverview({});
+      return;
+    }
+    const dateStr = format(date, "yyyy-MM-dd");
+    const start = `${dateStr}T00:00:00`;
+    const end = `${dateStr}T23:59:59`;
+
+    try {
+      const [sessionsRes, scheduledRes, absencesRes] = await Promise.all([
+        supabase
+          .from("work_sessions")
+          .select("user_id, clock_in_time, clock_out_time, total_work_duration")
+          .eq("company_id", membership.company_id)
+          .gte("clock_in_time", start)
+          .lte("clock_in_time", end),
+        supabase
+          .from("scheduled_hours")
+          .select("user_id, expected_hours")
+          .eq("company_id", membership.company_id)
+          .eq("date", dateStr),
+        supabase
+          .from("absences")
+          .select("user_id, start_date, end_date, absence_type, status")
+          .eq("company_id", membership.company_id)
+          .or(`and(start_date.lte.${dateStr},end_date.gte.${dateStr})`),
+      ]);
+
+      if (sessionsRes.error || scheduledRes.error || absencesRes.error) {
+        throw new Error("No fue posible obtener el resumen del día");
+      }
+
+      const summary: Record<string, DayOverview> = {};
+
+      const addWorkedHours = (userId: string, hoursValue: number) => {
+        if (!summary[userId]) {
+          summary[userId] = { workedHours: 0 };
+        }
+        summary[userId].workedHours += hoursValue;
+      };
+
+      const parseDuration = (value?: string | null) => {
+        if (!value) return 0;
+        const parts = value.split(":").map((p) => Number(p));
+        const [h = 0, m = 0, s = 0] = parts;
+        return (
+          (Number.isFinite(h) ? h : 0) +
+          (Number.isFinite(m) ? m / 60 : 0) +
+          (Number.isFinite(s) ? s / 3600 : 0)
+        );
+      };
+
+      (sessionsRes.data as WorkSession[] | null)?.forEach((session) => {
+        const duration =
+          session.total_work_duration && session.total_work_duration !== "00:00:00"
+            ? parseDuration(session.total_work_duration)
+            : (() => {
+                if (!session.clock_in_time) return 0;
+                const startTime = parseISO(session.clock_in_time).getTime();
+                const endTime = session.clock_out_time
+                  ? parseISO(session.clock_out_time).getTime()
+                  : Date.now();
+                if (Number.isNaN(startTime) || Number.isNaN(endTime) || endTime <= startTime) return 0;
+                return (endTime - startTime) / (1000 * 60 * 60);
+              })();
+        if (duration > 0) {
+          addWorkedHours(session.user_id, duration);
+        }
+      });
+
+      (scheduledRes.data as { user_id: string; expected_hours: number }[] | null)?.forEach(
+        (scheduled) => {
+          if (!summary[scheduled.user_id]) {
+            summary[scheduled.user_id] = { workedHours: 0 };
+          }
+          summary[scheduled.user_id].scheduledHours = Number(scheduled.expected_hours ?? 0);
+        }
+      );
+
+      (absencesRes.data as AbsenceRecord[] | null)?.forEach((absence) => {
+        const userId = absence.user_id;
+        if (!summary[userId]) {
+          summary[userId] = { workedHours: 0 };
+        }
+        summary[userId].absence = absence;
+      });
+
+      setTeamDayOverview(summary);
+    } catch (error) {
+      console.error("Error fetching day overview:", error);
+      setTeamDayOverview({});
+    }
+  }, [membership, date]);
+
+  useEffect(() => {
+    fetchTeamDayOverview();
+  }, [fetchTeamDayOverview]);
 
   const handleCreateAbsence = async () => {
     if (!membership || !selectedEmployee || !startDate || !endDate) {
@@ -321,6 +467,27 @@ const ManagerCalendar = () => {
     }
   };
 
+  const openScheduleForEmployee = (employeeId: string) => {
+    setSelectedEmployee(employeeId);
+    if (!date) return;
+    const dateStr = format(date, "yyyy-MM-dd");
+    setScheduleDate(dateStr);
+    setExpectedHours("8");
+    setScheduleNotes("Jornada completa");
+    setIsScheduleDialogOpen(true);
+  };
+
+  const openAbsenceForEmployee = (employeeId: string) => {
+    setSelectedEmployee(employeeId);
+    if (!date) return;
+    const dateStr = format(date, "yyyy-MM-dd");
+    setStartDate(dateStr);
+    setEndDate(dateStr);
+    setAbsenceType("other");
+    setAbsenceReason("Festivo de empresa");
+    setIsAbsenceDialogOpen(true);
+  };
+
   const openEdit = (event: ManagerTimeEvent) => {
     setEditingEvent(event);
     setEditEventType(event.event_type);
@@ -392,6 +559,14 @@ const ManagerCalendar = () => {
       toast.error("No se pudo crear el festivo");
     }
   };
+
+  const filteredEmployeesList = employees.filter((e) => {
+    const q = search.toLowerCase();
+    const name = (e.full_name || e.email || "").toLowerCase();
+    return name.includes(q);
+  });
+  const visibleStatusEmployees = filteredEmployeesList.slice(0, 8);
+  const dateLabelForStatus = date ? format(date, "PP", { locale: es }) : "Fecha no seleccionada";
 
   if (membershipLoading) {
     return (
@@ -467,13 +642,7 @@ const ManagerCalendar = () => {
             className="mb-3"
           />
           <div className="max-h-[480px] overflow-auto space-y-1 pr-2">
-            {employees
-              .filter((e) => {
-                const q = search.toLowerCase();
-                const name = (e.full_name || e.email || "").toLowerCase();
-                return name.includes(q);
-              })
-              .map((e) => (
+            {filteredEmployeesList.map((e) => (
                 <Button
                   key={e.id}
                   variant={selectedEmployee === e.id ? "default" : "outline"}
@@ -568,6 +737,47 @@ const ManagerCalendar = () => {
               Marcar festivo de empresa
             </Button>
           </div>
+
+          {selectedEmployee && date && (
+            <div className="rounded-2xl border border-border bg-muted/30 p-4 space-y-3">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="flex flex-col">
+                  <Label>Horas rápidas</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={quickHours}
+                    onChange={(e) => setQuickHours(e.target.value)}
+                    className="w-24"
+                  />
+                </div>
+                <div className="flex-1 flex flex-col">
+                  <Label>Nota</Label>
+                  <Input
+                    placeholder="Ej. Jornada completa"
+                    value={quickNote}
+                    onChange={(e) => setQuickNote(e.target.value)}
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => handleQuickSchedule(8, "8h estándar")}>
+                    Asignar 8h estándar
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => handleQuickSchedule(Number(quickHours) || 8, quickNote)}
+                  >
+                    Configurar jornada completa
+                  </Button>
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Esta acción crea o actualiza las <code>scheduled_hours</code> para el día seleccionado.
+              </p>
+            </div>
+          )}
 
           {/* Calendario + gestión del día */}
           <div className="grid md:grid-cols-2 gap-6">
@@ -702,6 +912,80 @@ const ManagerCalendar = () => {
                     </Button>
                   </div>
                 </>
+              )}
+            </Card>
+            <Card className="space-y-3 border border-border bg-background/70 p-4 rounded-2xl">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-widest text-muted-foreground">Estado por trabajador</p>
+                  <h3 className="text-lg font-semibold">Resumen rápido</h3>
+                </div>
+                <p className="text-xs text-muted-foreground">{dateLabelForStatus}</p>
+              </div>
+
+              {visibleStatusEmployees.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No hay empleados filtrados para este día. Usa el buscador para encontrarlos.
+                </p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {visibleStatusEmployees.map((employee) => {
+                    const overview = teamDayOverview[employee.id];
+                    const scheduled = overview?.scheduledHours ?? 0;
+                    const worked = overview?.workedHours ?? 0;
+                    const chips: Array<{ label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = [];
+                    if (overview?.absence?.status === "approved") {
+                      chips.push({ label: "Ausencia aprobada", variant: "destructive" });
+                    }
+                    if (!overview?.absence) {
+                      if (scheduled > 0 && worked >= scheduled) {
+                        chips.push({ label: "Día completo", variant: "default" });
+                      } else if (scheduled > 0 && worked > 0 && worked < scheduled) {
+                        chips.push({ label: "Faltan horas", variant: "outline" });
+                      } else if (worked > 0) {
+                        chips.push({ label: "Ha fichado", variant: "secondary" });
+                      }
+                    }
+                    if (chips.length === 0) {
+                      chips.push({ label: "Sin actividad", variant: "outline" });
+                    }
+
+                    return (
+                      <div key={employee.id} className="rounded-2xl border border-border/80 bg-muted/30 p-4 space-y-2">
+                        <div className="flex justify-between gap-3">
+                          <div>
+                            <p className="font-semibold">{employee.full_name || employee.email}</p>
+                            <p className="text-xs text-muted-foreground">{employee.email}</p>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <Button size="sm" variant="outline" onClick={() => openScheduleForEmployee(employee.id)}>
+                              Programar
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => openAbsenceForEmployee(employee.id)}>
+                              Ausencia
+                            </Button>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {chips.map((chip) => (
+                            <Badge key={chip.label} variant={chip.variant}>
+                              {chip.label}
+                            </Badge>
+                          ))}
+                        </div>
+                        <div className="text-xs text-muted-foreground flex gap-4">
+                          <span>Programadas {scheduled.toFixed(2)}h</span>
+                          <span>Registradas {worked.toFixed(2)}h</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {filteredEmployeesList.length > visibleStatusEmployees.length && (
+                <p className="text-xs text-muted-foreground text-right">
+                  Mostrando {visibleStatusEmployees.length} de {filteredEmployeesList.length} empleados
+                </p>
               )}
             </Card>
           </div>
