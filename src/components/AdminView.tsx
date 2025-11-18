@@ -596,24 +596,6 @@ const AdminView = () => {
             </div>
           </Card>
 
-          <Card className="glass-card p-6 hover-scale smooth-transition">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Incidencias pendientes</p>
-                <p className="text-3xl font-bold mt-1">{statsDisplay.pendingIncidents}</p>
-                <Button
-                  variant="link"
-                  className="px-0 text-sm text-primary"
-                  onClick={() => navigate("/incidents")}
-                >
-                  Ver incidencias
-                </Button>
-              </div>
-              <div className="w-12 h-12 bg-amber-500/10 rounded-xl flex items-center justify-center">
-                <AlertCircle className="w-6 h-6 text-amber-600" />
-              </div>
-            </div>
-          </Card>
         </div>
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

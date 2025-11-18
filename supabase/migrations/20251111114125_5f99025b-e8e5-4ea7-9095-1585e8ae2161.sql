@@ -3,7 +3,7 @@ CREATE TABLE public.invites (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   company_id UUID NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
   email TEXT NOT NULL,
-  role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'worker')),
+  role TEXT NOT NULL CHECK (role IN ('owner', 'manager', 'worker')),
   center_id UUID REFERENCES public.centers(id) ON DELETE SET NULL,
   team_id UUID REFERENCES public.teams(id) ON DELETE SET NULL,
   status TEXT NOT NULL CHECK (status IN ('pending', 'accepted', 'revoked', 'expired')) DEFAULT 'pending',
@@ -38,7 +38,7 @@ USING (
     SELECT 1 FROM public.memberships
     WHERE memberships.company_id = invites.company_id
       AND memberships.user_id = auth.uid()
-      AND memberships.role IN ('owner', 'admin')
+      AND memberships.role IN ('owner', 'manager')
   )
 );
 
@@ -53,7 +53,7 @@ WITH CHECK (
     SELECT 1 FROM public.memberships
     WHERE memberships.company_id = invites.company_id
       AND memberships.user_id = auth.uid()
-      AND memberships.role IN ('owner', 'admin')
+      AND memberships.role IN ('owner', 'manager')
   )
 );
 
@@ -67,7 +67,7 @@ USING (
     SELECT 1 FROM public.memberships
     WHERE memberships.company_id = invites.company_id
       AND memberships.user_id = auth.uid()
-      AND memberships.role IN ('owner', 'admin')
+      AND memberships.role IN ('owner', 'manager')
   )
 );
 
@@ -88,6 +88,6 @@ USING (
     SELECT 1 FROM public.memberships
     WHERE memberships.company_id = invites.company_id
       AND memberships.user_id = auth.uid()
-      AND memberships.role IN ('owner', 'admin')
+      AND memberships.role IN ('owner', 'manager')
   )
 );

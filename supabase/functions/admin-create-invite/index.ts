@@ -26,7 +26,6 @@ serve(async (req)=>{
       return createErrorResponse("Invalid email format", 400);
     }
     if (![
-      "admin",
       "owner",
       "manager",
       "worker"

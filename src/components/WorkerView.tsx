@@ -58,6 +58,28 @@ const WorkerView = () => {
     return () => clearInterval(timer);
   }, []);
 
+  async function fetchTodaySchedule() {
+    if (!user?.id || !companyId) return;
+    const today = new Date().toISOString().split("T")[0];
+    const { data } = await supabase
+      .from("scheduled_hours")
+      .select("start_time, end_time, expected_hours")
+      .eq("user_id", user.id)
+      .eq("company_id", companyId)
+      .eq("date", today)
+      .maybeSingle();
+
+    if (data) {
+      setTodaySchedule({
+        start_time: data.start_time,
+        end_time: data.end_time,
+        expected_hours: Number(data.expected_hours || 0),
+      });
+    } else {
+      setTodaySchedule(null);
+    }
+  }
+
   const fetchStatus = useCallback(async () => {
     if (!user?.id || !companyId) return;
     const { data: session } = await supabase
@@ -96,29 +118,7 @@ const WorkerView = () => {
       fetchStatus();
       fetchTodaySchedule();
     }
-  }, [user, companyId, fetchStatus, fetchTodaySchedule]);
-
-  const fetchTodaySchedule = useCallback(async () => {
-    if (!user?.id || !companyId) return;
-    const today = new Date().toISOString().split('T')[0];
-    const { data } = await supabase
-      .from('scheduled_hours')
-      .select('start_time, end_time, expected_hours')
-      .eq('user_id', user.id)
-      .eq('company_id', companyId)
-      .eq('date', today)
-      .maybeSingle();
-    
-    if (data) {
-      setTodaySchedule({
-        start_time: data.start_time,
-        end_time: data.end_time,
-        expected_hours: Number(data.expected_hours || 0),
-      });
-    } else {
-      setTodaySchedule(null);
-    }
-  }, [user?.id, companyId]);
+  }, [user, companyId, fetchStatus]);
 
   // Subscribe to scheduled_hours changes in real-time
   useEffect(() => {
@@ -144,7 +144,7 @@ const WorkerView = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, companyId, fetchTodaySchedule]);
+  }, [user?.id, companyId]);
 
   // Request GPS location on mount
   useEffect(() => {

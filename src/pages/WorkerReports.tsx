@@ -27,6 +27,19 @@ interface WorkSession {
   total_work_duration: unknown;
 }
 
+interface ApprovedAbsenceRecord {
+  id: string;
+  date: string;
+  absence_type: string;
+  time_change: string | null;
+  notes: string | null;
+  approved_by: string;
+  approved_at: string;
+  approver?: {
+    full_name: string | null;
+  };
+}
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const HISTORY_ENTRIES = 30;
 
@@ -68,6 +81,7 @@ const WorkerReports = () => {
   const reportRef = useRef<HTMLDivElement | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
+  const [approvedAdjustments, setApprovedAdjustments] = useState<ApprovedAbsenceRecord[]>([]);
 
   const fetchWorkerData = useCallback(async () => {
     if (!user?.id || !companyId) return;
@@ -130,6 +144,26 @@ const WorkerReports = () => {
 
       if (scheduledError) {
         console.error("Error fetching scheduled hours:", scheduledError);
+      }
+
+      let adjustments: ApprovedAbsenceRecord[] = [];
+      try {
+        const { data: adjustmentsData, error: adjustmentsError } = await supabase
+          .from("approved_absences")
+          .select(
+            "id, date, absence_type, time_change, notes, approved_by, approved_at, approver:approved_by(full_name)"
+          )
+          .eq("company_id", companyId)
+          .eq("user_id", user?.id)
+          .gte("date", startDateISO)
+          .lte("date", endDateISO);
+        if (adjustmentsError) {
+          console.error("Error fetching approved adjustments:", adjustmentsError);
+        } else {
+          adjustments = (adjustmentsData as ApprovedAbsenceRecord[]) || [];
+        }
+      } catch (adjustmentsException) {
+        console.error("Unexpected error loading approved adjustments:", adjustmentsException);
       }
 
       let historyRows: ScheduleHistoryRow[] = [];
@@ -200,6 +234,7 @@ const WorkerReports = () => {
           ? computedExpected
           : fallbackDailyHours * (period === "week" ? 5 : Math.max(20, Math.round((daysInPeriod * 5) / 7)));
       setExpectedHours(workdayCount > 0 ? computedExpected : fallbackValue);
+      setApprovedAdjustments(adjustments);
 
       if (period === "week") {
         const buckets: Array<{ date: Date; sessions: WorkSession[] }> = [];
@@ -554,6 +589,46 @@ const WorkerReports = () => {
             </div>
           </Card>
         )}
+        <Card className="glass-card p-6 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Ajustes de horario aprobados</h2>
+            <span className="text-xs text-muted-foreground">
+              {approvedAdjustments.length} ajuste{approvedAdjustments.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          {approvedAdjustments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No hay ajustes aprobados para este período.</p>
+          ) : (
+            <div className="space-y-3">
+              {approvedAdjustments.map((adjustment) => (
+                <div key={adjustment.id} className="rounded-lg border border-dashed border-border p-3 space-y-1 bg-background/80">
+                  <p className="text-sm font-semibold">
+                    {new Date(adjustment.date).toLocaleDateString("es-ES", {
+                      weekday: "long",
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                  </p>
+                  <p>
+                    <span className="font-medium">Tipo:</span> {adjustment.absence_type}
+                  </p>
+                  <p>
+                    <span className="font-medium">Hora aprobada:</span>{" "}
+                    {adjustment.time_change || "Sin hora definida"}
+                  </p>
+                  <p>
+                    <span className="font-medium">Nota:</span> {adjustment.notes || "—"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Aprobado por {adjustment.approver?.full_name || adjustment.approved_by} el{" "}
+                    {new Date(adjustment.approved_at).toLocaleString("es-ES")}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
         </div>
       </div>
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>

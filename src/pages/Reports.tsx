@@ -44,19 +44,6 @@ import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMe
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { exportCSV } from "@/lib/exports";
 import html2pdf from "html2pdf.js";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-} from "recharts";
 
 interface EmployeeStats {
   user_id: string;
@@ -1557,25 +1544,6 @@ const Reports = () => {
     toast.success("Paquete mensual generado (CSV)");
   };
 
-  // Prepare chart data
-  const hoursChartData = employeeStats
-    .filter((stat) => stat.company_id === companyId)
-    .sort((a, b) => b.total_hours - a.total_hours)
-    .slice(0, 10)
-    .map((stat) => ({
-      name: stat.full_name || stat.email,
-      hours: parseFloat(stat.total_hours.toFixed(1)),
-    }));
-
-  const punctualityChartData = employeeStats
-    .filter((stat) => stat.company_id === companyId)
-    .sort((a, b) => b.punctuality_score - a.punctuality_score)
-    .slice(0, 5)
-    .map((stat) => ({
-      name: stat.full_name || stat.email,
-      score: parseFloat(stat.punctuality_score.toFixed(1)),
-    }));
-
   const companyStats = employeeStats.filter((stat) => stat.company_id === companyId);
 
   const totalStats = {
@@ -1992,67 +1960,6 @@ const Reports = () => {
               </div>
             </div>
           </Card>
-        </div>
-
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" data-report-section="charts">
-          {/* Hours Chart */}
-          <Card className="glass-card p-6">
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-primary" />
-              Top 10 - Horas trabajadas
-            </h2>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={hoursChartData}>
-                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                <XAxis
-                  dataKey="name"
-                  tick={{ fill: "hsl(var(--muted-foreground))" }}
-                />
-                <YAxis tick={{ fill: "hsl(var(--muted-foreground))" }} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "8px",
-                  }}
-                />
-                <Bar
-                  dataKey="hours"
-                  fill="hsl(var(--primary))"
-                  radius={[8, 8, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
-          </Card>
-
-          {/* Punctuality Chart */}
-          <Card className="glass-card p-6">
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-primary" />
-              Top 5 - Ranking de puntualidad
-            </h2>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={punctualityChartData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
-                <XAxis type="number" tick={{ fill: "hsl(var(--muted-foreground))" }} />
-                <YAxis
-                  dataKey="name"
-                  type="category"
-                  tick={{ fill: "hsl(var(--muted-foreground))" }}
-                />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "8px",
-                  }}
-                />
-                <Bar dataKey="score" fill="#10b981" radius={[0, 8, 8, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </Card>
-
         </div>
 
         {/* Employee Stats Table */}

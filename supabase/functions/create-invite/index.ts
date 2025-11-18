@@ -10,7 +10,7 @@ const corsHeaders = {
 
 interface CreateInviteRequest {
   email: string;
-  role: "admin" | "manager" | "worker";
+  role: "owner" | "manager" | "worker";
   center_id?: string | null;
   team_id?: string | null;
 }
@@ -58,7 +58,7 @@ serve(async (req) => {
       .eq("user_id", user.id)
       .single();
 
-    if (!membership || !["owner", "admin"].includes(membership.role)) {
+    if (!membership || !["owner", "manager"].includes(membership.role)) {
       return new Response(
         JSON.stringify({ error: "Insufficient permissions" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -95,7 +95,7 @@ serve(async (req) => {
       );
     }
 
-    if (!["admin", "manager", "worker"].includes(body.role)) {
+    if (!["owner", "manager", "worker"].includes(body.role)) {
       return new Response(
         JSON.stringify({ error: "Rol no soportado" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }

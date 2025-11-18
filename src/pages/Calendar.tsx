@@ -47,6 +47,21 @@ interface ScheduledHours {
   expected_hours: number;
 }
 
+interface ApprovedAbsence {
+  id: string;
+  user_id: string;
+  company_id: string;
+  date: string;
+  absence_type: string;
+  time_change: string | null;
+  notes: string | null;
+  approved_by: string;
+  approved_at: string;
+  approver?: {
+    full_name: string | null;
+  };
+}
+
 const WorkerCalendar = () => {
   const { membership, loading: membershipLoading } = useMembership();
   const { user } = useAuth();
@@ -56,11 +71,13 @@ const WorkerCalendar = () => {
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [scheduledHours, setScheduledHours] = useState<ScheduledHours[]>([]);
   const [timeEvents, setTimeEvents] = useState<TimeEvent[]>([]);
+  const [approvedAdjustments, setApprovedAdjustments] = useState<ApprovedAbsence[]>([]);
   const [selectedDateData, setSelectedDateData] = useState<{
     worked: number;
     expected: number;
     absence: Absence | null;
     events: TimeEvent[];
+    approvedAbsences: ApprovedAbsence[];
   } | null>(null);
 
   const [miniMapsEnabled, setMiniMapsEnabled] = useState<boolean>(() => {
@@ -103,16 +120,41 @@ const WorkerCalendar = () => {
           schema: "public",
           table: "scheduled_hours",
           filter: `user_id=eq.${user.id}`,
+      },
+      () => {
+        console.log("🔄 Scheduled hours updated, refreshing calendar...");
+        fetchCalendarData();
+      }
+    )
+    .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [membership, user]);
+
+  useEffect(() => {
+    if (!membership || !user) return;
+
+    const absenceChannel = supabase
+      .channel(`worker-calendar-absences-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "absences",
+          filter: `user_id=eq.${user.id}`,
         },
         () => {
-          console.log("🔄 Scheduled hours updated, refreshing calendar...");
+          console.log("🔄 Ausencias actualizadas, refrescando calendario...");
           fetchCalendarData();
         }
       )
       .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(absenceChannel);
     };
   }, [membership, user]);
 
@@ -157,6 +199,17 @@ const WorkerCalendar = () => {
         .lte("date", format(monthEnd, "yyyy-MM-dd"));
       if (scheduledError) throw scheduledError;
       setScheduledHours((scheduled as ScheduledHours[]) || []);
+
+      // Approved adjustments
+      const { data: adjustments, error: adjustmentsError } = await supabase
+        .from("approved_absences")
+        .select("*, approver:approved_by(full_name)")
+        .eq("user_id", user.id)
+        .eq("company_id", membership.company_id)
+        .gte("date", format(monthStart, "yyyy-MM-dd"))
+        .lte("date", format(monthEnd, "yyyy-MM-dd"));
+      if (adjustmentsError) throw adjustmentsError;
+      setApprovedAdjustments((adjustments as ApprovedAbsence[]) || []);
 
       // Time events (with geo)
       const { data: events, error: eventsError } = await supabase
@@ -211,21 +264,31 @@ const WorkerCalendar = () => {
   const getEventsForDate = (checkDate: Date): TimeEvent[] =>
     timeEvents.filter((e) => isSameDay(parseISO(e.event_time), checkDate));
 
+  const getApprovedAbsencesForDate = (checkDate: Date): ApprovedAbsence[] =>
+    approvedAdjustments.filter((adjustment) => {
+      const approvedDate = parseISO(adjustment.date);
+      return isSameDay(approvedDate, checkDate);
+    });
+
   const handleDateSelect = (selectedDate: Date | undefined) => {
     setDate(selectedDate);
-    if (selectedDate) {
-      const worked = getWorkedHours(selectedDate);
-      const expected = getExpectedHours(selectedDate);
-      const absence = getAbsenceForDate(selectedDate);
-      const events = getEventsForDate(selectedDate);
-      setSelectedDateData({ worked, expected, absence, events });
-    }
   };
+
+  useEffect(() => {
+    if (!date) return;
+    const worked = getWorkedHours(date);
+    const expected = getExpectedHours(date);
+    const absence = getAbsenceForDate(date);
+    const events = getEventsForDate(date);
+    const adjustments = getApprovedAbsencesForDate(date);
+    setSelectedDateData({ worked, expected, absence, events, approvedAbsences: adjustments });
+  }, [date, workSessions, scheduledHours, absences, timeEvents, approvedAdjustments]);
 
   const modifiers = {
     hasWork: (day: Date) => getWorkedHours(day) > 0,
     hasAbsence: (day: Date) => getAbsenceForDate(day) !== null,
     hasScheduled: (day: Date) => getExpectedHours(day) > 0,
+    hasApproval: (day: Date) => getApprovedAbsencesForDate(day).length > 0,
   };
 
   const dayContent = ({ date: dayDate, activeModifiers }: DayContentProps) => {
@@ -249,6 +312,13 @@ const WorkerCalendar = () => {
         key: "scheduled",
         className: "calendar-status-dot calendar-status-dot-scheduled",
         label: "Horas programadas",
+      });
+    }
+    if (activeModifiers.hasApproval) {
+      indicators.push({
+        key: "approval",
+        className: "calendar-status-dot calendar-status-dot-approved",
+        label: "Ajuste aprobado",
       });
     }
 
@@ -333,15 +403,22 @@ const WorkerCalendar = () => {
                 <p className="text-xs text-muted-foreground">Vacaciones o bajas</p>
               </div>
             </div>
-            <div className="calendar-legend-item">
-              <span className="calendar-status-dot calendar-status-dot-scheduled" />
-              <div>
-                <p className="text-sm font-medium">Horas programadas</p>
-                <p className="text-xs text-muted-foreground">Turnos asignados</p>
-              </div>
+          <div className="calendar-legend-item">
+            <span className="calendar-status-dot calendar-status-dot-scheduled" />
+            <div>
+              <p className="text-sm font-medium">Horas programadas</p>
+              <p className="text-xs text-muted-foreground">Turnos asignados</p>
             </div>
           </div>
-        </Card>
+          <div className="calendar-legend-item">
+            <span className="calendar-status-dot calendar-status-dot-approved" />
+            <div>
+              <p className="text-sm font-medium">Ajustes aprobados</p>
+              <p className="text-xs text-muted-foreground">Correcciones autorizadas</p>
+            </div>
+          </div>
+        </div>
+      </Card>
 
         {selectedDateData && date && (
           <Card className="glass-card p-6 space-y-5">
@@ -504,6 +581,33 @@ const WorkerCalendar = () => {
                         </div>
                       ))}
                     </div>
+                  </div>
+                )}
+
+                {selectedDateData.approvedAbsences.length > 0 && (
+                  <div className="pt-6 border-t space-y-3">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="h-5 w-5 text-amber-500" />
+                      <h3 className="font-semibold">Ajustes de horario aprobados</h3>
+                    </div>
+                    {selectedDateData.approvedAbsences.map((adjustment) => (
+                      <div key={adjustment.id} className="rounded-lg bg-muted/70 p-3 space-y-1 text-sm">
+                        <p className="font-semibold">{adjustment.absence_type}</p>
+                        <p>
+                          <span className="font-medium">Hora aprobada:</span>{" "}
+                          {adjustment.time_change ?? "Sin hora especificada"}
+                        </p>
+                        {adjustment.notes && (
+                          <p>
+                            <span className="font-medium">Nota:</span> {adjustment.notes}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          Aprobado por {adjustment.approver?.full_name || adjustment.approved_by} el{" "}
+                          {new Date(adjustment.approved_at).toLocaleString("es-ES")}
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

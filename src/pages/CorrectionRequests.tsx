@@ -37,6 +37,11 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { BackButton } from "@/components/BackButton";
+import {
+  getApprovedAbsenceTypeLabel,
+  extractDateFromTimestamp,
+  extractTimeFromTimestamp,
+} from "@/lib/approvedAbsence";
 
 interface CorrectionPayload {
   event_type: string;
@@ -223,18 +228,58 @@ const CorrectionRequests = () => {
 
       // If approved, create the time event
       if (newStatus === "approved" && request) {
-        const { error: eventError } = await supabase.from("time_events").insert({
-          user_id: request.user_id,
-          event_type: request.payload.event_type as "clock_in" | "clock_out" | "pause_start" | "pause_end",
-          event_time: request.payload.event_time,
-          source: "web",
-          notes: `Corrección aprobada: ${request.payload.reason}`,
-          company_id: companyId,
-        } as any);
+        if (request.payload.type === "absence") {
+          try {
+            await supabase.from("absences").insert({
+              user_id: request.user_id,
+              company_id: companyId,
+              absence_type: "vacation",
+              start_date: request.payload.start_date,
+              end_date: request.payload.end_date,
+              status: "approved",
+              reason: request.payload.reason || null,
+              created_by: user?.id ?? request.user_id,
+              approved_by: user?.id ?? request.user_id,
+              approved_at: new Date().toISOString(),
+            });
+          } catch (absenceError) {
+            console.error("Error logging approved absence:", absenceError);
+          }
+        } else {
+          const { error: eventError } = await supabase.from("time_events").insert({
+            user_id: request.user_id,
+            event_type: request.payload.event_type as "clock_in" | "clock_out" | "pause_start" | "pause_end",
+            event_time: request.payload.event_time,
+            source: "web",
+            notes: `Corrección aprobada: ${request.payload.reason}`,
+            company_id: companyId,
+          } as any);
 
-        if (eventError) {
-          console.error("Error creating time event:", eventError);
-          toast.error("Solicitud aprobada pero error al crear el evento");
+          if (eventError) {
+            console.error("Error creating time event:", eventError);
+            toast.error("Solicitud aprobada pero error al crear el evento");
+          }
+          const managerId = user?.id;
+          if (!managerId) {
+            console.error("No manager ID available, skipping approved absence log.");
+          } else if (request.payload.event_time) {
+            try {
+              await supabase.from("approved_absences").insert({
+                company_id: companyId,
+                user_id: request.user_id,
+                date:
+                  extractDateFromTimestamp(request.payload.event_time) ??
+                  request.payload.event_time.split("T")[0],
+                absence_type: getApprovedAbsenceTypeLabel(request.payload.event_type),
+                time_change: extractTimeFromTimestamp(request.payload.event_time),
+                notes: request.payload.reason || null,
+                approved_by: managerId,
+                approved_at: new Date().toISOString(),
+              });
+            } catch (absError) {
+              console.error("Error logging approved adjustment:", absError);
+            }
+          }
         }
       }
 
@@ -306,10 +351,10 @@ const CorrectionRequests = () => {
               <AlertCircle className="w-6 h-6 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold">Solicitudes de Corrección</h1>
-              <p className="text-sm text-muted-foreground">
-                {isWorker ? "Mis solicitudes" : "Gestionar solicitudes"}
-              </p>
+            <h1 className="text-2xl font-bold">Avisos/Solicitudes</h1>
+            <p className="text-sm text-muted-foreground">
+              {isWorker ? "Mis avisos y solicitudes" : "Gestionar avisos y solicitudes"}
+            </p>
             </div>
           </div>
           {isWorker && (
@@ -444,7 +489,7 @@ const CorrectionRequests = () => {
         {/* Requests Table */}
         <Card className="glass-card p-6">
           <h2 className="text-xl font-semibold mb-4">
-            {canManage ? "Todas las solicitudes" : "Mis solicitudes"}
+            {canManage ? "Avisos/Solicitudes" : "Mis avisos y solicitudes"}
           </h2>
           <div className="overflow-x-auto">
             <Table>
@@ -453,7 +498,7 @@ const CorrectionRequests = () => {
                   {canManage && <TableHead>Empleado</TableHead>}
                   <TableHead>Fecha/Hora</TableHead>
                   <TableHead>Tipo</TableHead>
-                  <TableHead>Motivo</TableHead>
+                  <TableHead>Descripción</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead>Solicitada</TableHead>
                   {canManage && <TableHead className="text-right">Acciones</TableHead>}
@@ -496,10 +541,47 @@ const CorrectionRequests = () => {
                       )}
                       <TableCell>
                         <div className="font-mono text-sm">
-                          {new Date(request.payload.event_time).toLocaleString("es-ES", {
-                            dateStyle: "short",
-                            timeStyle: "short",
-                          })}
+                          {(() => {
+                            const eventValue = request.payload.event_time;
+                            if (eventValue) {
+                              const parsed = new Date(eventValue);
+                              if (!Number.isNaN(parsed.getTime())) {
+                                return parsed.toLocaleString("es-ES", {
+                                  dateStyle: "short",
+                                  timeStyle: "short",
+                                });
+                              }
+                            }
+                            const payloadStart = (request.payload as any).start_date;
+                            if (payloadStart) {
+                              const startISOString = new Date(payloadStart);
+                              const startLabel = startISOString.toLocaleDateString("es-ES", {
+                                day: "2-digit",
+                                month: "2-digit",
+                                year: "2-digit",
+                              });
+                              const startTimeStr = (request.payload as any).start_time;
+                              const endDateStr = (request.payload as any).end_date;
+                              const endTimeStr = (request.payload as any).end_time;
+                              const startSegment = startTimeStr ? `${startLabel}, ${startTimeStr}` : startLabel;
+                              if (endDateStr && endDateStr !== payloadStart) {
+                                const endDate = new Date(endDateStr);
+                                const endLabel = endDate.toLocaleDateString("es-ES", {
+                                  day: "2-digit",
+                                  month: "2-digit",
+                                  year: "2-digit",
+                                });
+                                return `${startSegment} – ${endLabel}${
+                                  endTimeStr ? `, ${endTimeStr}` : ""
+                                }`;
+                              }
+                              if (endTimeStr) {
+                                return `${startSegment} – ${endTimeStr}`;
+                              }
+                              return startSegment;
+                            }
+                            return "—";
+                          })()}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -507,11 +589,21 @@ const CorrectionRequests = () => {
                           {formatEventType(request.payload.event_type)}
                         </Badge>
                       </TableCell>
-                      <TableCell className="max-w-xs">
-                        <div className="truncate" title={request.payload.reason}>
-                          {request.payload.reason}
-                        </div>
-                      </TableCell>
+                        <TableCell className="max-w-xs">
+                          {(() => {
+                        const note =
+                          request.description ||
+                          (request.payload as any)?.description ||
+                          request.payload.reason ||
+                          request.reason ||
+                          "—";
+                            return (
+                              <div className="truncate" title={note}>
+                                {note}
+                              </div>
+                            );
+                          })()}
+                        </TableCell>
                       <TableCell>{getStatusBadge(request.status)}</TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {new Date(request.created_at).toLocaleDateString("es-ES")}

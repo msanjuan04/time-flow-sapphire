@@ -3,7 +3,7 @@ import { useMembership } from "@/hooks/useMembership";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
-import { Calendar as CalendarIcon, Clock, Users, Plus, AlertCircle, Trash2, Pencil } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, Users, Plus, AlertCircle, Trash2, Pencil, Loader2 } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { format, parseISO, startOfMonth, endOfMonth, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -78,6 +79,9 @@ const ManagerCalendar = () => {
   const navigate = useNavigate();
   const [date, setDate] = useState<Date | undefined>(new Date());
   const [searchParams] = useSearchParams();
+  const [noticeDialogOpen, setNoticeDialogOpen] = useState(false);
+  const [noticeText, setNoticeText] = useState("");
+  const [noticeProcessing, setNoticeProcessing] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<string>("");
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
@@ -119,6 +123,43 @@ const ManagerCalendar = () => {
     const uid = searchParams.get("user");
     if (uid) setSelectedEmployee(uid);
   }, [searchParams]);
+
+  const generateNotice = useCallback(() => {
+    if (!date) {
+      return "Selecciona un día para que pueda generar el aviso.";
+    }
+    const formattedDate = format(date, "EEEE d 'de' MMMM", { locale: es });
+    const relevantAbsences = absences.filter((absence) => {
+      const start = parseISO(absence.start_date);
+      const end = parseISO(absence.end_date);
+      return date >= start && date <= end;
+    });
+    const absenceSummary =
+      relevantAbsences.length > 0
+        ? `Tenemos ${relevantAbsences.length} ausencia${relevantAbsences.length > 1 ? "s" : ""} planificada${
+            relevantAbsences.length > 1 ? "" : "a"
+          } para hoy (${formattedDate}).`
+        : `Por ahora no hay ausencias registradas para ${formattedDate}.`;
+    const scheduledForDay = scheduledHours.find((scheduled) => isSameDay(parseISO(scheduled.date), date));
+    const scheduleSummary = scheduledForDay
+      ? `El turno programado es de ${scheduledForDay.expected_hours.toFixed(2)} h`
+      : "No hay turnos programados para hoy.";
+    return `Aviso rápido para el equipo del día ${formattedDate}:\n${absenceSummary} ${scheduleSummary}`;
+  }, [absences, date, scheduledHours]);
+
+  const copyNoticeToClipboard = async () => {
+    if (!noticeText) return;
+    setNoticeProcessing(true);
+    try {
+      await navigator.clipboard.writeText(noticeText);
+      toast.success("Aviso copiado para pegarlo donde lo necesites");
+    } catch (error) {
+      console.error("No se pudo copiar el aviso:", error);
+      toast.error("No pudimos copiar el aviso al portapapeles");
+    } finally {
+      setNoticeProcessing(false);
+    }
+  };
 
   const fetchCalendarData = useCallback(async () => {
     if (!membership || !selectedEmployee || !date) return;
@@ -163,6 +204,105 @@ const ManagerCalendar = () => {
   useEffect(() => {
     fetchCalendarData();
   }, [fetchCalendarData]);
+
+  const fetchTeamDayOverview = useCallback(async () => {
+    if (!membership || !date) {
+      setTeamDayOverview({});
+      return;
+    }
+    const dateStr = format(date, "yyyy-MM-dd");
+    const start = `${dateStr}T00:00:00`;
+    const end = `${dateStr}T23:59:59`;
+
+    try {
+      const [sessionsRes, scheduledRes, absencesRes] = await Promise.all([
+        supabase
+          .from("work_sessions")
+          .select("user_id, clock_in_time, clock_out_time, total_work_duration")
+          .eq("company_id", membership.company_id)
+          .gte("clock_in_time", start)
+          .lte("clock_in_time", end),
+        supabase
+          .from("scheduled_hours")
+          .select("user_id, expected_hours")
+          .eq("company_id", membership.company_id)
+          .eq("date", dateStr),
+        supabase
+          .from("absences")
+          .select("user_id, start_date, end_date, absence_type, status")
+          .eq("company_id", membership.company_id)
+          .or(`and(start_date.lte.${dateStr},end_date.gte.${dateStr})`),
+      ]);
+
+      if (sessionsRes.error || scheduledRes.error || absencesRes.error) {
+        throw new Error("No fue posible obtener el resumen del día");
+      }
+
+      const summary: Record<string, DayOverview> = {};
+
+      const addWorkedHours = (userId: string, hoursValue: number) => {
+        if (!summary[userId]) {
+          summary[userId] = { workedHours: 0 };
+        }
+        summary[userId].workedHours += hoursValue;
+      };
+
+      const parseDuration = (value?: string | null) => {
+        if (!value) return 0;
+        const parts = value.split(":").map((p) => Number(p));
+        const [h = 0, m = 0, s = 0] = parts;
+        return (
+          (Number.isFinite(h) ? h : 0) +
+          (Number.isFinite(m) ? m / 60 : 0) +
+          (Number.isFinite(s) ? s / 3600 : 0)
+        );
+      };
+
+      (sessionsRes.data as WorkSession[] | null)?.forEach((session) => {
+        const duration =
+          session.total_work_duration && session.total_work_duration !== "00:00:00"
+            ? parseDuration(session.total_work_duration)
+            : (() => {
+                if (!session.clock_in_time) return 0;
+                const startTime = parseISO(session.clock_in_time).getTime();
+                const endTime = session.clock_out_time
+                  ? parseISO(session.clock_out_time).getTime()
+                  : Date.now();
+                if (Number.isNaN(startTime) || Number.isNaN(endTime) || endTime <= startTime) return 0;
+                return (endTime - startTime) / (1000 * 60 * 60);
+              })();
+        if (duration > 0) {
+          addWorkedHours(session.user_id, duration);
+        }
+      });
+
+      (scheduledRes.data as { user_id: string; expected_hours: number }[] | null)?.forEach(
+        (scheduled) => {
+          if (!summary[scheduled.user_id]) {
+            summary[scheduled.user_id] = { workedHours: 0 };
+          }
+          summary[scheduled.user_id].scheduledHours = Number(scheduled.expected_hours ?? 0);
+        }
+      );
+
+      (absencesRes.data as AbsenceRecord[] | null)?.forEach((absence) => {
+        const userId = absence.user_id;
+        if (!summary[userId]) {
+          summary[userId] = { workedHours: 0 };
+        }
+        summary[userId].absence = absence;
+      });
+
+      setTeamDayOverview(summary);
+    } catch (error) {
+      console.error("Error fetching day overview:", error);
+      setTeamDayOverview({});
+    }
+  }, [membership, date]);
+
+  useEffect(() => {
+    fetchTeamDayOverview();
+  }, [fetchTeamDayOverview]);
 
   // Subscribe to scheduled_hours changes in real-time
   useEffect(() => {
@@ -294,105 +434,6 @@ const ManagerCalendar = () => {
       console.error(error);
     }
   };
-
-  const fetchTeamDayOverview = useCallback(async () => {
-    if (!membership || !date) {
-      setTeamDayOverview({});
-      return;
-    }
-    const dateStr = format(date, "yyyy-MM-dd");
-    const start = `${dateStr}T00:00:00`;
-    const end = `${dateStr}T23:59:59`;
-
-    try {
-      const [sessionsRes, scheduledRes, absencesRes] = await Promise.all([
-        supabase
-          .from("work_sessions")
-          .select("user_id, clock_in_time, clock_out_time, total_work_duration")
-          .eq("company_id", membership.company_id)
-          .gte("clock_in_time", start)
-          .lte("clock_in_time", end),
-        supabase
-          .from("scheduled_hours")
-          .select("user_id, expected_hours")
-          .eq("company_id", membership.company_id)
-          .eq("date", dateStr),
-        supabase
-          .from("absences")
-          .select("user_id, start_date, end_date, absence_type, status")
-          .eq("company_id", membership.company_id)
-          .or(`and(start_date.lte.${dateStr},end_date.gte.${dateStr})`),
-      ]);
-
-      if (sessionsRes.error || scheduledRes.error || absencesRes.error) {
-        throw new Error("No fue posible obtener el resumen del día");
-      }
-
-      const summary: Record<string, DayOverview> = {};
-
-      const addWorkedHours = (userId: string, hoursValue: number) => {
-        if (!summary[userId]) {
-          summary[userId] = { workedHours: 0 };
-        }
-        summary[userId].workedHours += hoursValue;
-      };
-
-      const parseDuration = (value?: string | null) => {
-        if (!value) return 0;
-        const parts = value.split(":").map((p) => Number(p));
-        const [h = 0, m = 0, s = 0] = parts;
-        return (
-          (Number.isFinite(h) ? h : 0) +
-          (Number.isFinite(m) ? m / 60 : 0) +
-          (Number.isFinite(s) ? s / 3600 : 0)
-        );
-      };
-
-      (sessionsRes.data as WorkSession[] | null)?.forEach((session) => {
-        const duration =
-          session.total_work_duration && session.total_work_duration !== "00:00:00"
-            ? parseDuration(session.total_work_duration)
-            : (() => {
-                if (!session.clock_in_time) return 0;
-                const startTime = parseISO(session.clock_in_time).getTime();
-                const endTime = session.clock_out_time
-                  ? parseISO(session.clock_out_time).getTime()
-                  : Date.now();
-                if (Number.isNaN(startTime) || Number.isNaN(endTime) || endTime <= startTime) return 0;
-                return (endTime - startTime) / (1000 * 60 * 60);
-              })();
-        if (duration > 0) {
-          addWorkedHours(session.user_id, duration);
-        }
-      });
-
-      (scheduledRes.data as { user_id: string; expected_hours: number }[] | null)?.forEach(
-        (scheduled) => {
-          if (!summary[scheduled.user_id]) {
-            summary[scheduled.user_id] = { workedHours: 0 };
-          }
-          summary[scheduled.user_id].scheduledHours = Number(scheduled.expected_hours ?? 0);
-        }
-      );
-
-      (absencesRes.data as AbsenceRecord[] | null)?.forEach((absence) => {
-        const userId = absence.user_id;
-        if (!summary[userId]) {
-          summary[userId] = { workedHours: 0 };
-        }
-        summary[userId].absence = absence;
-      });
-
-      setTeamDayOverview(summary);
-    } catch (error) {
-      console.error("Error fetching day overview:", error);
-      setTeamDayOverview({});
-    }
-  }, [membership, date]);
-
-  useEffect(() => {
-    fetchTeamDayOverview();
-  }, [fetchTeamDayOverview]);
 
   const handleCreateAbsence = async () => {
     if (!membership || !selectedEmployee || !startDate || !endDate) {
@@ -562,12 +603,13 @@ const ManagerCalendar = () => {
   };
 
   const handleCompanyHoliday = async () => {
-    if (!membership || !date) {
+    if (!membership || !date || !user) {
       toast.error("Selecciona un día del calendario");
       return;
     }
     try {
       const dateStr = format(date, "yyyy-MM-dd");
+      const actorId = user.id;
       const records = employees.map((emp) => ({
         user_id: emp.id,
         company_id: membership.company_id,
@@ -576,8 +618,8 @@ const ManagerCalendar = () => {
         end_date: dateStr,
         reason: "Festivo de empresa",
         status: "approved" as const,
-        created_by: emp.id,
-        approved_by: emp.id,
+        created_by: actorId,
+        approved_by: actorId,
         approved_at: new Date().toISOString(),
       }));
       const { error } = await supabase.from("absences").insert(records);
@@ -673,12 +715,22 @@ const ManagerCalendar = () => {
               </p>
             </div>
           </div>
-          <div className="flex-1 flex justify-end">
+          <div className="flex-1 flex justify-end gap-3">
+            <Button
+              variant="outline"
+              className="hover-scale"
+              onClick={() => {
+                setNoticeText(generateNotice());
+                setNoticeDialogOpen(true);
+              }}
+            >
+              Redactar aviso
+            </Button>
             <Button variant="secondary" onClick={handleCompanyHoliday} className="hover-scale">
               Marcar festivo de empresa
             </Button>
           </div>
-        </div>
+      </div>
 
       {/* Diálogo de edición de evento */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
@@ -709,6 +761,36 @@ const ManagerCalendar = () => {
               <Button onClick={handleUpdateEvent}>Guardar cambios</Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={noticeDialogOpen} onOpenChange={setNoticeDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Redacción asistida</DialogTitle>
+          </DialogHeader>
+          <div>
+            <p className="text-sm text-muted-foreground mb-2">
+              Usa el siguiente texto como base para comunicar ausencias o recordatorios al equipo.
+            </p>
+            <div className="bg-muted/40 rounded-lg p-4 text-sm whitespace-pre-line font-mono min-h-[150px]">
+              {noticeText || "Selecciona una fecha para generar el aviso."}
+            </div>
+          </div>
+          <DialogFooter className="flex justify-between">
+            <Button variant="ghost" onClick={() => setNoticeDialogOpen(false)}>
+              Cerrar
+            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="default"
+                disabled={!noticeText || noticeProcessing}
+                onClick={copyNoticeToClipboard}
+              >
+                {noticeProcessing ? <Loader2 className="animate-spin h-4 w-4" /> : "Copiar aviso"}
+              </Button>
+            </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -822,11 +904,7 @@ const ManagerCalendar = () => {
               </>
             )}
 
-            <Button variant="secondary" onClick={handleCompanyHoliday} className="hover-scale">
-              Marcar festivo de empresa
-            </Button>
           </div>
-
           {selectedEmployee && date && (
             <Card className="glass-card p-6 space-y-3">
               <div className="flex flex-wrap items-end gap-3">

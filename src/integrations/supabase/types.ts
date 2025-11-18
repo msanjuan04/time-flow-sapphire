@@ -62,6 +62,67 @@ export type Database = {
         }
         Relationships: []
       }
+      approved_absences: {
+        Row: {
+          approved_at: string
+          approved_by: string
+          company_id: string
+          created_at: string
+          date: string
+          id: string
+          notes: string | null
+          absence_type: string
+          time_change: string | null
+          user_id: string
+        }
+        Insert: {
+          approved_at?: string
+          approved_by: string
+          company_id: string
+          created_at?: string
+          date: string
+          id?: string
+          notes?: string | null
+          absence_type: string
+          time_change?: string | null
+          user_id: string
+        }
+        Update: {
+          approved_at?: string
+          approved_by?: string
+          company_id?: string
+          created_at?: string
+          date?: string
+          id?: string
+          notes?: string | null
+          absence_type?: string
+          time_change?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "approved_absences_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedColumns: ["id"]
+            referencedRelation: "companies"
+          },
+          {
+            foreignKeyName: "approved_absences_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedColumns: ["id"]
+            referencedRelation: "profiles"
+          },
+          {
+            foreignKeyName: "approved_absences_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedColumns: ["id"]
+            referencedRelation: "profiles"
+          },
+        ]
+      }
       alerts: {
         Row: {
           company_id: string

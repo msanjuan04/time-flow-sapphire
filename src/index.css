@@ -240,6 +240,11 @@ All colors MUST be HSL.
     box-shadow: 0 0 0 1px hsl(var(--muted-foreground) / 0.2);
   }
 
+  .calendar-status-dot-approved {
+    background: #f97316;
+    box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.3);
+  }
+
   .calendar-legend-item {
     display: flex;
     align-items: center;

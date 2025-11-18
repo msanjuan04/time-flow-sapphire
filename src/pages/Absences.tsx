@@ -44,6 +44,8 @@ const Absences = () => {
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [startTime, setStartTime] = useState("");
+  const [endTime, setEndTime] = useState("");
   const [reason, setReason] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -96,11 +98,16 @@ const Absences = () => {
           company_id: companyId,
           reason,
           status: "pending",
-          payload: {
-            type: "absence",
-            start_date: startDate,
-            end_date: endDate,
-          },
+        payload: {
+          type: "absence",
+          start_date: startDate,
+          end_date: endDate,
+          start_time: startTime || null,
+          end_time: endTime || null,
+        },
+        description: `${reason}${startTime ? ` desde las ${startTime}` : ""}${
+          endTime ? ` hasta las ${endTime}` : ""
+        }`,
         });
 
       if (error) throw error;
@@ -108,6 +115,8 @@ const Absences = () => {
       toast.success("Solicitud de ausencia enviada correctamente");
       setStartDate("");
       setEndDate("");
+      setStartTime("");
+      setEndTime("");
       setReason("");
       setDialogOpen(false);
       fetchAbsences();
@@ -166,25 +175,47 @@ const Absences = () => {
                 </DialogDescription>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-                <div className="space-y-2">
-                  <Label htmlFor="startDate">Fecha de inicio</Label>
-                  <Input
-                    id="startDate"
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    required
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="startDate">Fecha de inicio</Label>
+                    <Input
+                      id="startDate"
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="startTime">Hora inicio (opcional)</Label>
+                    <Input
+                      id="startTime"
+                      type="time"
+                      value={startTime}
+                      onChange={(e) => setStartTime(e.target.value)}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="endDate">Fecha de fin</Label>
-                  <Input
-                    id="endDate"
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    required
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="endDate">Fecha de fin</Label>
+                    <Input
+                      id="endDate"
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="endTime">Hora fin (opcional)</Label>
+                    <Input
+                      id="endTime"
+                      type="time"
+                      value={endTime}
+                      onChange={(e) => setEndTime(e.target.value)}
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="reason">Motivo</Label>
