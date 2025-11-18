@@ -30,6 +30,7 @@ import {
   ArrowLeft,
   MapPin,
   CalendarClock,
+  ListChecks,
 } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -39,7 +40,7 @@ import { useMembership } from "@/hooks/useMembership";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { exportCSV } from "@/lib/exports";
 import html2pdf from "html2pdf.js";
@@ -215,6 +216,13 @@ const WEEKDAY_FILTERS = [
   { value: "6", label: "Sábado" },
   { value: "0", label: "Domingo" },
 ];
+const PDF_SECTION_OPTIONS = [
+  { id: "context", label: "Resumen del período" },
+  { id: "map", label: "Mapa de fichajes" },
+  { id: "summary", label: "Tarjetas resumen" },
+  { id: "charts", label: "Gráficas comparativas" },
+  { id: "table", label: "Detalle por empleado" },
+];
 const getEventColor = (type: string) => {
   switch (type) {
     case "clock_in":
@@ -251,6 +259,9 @@ const Reports = () => {
     }
   });
   const showScheduleReminder = !scheduleReminderDismissed && !loading && employeeStats.length === 0;
+  const [selectedPdfSections, setSelectedPdfSections] = useState<string[]>(() =>
+    PDF_SECTION_OPTIONS.map((section) => section.id)
+  );
   
   // Filters
   const [startDate, setStartDate] = useState(() => {
@@ -293,6 +304,19 @@ const Reports = () => {
     } catch {
       // ignore storage issues
     }
+  };
+  const updatePdfSectionSelection = (sectionId: string, checked: boolean) => {
+    setSelectedPdfSections((prev) => {
+      if (!checked) {
+        if (prev.length === 1 && prev[0] === sectionId) {
+          toast.error("Selecciona al menos una sección para generar el PDF");
+          return prev;
+        }
+        return prev.filter((id) => id !== sectionId);
+      }
+      if (prev.includes(sectionId)) return prev;
+      return [...prev, sectionId];
+    });
   };
   const uniqueEmployeesOnMap = useMemo(() => {
     return new Set(filteredMapEvents.map((event) => event.user_id)).size;
@@ -678,11 +702,53 @@ const Reports = () => {
     toast.success("Reporte exportado correctamente");
   };
 
-  const handleDownloadPDF = () => {
+  const buildPrintableClone = () => {
+    if (!reportRef.current) return null;
+    const clone = reportRef.current.cloneNode(true) as HTMLElement;
+    const selectedSet = new Set(selectedPdfSections);
+    clone.querySelectorAll<HTMLElement>("[data-report-section]").forEach((section) => {
+      const sectionId = section.getAttribute("data-report-section");
+      if (!sectionId) return;
+      if (!selectedSet.has(sectionId)) {
+        section.remove();
+      }
+    });
+    const wrapper = document.createElement("div");
+    wrapper.style.position = "fixed";
+    wrapper.style.inset = "0";
+    wrapper.style.zIndex = "-1";
+    wrapper.style.pointerEvents = "none";
+    wrapper.style.opacity = "0";
+    wrapper.style.overflow = "auto";
+    wrapper.style.backgroundColor = getComputedStyle(document.body).backgroundColor || "#ffffff";
+    wrapper.style.padding = "24px";
+
+    const paper = document.createElement("div");
+    paper.style.maxWidth = "210mm";
+    paper.style.margin = "0 auto";
+    paper.style.width = "100%";
+    paper.appendChild(clone);
+    wrapper.appendChild(paper);
+
+    return { wrapper, content: paper };
+  };
+
+  const handleDownloadPDF = async () => {
     if (!reportRef.current) {
       toast.error("No se encontró el contenido del informe para generar el PDF");
       return;
     }
+    if (selectedPdfSections.length === 0) {
+      toast.error("Selecciona al menos una sección antes de descargar el PDF");
+      return;
+    }
+
+    const printable = buildPrintableClone();
+    if (!printable) {
+      toast.error("No hay contenido disponible para exportar con los filtros seleccionados");
+      return;
+    }
+    document.body.appendChild(printable.wrapper);
 
     const options = {
       margin: 10,
@@ -692,8 +758,16 @@ const Reports = () => {
       jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
     };
 
-    html2pdf().set(options).from(reportRef.current).save();
-    setPreviewOpen(false);
+    try {
+      await html2pdf().set(options).from(printable.content).save();
+      toast.success("Informe generado correctamente");
+      setPreviewOpen(false);
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      toast.error("No pudimos generar el PDF");
+    } finally {
+      printable.wrapper.remove();
+    }
   };
 
   const handlePreviewPDF = () => {
@@ -701,7 +775,17 @@ const Reports = () => {
       toast.error("No se encontró el contenido del informe.");
       return;
     }
-    setPreviewHtml(reportRef.current.innerHTML);
+    if (selectedPdfSections.length === 0) {
+      toast.error("Selecciona al menos una sección para la vista previa");
+      return;
+    }
+    const printable = buildPrintableClone();
+    if (!printable) {
+      toast.error("No hay contenido disponible para la vista previa");
+      return;
+    }
+    setPreviewHtml(printable.content.innerHTML);
+    printable.wrapper.remove();
     setPreviewOpen(true);
   };
 
@@ -788,10 +872,28 @@ const Reports = () => {
     totalIncidents: companyStats.reduce((sum, s) => sum + s.incidents, 0),
   };
 
+  const selectedCenterLabel = useMemo(() => {
+    if (selectedCenter === "all") return "Todos los centros";
+    const found = centers.find((center) => center.id === selectedCenter);
+    return found?.name ?? "Centro no disponible";
+  }, [centers, selectedCenter]);
+
+  const selectedEmployeeLabel = useMemo(() => {
+    if (selectedEmployee === "all") return "Todos los empleados";
+    const found = employees.find((emp) => emp.id === selectedEmployee);
+    return found?.full_name || found?.email || "Empleado";
+  }, [employees, selectedEmployee]);
+
+  const formatDateLabel = useCallback((value: string) => {
+    const parsed = new Date(value);
+    if (isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleDateString("es-ES");
+  }, []);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
       <div className="max-w-7xl mx-auto pt-8">
-        <div ref={reportRef} className="space-y-6">
+        <div className="space-y-6">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
@@ -821,6 +923,31 @@ const Reports = () => {
             <Button variant="outline" onClick={handlePreviewPDF} className="hover-scale">
               <Download className="w-4 h-4 mr-2" /> Descargar PDF
             </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="hover-scale">
+                  <ListChecks className="w-4 h-4 mr-2" /> Secciones PDF
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel>Incluir en el PDF</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {PDF_SECTION_OPTIONS.map((section) => (
+                  <DropdownMenuCheckboxItem
+                    key={section.id}
+                    checked={selectedPdfSections.includes(section.id)}
+                    onCheckedChange={(value) =>
+                      updatePdfSectionSelection(
+                        section.id,
+                        value === true || value === "indeterminate"
+                      )
+                    }
+                  >
+                    {section.label}
+                  </DropdownMenuCheckboxItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="hover-scale">
@@ -925,8 +1052,33 @@ const Reports = () => {
           </div>
         </Card>
 
+        <div ref={reportRef} className="space-y-6">
+        <Card className="glass-card p-6" data-report-section="context">
+          <h2 className="text-lg font-semibold mb-4">Resumen del período</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
+            <div>
+              <p className="text-muted-foreground">Empresa</p>
+              <p className="font-semibold">{membership?.company.name ?? "Sin empresa"}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Rango analizado</p>
+              <p className="font-semibold">
+                {formatDateLabel(startDate)} - {formatDateLabel(endDate)}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Centro</p>
+              <p className="font-semibold">{selectedCenterLabel}</p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Empleado</p>
+              <p className="font-semibold">{selectedEmployeeLabel}</p>
+            </div>
+          </div>
+        </Card>
+
         {/* Location map */}
-        <Card className="glass-card p-6">
+        <Card className="glass-card p-6" data-report-section="map">
           <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center gap-4 justify-between">
               <div>
@@ -1046,7 +1198,7 @@ const Reports = () => {
         </Card>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" data-report-section="summary">
           <Card className="glass-card p-6 hover-scale smooth-transition">
             <div className="flex items-center justify-between">
               <div>
@@ -1101,7 +1253,7 @@ const Reports = () => {
         </div>
 
         {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" data-report-section="charts">
           {/* Hours Chart */}
           <Card className="glass-card p-6">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
@@ -1238,6 +1390,7 @@ const Reports = () => {
           </div>
         </Card>
       </div>
+    </div>
       <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
