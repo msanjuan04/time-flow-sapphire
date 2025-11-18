@@ -189,11 +189,12 @@ serve(async (req) => {
         .eq("id", membership.id);
     }
 
+    const acceptedAt = new Date().toISOString();
     const { error: updateInviteError } = await supabaseAdmin
       .from("invites")
       .update({
         status: "accepted",
-        accepted_at: new Date().toISOString(),
+        accepted_at: acceptedAt,
       })
       .eq("id", invite.id);
 
@@ -215,6 +216,7 @@ serve(async (req) => {
         center_id: invite.center_id ?? null,
         team_id: invite.team_id ?? null,
         expires_at: invite.expires_at,
+        accepted_at: acceptedAt,
         status: "accepted",
       },
       login_code: loginCode,

@@ -71,6 +71,7 @@ serve(async (req) => {
         team_id,
         created_at,
         expires_at,
+        accepted_at,
         centers(name),
         teams(name)
       `)

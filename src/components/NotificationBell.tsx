@@ -133,6 +133,9 @@ const NotificationBell = () => {
     if (notification.entity_type === "incident" && notification.entity_id) {
       navigate(`/incidents?focus=${notification.entity_id}`);
     }
+    if (notification.entity_type === "anomaly" && notification.entity_id) {
+      navigate(`/people?user=${notification.entity_id}`);
+    }
   };
 
   const getIcon = (type: string) => {
@@ -249,6 +252,11 @@ const NotificationBell = () => {
                         {notification.entity_type === "incident" && (
                           <p className="text-[11px] text-primary font-medium mt-1">
                             Incidencia pendiente · pulsa para ver detalles
+                          </p>
+                        )}
+                        {notification.entity_type === "anomaly" && (
+                          <p className="text-[11px] text-amber-600 font-medium mt-1">
+                            ⚠️ Anomalía detectada · revisar empleado
                           </p>
                         )}
                       </div>

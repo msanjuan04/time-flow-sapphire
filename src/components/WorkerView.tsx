@@ -48,6 +48,7 @@ const WorkerView = () => {
   const [gpsWarningShown, setGpsWarningShown] = useState(false);
   const [lastEvent, setLastEvent] = useState<{ type: ClockAction; timestamp: string } | null>(null);
   const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
+  const [todaySchedule, setTodaySchedule] = useState<{ start_time: string | null; end_time: string | null; expected_hours: number } | null>(null);
 
   // Update clock every second
   useEffect(() => {
@@ -93,8 +94,57 @@ const WorkerView = () => {
   useEffect(() => {
     if (user && companyId) {
       fetchStatus();
+      fetchTodaySchedule();
     }
-  }, [user, companyId, fetchStatus]);
+  }, [user, companyId, fetchStatus, fetchTodaySchedule]);
+
+  const fetchTodaySchedule = useCallback(async () => {
+    if (!user?.id || !companyId) return;
+    const today = new Date().toISOString().split('T')[0];
+    const { data } = await supabase
+      .from('scheduled_hours')
+      .select('start_time, end_time, expected_hours')
+      .eq('user_id', user.id)
+      .eq('company_id', companyId)
+      .eq('date', today)
+      .maybeSingle();
+    
+    if (data) {
+      setTodaySchedule({
+        start_time: data.start_time,
+        end_time: data.end_time,
+        expected_hours: Number(data.expected_hours || 0),
+      });
+    } else {
+      setTodaySchedule(null);
+    }
+  }, [user?.id, companyId]);
+
+  // Subscribe to scheduled_hours changes in real-time
+  useEffect(() => {
+    if (!user?.id || !companyId) return;
+
+    const channel = supabase
+      .channel(`worker-view-scheduled-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "scheduled_hours",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          console.log("🔄 Scheduled hours updated, refreshing worker view...");
+          fetchTodaySchedule();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, companyId, fetchTodaySchedule]);
 
   // Request GPS location on mount
   useEffect(() => {
@@ -693,6 +743,36 @@ const WorkerView = () => {
               )}
             </div>
           </Card>
+
+          {/* Today's Schedule */}
+          {todaySchedule && (
+            <Card className="glass-card p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-primary" />
+                  <span className="text-sm font-medium">Horario asignado hoy</span>
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-3 gap-3">
+                {todaySchedule.start_time && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Entrada</p>
+                    <p className="text-sm font-semibold">{todaySchedule.start_time}</p>
+                  </div>
+                )}
+                {todaySchedule.end_time && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Salida</p>
+                    <p className="text-sm font-semibold">{todaySchedule.end_time}</p>
+                  </div>
+                )}
+                <div>
+                  <p className="text-xs text-muted-foreground">Horas</p>
+                  <p className="text-sm font-semibold">{todaySchedule.expected_hours.toFixed(1)}h</p>
+                </div>
+              </div>
+            </Card>
+          )}
         </motion.div>
       </div>
     </div>

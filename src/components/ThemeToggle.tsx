@@ -11,13 +11,13 @@ const ThemeToggle: React.FC = () => {
   const toggle = () => setTheme(isDark ? "light" : "dark");
 
   return (
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="fixed top-4 right-4 z-50">
       <Button
         variant="outline"
         size="icon"
         aria-label={isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
         onClick={toggle}
-        className="glass shadow-lg"
+        className="glass shadow-lg hover-scale"
         title={isDark ? "Modo claro" : "Modo oscuro"}
       >
         {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}

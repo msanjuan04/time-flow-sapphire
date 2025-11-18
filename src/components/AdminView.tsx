@@ -278,6 +278,16 @@ const AdminView = () => {
         () => {
           fetchStats();
           fetchRecentEvents();
+          // Trigger anomaly detection after a delay (to batch events)
+          setTimeout(async () => {
+            try {
+              await supabase.functions.invoke('detect-anomalies', {
+                body: { company_id: companyId },
+              });
+            } catch (error) {
+              console.error('Error detecting anomalies:', error);
+            }
+          }, 5000); // Wait 5 seconds to batch multiple events
         }
       )
       .subscribe();
@@ -327,6 +337,28 @@ const AdminView = () => {
 
     return () => clearInterval(interval);
   }, [companyId, fetchAllData]);
+
+  // Detect anomalies periodically (every hour)
+  useEffect(() => {
+    if (!companyId) return;
+    
+    const detectAnomalies = async () => {
+      try {
+        await supabase.functions.invoke('detect-anomalies', {
+          body: { company_id: companyId },
+        });
+      } catch (error) {
+        console.error('Error detecting anomalies:', error);
+        // Silently fail - don't disrupt the dashboard
+      }
+    };
+
+    // Run immediately on mount, then every hour
+    detectAnomalies();
+    const anomalyInterval = setInterval(detectAnomalies, 3600000); // 1 hour
+
+    return () => clearInterval(anomalyInterval);
+  }, [companyId]);
 
   useEffect(() => {
     if (!companyId) return;

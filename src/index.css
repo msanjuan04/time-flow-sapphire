@@ -249,4 +249,12 @@ All colors MUST be HSL.
     background: hsl(var(--muted) / 0.6);
     border: 1px solid hsl(var(--border));
   }
+
+  .hover-scale {
+    transition: transform 0.2s ease-in-out;
+  }
+
+  .hover-scale:hover {
+    transform: scale(1.05);
+  }
 }

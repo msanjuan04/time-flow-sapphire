@@ -90,6 +90,32 @@ const WorkerCalendar = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [membership, date]);
 
+  // Subscribe to scheduled_hours changes in real-time
+  useEffect(() => {
+    if (!membership || !user) return;
+
+    const channel = supabase
+      .channel(`worker-calendar-scheduled-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "scheduled_hours",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          console.log("🔄 Scheduled hours updated, refreshing calendar...");
+          fetchCalendarData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [membership, user]);
+
   const fetchCalendarData = async () => {
     if (!membership || !user) return;
 

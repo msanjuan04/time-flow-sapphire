@@ -21,7 +21,7 @@ export const ensureWorkerProfile = async (
   const normalizedEmail = email.toLowerCase();
   const { data: profile } = await supabaseAdmin
     .from("profiles")
-    .select("id, login_code, full_name")
+    .select("id, login_code, full_name, is_superadmin")
     .eq("email", normalizedEmail)
     .maybeSingle();
 
@@ -51,6 +51,7 @@ export const ensureWorkerProfile = async (
           id: profileId,
           email: normalizedEmail,
           full_name: newUser.user.user_metadata?.full_name || defaultName,
+          is_superadmin: false,
         },
         { onConflict: "id" }
       );
@@ -73,6 +74,9 @@ export const ensureWorkerProfile = async (
   const updates: Record<string, unknown> = {};
   if (centerId) updates.center_id = centerId;
   if (teamId) updates.team_id = teamId;
+  if (!profile?.is_superadmin) {
+    updates.is_superadmin = false;
+  }
   if (Object.keys(updates).length > 0) {
     await supabaseAdmin.from("profiles").update(updates).eq("id", profileId);
   }

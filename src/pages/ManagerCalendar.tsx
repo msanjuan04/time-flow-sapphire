@@ -7,6 +7,7 @@ import { Calendar as CalendarIcon, Clock, Users, Plus, AlertCircle, Trash2, Penc
 import { Calendar } from "@/components/ui/calendar";
 import { format, parseISO, startOfMonth, endOfMonth, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
+import type { DayContentProps } from "react-day-picker";
 import { toast } from "sonner";
 import {
   Select,
@@ -29,6 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { BackButton } from "@/components/BackButton";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
+import { cn } from "@/lib/utils";
 
 interface Employee {
   id: string;
@@ -118,49 +120,76 @@ const ManagerCalendar = () => {
     if (uid) setSelectedEmployee(uid);
   }, [searchParams]);
 
-  // Load month events for selected employee
-  useEffect(() => {
+  const fetchCalendarData = useCallback(async () => {
     if (!membership || !selectedEmployee || !date) return;
 
     const monthStart = startOfMonth(date);
     const monthEnd = endOfMonth(date);
 
-    const fetchEvents = async () => {
-      const { data, error } = await supabase
-        .from("time_events")
-        .select("id, event_type, event_time, notes")
-        .eq("company_id", membership.company_id)
-        .eq("user_id", selectedEmployee)
-        .gte("event_time", monthStart.toISOString())
-        .lte("event_time", monthEnd.toISOString())
-        .order("event_time", { ascending: true });
-      if (!error) {
-        const events = (data as ManagerTimeEvent[]) || [];
-        setTimeEvents(events);
-        setSelectedDayEvents(events.filter((event) => isSameDay(parseISO(event.event_time), date!)));
-      }
-      // Fetch scheduled hours for the month
-      const { data: sh } = await supabase
-        .from("scheduled_hours")
-        .select("id, date, expected_hours")
-        .eq("user_id", selectedEmployee)
-        .gte("date", format(monthStart, "yyyy-MM-dd"))
-        .lte("date", format(monthEnd, "yyyy-MM-dd"));
-      setScheduledHours((sh as ScheduledHour[]) || []);
+    const { data, error } = await supabase
+      .from("time_events")
+      .select("id, event_type, event_time, notes")
+      .eq("company_id", membership.company_id)
+      .eq("user_id", selectedEmployee)
+      .gte("event_time", monthStart.toISOString())
+      .lte("event_time", monthEnd.toISOString())
+      .order("event_time", { ascending: true });
+    if (!error) {
+      const events = (data as ManagerTimeEvent[]) || [];
+      setTimeEvents(events);
+      setSelectedDayEvents(events.filter((event) => isSameDay(parseISO(event.event_time), date!)));
+    }
+    // Fetch scheduled hours for the month
+    const { data: sh } = await supabase
+      .from("scheduled_hours")
+      .select("id, date, expected_hours")
+      .eq("user_id", selectedEmployee)
+      .gte("date", format(monthStart, "yyyy-MM-dd"))
+      .lte("date", format(monthEnd, "yyyy-MM-dd"));
+    setScheduledHours((sh as ScheduledHour[]) || []);
 
-      // Fetch absences for the month overlap
-      const { data: abs } = await supabase
-        .from("absences")
-        .select("id, start_date, end_date, absence_type, status")
-        .eq("user_id", selectedEmployee)
-        .or(
-          `and(start_date.lte.${format(monthEnd, "yyyy-MM-dd")},end_date.gte.${format(monthStart, "yyyy-MM-dd")})`
-        );
-      setAbsences((abs as AbsenceRecord[]) || []);
-    };
-
-    fetchEvents();
+    // Fetch absences for the month overlap
+    const { data: abs } = await supabase
+      .from("absences")
+      .select("id, start_date, end_date, absence_type, status")
+      .eq("user_id", selectedEmployee)
+      .or(
+        `and(start_date.lte.${format(monthEnd, "yyyy-MM-dd")},end_date.gte.${format(monthStart, "yyyy-MM-dd")})`
+      );
+    setAbsences((abs as AbsenceRecord[]) || []);
   }, [membership, selectedEmployee, date]);
+
+  // Load month events for selected employee
+  useEffect(() => {
+    fetchCalendarData();
+  }, [fetchCalendarData]);
+
+  // Subscribe to scheduled_hours changes in real-time
+  useEffect(() => {
+    if (!membership || !selectedEmployee) return;
+
+    const channel = supabase
+      .channel(`manager-calendar-scheduled-${selectedEmployee}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "scheduled_hours",
+          filter: `user_id=eq.${selectedEmployee}`,
+        },
+        () => {
+          console.log("🔄 Scheduled hours updated, refreshing calendar...");
+          fetchCalendarData();
+          fetchTeamDayOverview();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [membership, selectedEmployee, fetchCalendarData, fetchTeamDayOverview]);
 
   const fetchEmployees = async () => {
     if (!membership) return;
@@ -567,6 +596,58 @@ const ManagerCalendar = () => {
   });
   const visibleStatusEmployees = filteredEmployeesList.slice(0, 8);
   const dateLabelForStatus = date ? format(date, "PP", { locale: es }) : "Fecha no seleccionada";
+  const calendarModifiers = {
+    hasWork: (day: Date) => timeEvents.some((event) => isSameDay(parseISO(event.event_time), day)),
+    hasAbsence: (day: Date) =>
+      absences.some((absence) => {
+        const start = parseISO(absence.start_date);
+        const end = parseISO(absence.end_date);
+        return day >= start && day <= end;
+      }),
+    hasScheduled: (day: Date) =>
+      scheduledHours.some((scheduled) => isSameDay(parseISO(scheduled.date), day)),
+  };
+  const renderDayContent = ({ date: dayDate, activeModifiers }: DayContentProps) => {
+    const indicators: Array<{ key: string; className: string; label: string }> = [];
+    if (activeModifiers?.hasAbsence) {
+      indicators.push({
+        key: "absence",
+        className: "calendar-status-dot calendar-status-dot-absence",
+        label: "Ausencia registrada",
+      });
+    }
+    if (activeModifiers?.hasWork) {
+      indicators.push({
+        key: "work",
+        className: "calendar-status-dot calendar-status-dot-work",
+        label: "Día con fichajes",
+      });
+    }
+    if (activeModifiers?.hasScheduled) {
+      indicators.push({
+        key: "scheduled",
+        className: "calendar-status-dot calendar-status-dot-scheduled",
+        label: "Horas programadas",
+      });
+    }
+    return (
+      <div className="calendar-day-wrapper">
+        <span className="calendar-day-number">{dayDate.getDate()}</span>
+        {indicators.length > 0 && (
+          <div className="calendar-status-row">
+            {indicators.map((indicator) => (
+              <span
+                key={indicator.key}
+                aria-label={indicator.label}
+                className={indicator.className}
+                title={indicator.label}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (membershipLoading) {
     return (
@@ -577,24 +658,27 @@ const ManagerCalendar = () => {
   }
 
   return (
-    <div className="container mx-auto p-4 space-y-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <BackButton />
-          <CalendarIcon className="h-8 w-8 text-primary" />
-          <div>
-            <h1 className="text-3xl font-bold">Calendario de Equipo</h1>
-            <p className="text-muted-foreground">
-              Gestiona las horas y ausencias de tu equipo
-            </p>
+    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
+      <div className="max-w-7xl mx-auto space-y-6 pt-8 animate-fade-in">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <BackButton />
+            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
+              <CalendarIcon className="h-6 w-6 text-primary-foreground" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">Calendario de Equipo</h1>
+              <p className="text-sm text-muted-foreground">
+                Gestiona las horas y ausencias de tu equipo
+              </p>
+            </div>
+          </div>
+          <div className="flex-1 flex justify-end">
+            <Button variant="secondary" onClick={handleCompanyHoliday} className="hover-scale">
+              Marcar festivo de empresa
+            </Button>
           </div>
         </div>
-        <div className="flex-1 flex justify-end">
-          <Button variant="secondary" onClick={handleCompanyHoliday} className="hover-scale">
-            Marcar festivo de empresa
-          </Button>
-        </div>
-      </div>
 
       {/* Diálogo de edición de evento */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
@@ -630,23 +714,28 @@ const ManagerCalendar = () => {
 
       <div className="grid md:grid-cols-3 gap-6">
         {/* Sidebar empleados */}
-        <Card className="p-4 h-full">
-          <div className="flex items-center gap-2 mb-3">
-            <Users className="h-5 w-5 text-primary" />
-            <span className="text-base font-semibold">Empleados</span>
+        <Card className="glass-card p-6 h-full">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
+              <Users className="h-5 w-5 text-primary" />
+            </div>
+            <span className="text-lg font-semibold">Empleados</span>
           </div>
           <Input
             placeholder="Buscar..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="mb-3"
+            className="mb-4"
           />
-          <div className="max-h-[480px] overflow-auto space-y-1 pr-2">
+          <div className="max-h-[600px] overflow-auto space-y-2 pr-2">
             {filteredEmployeesList.map((e) => (
                 <Button
                   key={e.id}
                   variant={selectedEmployee === e.id ? "default" : "outline"}
-                  className="w-full justify-start"
+                  className={cn(
+                    "w-full justify-start smooth-transition",
+                    selectedEmployee === e.id && "hover-scale"
+                  )}
                   onClick={() => setSelectedEmployee(e.id)}
                 >
                   {e.full_name || e.email}
@@ -663,7 +752,7 @@ const ManagerCalendar = () => {
               <>
                 <Dialog open={isScheduleDialogOpen} onOpenChange={setIsScheduleDialogOpen}>
                   <DialogTrigger asChild>
-                    <Button>
+                    <Button className="hover-scale">
                       <Clock className="mr-2 h-4 w-4" /> Programar Horas
                     </Button>
                   </DialogTrigger>
@@ -691,7 +780,7 @@ const ManagerCalendar = () => {
 
                 <Dialog open={isAbsenceDialogOpen} onOpenChange={setIsAbsenceDialogOpen}>
                   <DialogTrigger asChild>
-                    <Button variant="outline">
+                    <Button variant="outline" className="hover-scale">
                       <Plus className="mr-2 h-4 w-4" /> Registrar Ausencia
                     </Button>
                   </DialogTrigger>
@@ -733,13 +822,13 @@ const ManagerCalendar = () => {
               </>
             )}
 
-            <Button variant="secondary" onClick={handleCompanyHoliday}>
+            <Button variant="secondary" onClick={handleCompanyHoliday} className="hover-scale">
               Marcar festivo de empresa
             </Button>
           </div>
 
           {selectedEmployee && date && (
-            <div className="rounded-2xl border border-border bg-muted/30 p-4 space-y-3">
+            <Card className="glass-card p-6 space-y-3">
               <div className="flex flex-wrap items-end gap-3">
                 <div className="flex flex-col">
                   <Label>Horas rápidas</Label>
@@ -761,13 +850,14 @@ const ManagerCalendar = () => {
                   />
                 </div>
                 <div className="flex gap-2">
-                  <Button size="sm" onClick={() => handleQuickSchedule(8, "8h estándar")}>
+                  <Button size="sm" onClick={() => handleQuickSchedule(8, "8h estándar")} className="hover-scale">
                     Asignar 8h estándar
                   </Button>
                   <Button
                     size="sm"
                     variant="secondary"
                     onClick={() => handleQuickSchedule(Number(quickHours) || 8, quickNote)}
+                    className="hover-scale"
                   >
                     Configurar jornada completa
                   </Button>
@@ -776,61 +866,182 @@ const ManagerCalendar = () => {
               <p className="text-xs text-muted-foreground">
                 Esta acción crea o actualiza las <code>scheduled_hours</code> para el día seleccionado.
               </p>
-            </div>
+            </Card>
           )}
 
           {/* Calendario + gestión del día */}
           <div className="grid md:grid-cols-2 gap-6">
-            <Card className="p-6">
-              <Calendar
-                mode="single"
-                selected={date}
-                onSelect={(d) => {
-                  setDate(d);
-                  if (d) {
-                    setSelectedDayEvents(
-                      timeEvents.filter((e) => isSameDay(parseISO(e.event_time), d))
-                    );
-                  }
-                }}
-                locale={es}
-                modifiers={{
-                  hasWork: (day: Date) => timeEvents.some((e) => isSameDay(parseISO(e.event_time), day)),
-                  hasAbsence: (day: Date) =>
-                    absences.some((absence) => {
-                      const start = parseISO(absence.start_date);
-                      const end = parseISO(absence.end_date);
-                      return day >= start && day <= end;
-                    }),
-                  hasScheduled: (day: Date) =>
-                    scheduledHours.some((scheduled) => isSameDay(parseISO(scheduled.date), day)),
-                }}
-                modifiersStyles={{
-                  hasWork: { backgroundColor: "hsl(var(--primary))", color: "white" },
-                  hasAbsence: { backgroundColor: "hsl(var(--destructive))", color: "white" },
-                  hasScheduled: { backgroundColor: "hsl(var(--secondary))" },
-                }}
-                className="rounded-md border pointer-events-auto"
-              />
-              <div className="mt-4 space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded" style={{ backgroundColor: "hsl(var(--primary))" }} />
-                  <span className="text-sm">Día con fichajes</span>
+            <div className="space-y-6">
+              <Card className="glass-card p-6 space-y-5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">
+                      Calendario mensual
+                    </p>
+                    <h2 className="text-2xl font-semibold">
+                      {format(date ?? new Date(), "MMMM yyyy", { locale: es })}
+                    </h2>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground">Día seleccionado</p>
+                    <p className="text-sm font-medium">
+                      {date ? format(date, "PP", { locale: es }) : "Sin seleccionar"}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded" style={{ backgroundColor: "hsl(var(--destructive))" }} />
-                  <span className="text-sm">Ausencia</span>
+                <div className="rounded-2xl border bg-muted/30 p-2">
+                  <Calendar
+                    mode="single"
+                    selected={date}
+                    onSelect={(d) => {
+                      setDate(d);
+                      if (d) {
+                        setSelectedDayEvents(
+                          timeEvents.filter((e) => isSameDay(parseISO(e.event_time), d))
+                        );
+                      }
+                    }}
+                    locale={es}
+                    modifiers={calendarModifiers}
+                    components={{ DayContent: renderDayContent }}
+                    className="w-full pointer-events-auto"
+                  />
                 </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded" style={{ backgroundColor: "hsl(var(--secondary))" }} />
-                  <span className="text-sm">Horas programadas</span>
+                <div className="pt-2 grid gap-2 sm:grid-cols-3">
+                  <div className="calendar-legend-item">
+                    <span className="calendar-status-dot calendar-status-dot-work" />
+                    <div>
+                      <p className="text-sm font-medium">Día con fichajes</p>
+                      <p className="text-xs text-muted-foreground">Registros realizados</p>
+                    </div>
+                  </div>
+                  <div className="calendar-legend-item">
+                    <span className="calendar-status-dot calendar-status-dot-absence" />
+                    <div>
+                      <p className="text-sm font-medium">Ausencia</p>
+                      <p className="text-xs text-muted-foreground">Vacaciones o bajas</p>
+                    </div>
+                  </div>
+                  <div className="calendar-legend-item">
+                    <span className="calendar-status-dot calendar-status-dot-scheduled" />
+                    <div>
+                      <p className="text-sm font-medium">Horas programadas</p>
+                      <p className="text-xs text-muted-foreground">Turnos creados</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </Card>
+              </Card>
 
-            <Card className="p-6 space-y-4">
+              <Card className="glass-card p-6 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">Estado por trabajador</p>
+                    <h3 className="text-lg font-semibold flex items-center gap-2">
+                      <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                        <Users className="w-4 h-4 text-primary" />
+                      </div>
+                      Resumen rápido
+                    </h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{dateLabelForStatus}</p>
+                </div>
+
+                {visibleStatusEmployees.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No hay empleados filtrados para este día. Usa el buscador para encontrarlos.
+                  </p>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    {visibleStatusEmployees.map((employee) => {
+                      const overview = teamDayOverview[employee.id];
+                      const scheduled = overview?.scheduledHours ?? 0;
+                      const worked = overview?.workedHours ?? 0;
+                      const chips: Array<{ label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = [];
+                      if (overview?.absence?.status === "approved") {
+                        chips.push({ label: "Ausencia aprobada", variant: "destructive" });
+                      }
+                      if (!overview?.absence) {
+                        if (scheduled > 0 && worked >= scheduled) {
+                          chips.push({ label: "Día completo", variant: "default" });
+                        } else if (scheduled > 0 && worked > 0 && worked < scheduled) {
+                          chips.push({ label: "Faltan horas", variant: "outline" });
+                        } else if (worked > 0) {
+                          chips.push({ label: "Ha fichado", variant: "secondary" });
+                        }
+                      }
+                      if (chips.length === 0) {
+                        chips.push({ label: "Sin actividad", variant: "outline" });
+                      }
+
+                      return (
+                        <Card
+                          key={employee.id}
+                          className="glass-card p-4 space-y-4 border border-border/50 backdrop-blur-md"
+                        >
+                          <div className="space-y-1">
+                            <p className="font-semibold text-base leading-tight">
+                              {employee.full_name || employee.email}
+                            </p>
+                            <p className="text-xs text-muted-foreground break-all">
+                              {employee.email}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap gap-2">
+                            {chips.map((chip) => (
+                              <Badge key={chip.label} variant={chip.variant} className="rounded-full">
+                                {chip.label}
+                              </Badge>
+                            ))}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openScheduleForEmployee(employee.id)}
+                              className="w-full"
+                            >
+                              Programar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => openAbsenceForEmployee(employee.id)}
+                              className="w-full border border-border/60"
+                            >
+                              Ausencia
+                            </Button>
+                          </div>
+
+                          <div className="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground flex justify-between">
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              Prog. {scheduled.toFixed(2)}h
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              Reg. {worked.toFixed(2)}h
+                            </span>
+                          </div>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                )}
+                {filteredEmployeesList.length > visibleStatusEmployees.length && (
+                  <p className="text-xs text-muted-foreground text-right">
+                    Mostrando {visibleStatusEmployees.length} de {filteredEmployeesList.length} empleados
+                  </p>
+                )}
+              </Card>
+            </div>
+
+            <Card className="glass-card p-6 space-y-4">
               <h3 className="text-lg font-semibold flex items-center gap-2">
-                <AlertCircle className="w-5 h-5 text-primary" />
+                <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                  <AlertCircle className="w-4 h-4 text-primary" />
+                </div>
                 Gestión del día seleccionado
               </h3>
               {!selectedEmployee || !date ? (
@@ -858,18 +1069,18 @@ const ManagerCalendar = () => {
                       <Label>Hora</Label>
                       <Input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} />
                     </div>
-                    <Button onClick={handleAddEvent}>Añadir</Button>
+                    <Button onClick={handleAddEvent} className="hover-scale">Añadir</Button>
                   </div>
 
                   <div className="pt-2">
-                    <h4 className="font-medium mb-2">Eventos del día</h4>
+                    <h4 className="font-medium mb-3">Eventos del día</h4>
                     {selectedDayEvents.length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No hay eventos.</p>
+                      <p className="text-sm text-muted-foreground py-4 text-center">No hay eventos.</p>
                     ) : (
                       <ul className="space-y-2">
                         {selectedDayEvents.map((e) => (
-                          <li key={e.id} className="flex items-center justify-between p-2 rounded-md bg-muted/50">
-                            <span className="text-sm">
+                          <li key={e.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 smooth-transition hover:bg-muted/70">
+                            <span className="text-sm font-medium">
                               {e.event_type === "clock_in"
                                 ? "Entrada"
                                 : e.event_type === "clock_out"
@@ -881,10 +1092,10 @@ const ManagerCalendar = () => {
                               {format(parseISO(e.event_time), "HH:mm")}
                             </span>
                             <div className="flex items-center gap-1">
-                              <Button size="icon" variant="ghost" onClick={() => openEdit(e)} title="Editar">
+                              <Button size="icon" variant="ghost" onClick={() => openEdit(e)} title="Editar" className="hover-scale">
                                 <Pencil className="w-4 h-4" />
                               </Button>
-                              <Button size="icon" variant="ghost" onClick={() => handleDeleteEvent(e.id)} title="Eliminar">
+                              <Button size="icon" variant="ghost" onClick={() => handleDeleteEvent(e.id)} title="Eliminar" className="hover-scale">
                                 <Trash2 className="w-4 h-4" />
                               </Button>
                             </div>
@@ -907,6 +1118,7 @@ const ManagerCalendar = () => {
                         setAbsenceReason("Festivo");
                         setIsAbsenceDialogOpen(true);
                       }}
+                      className="hover-scale"
                     >
                       Marcar festivo
                     </Button>
@@ -914,84 +1126,11 @@ const ManagerCalendar = () => {
                 </>
               )}
             </Card>
-            <Card className="space-y-3 border border-border bg-background/70 p-4 rounded-2xl">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-widest text-muted-foreground">Estado por trabajador</p>
-                  <h3 className="text-lg font-semibold">Resumen rápido</h3>
-                </div>
-                <p className="text-xs text-muted-foreground">{dateLabelForStatus}</p>
-              </div>
-
-              {visibleStatusEmployees.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No hay empleados filtrados para este día. Usa el buscador para encontrarlos.
-                </p>
-              ) : (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {visibleStatusEmployees.map((employee) => {
-                    const overview = teamDayOverview[employee.id];
-                    const scheduled = overview?.scheduledHours ?? 0;
-                    const worked = overview?.workedHours ?? 0;
-                    const chips: Array<{ label: string; variant: "default" | "secondary" | "outline" | "destructive" }> = [];
-                    if (overview?.absence?.status === "approved") {
-                      chips.push({ label: "Ausencia aprobada", variant: "destructive" });
-                    }
-                    if (!overview?.absence) {
-                      if (scheduled > 0 && worked >= scheduled) {
-                        chips.push({ label: "Día completo", variant: "default" });
-                      } else if (scheduled > 0 && worked > 0 && worked < scheduled) {
-                        chips.push({ label: "Faltan horas", variant: "outline" });
-                      } else if (worked > 0) {
-                        chips.push({ label: "Ha fichado", variant: "secondary" });
-                      }
-                    }
-                    if (chips.length === 0) {
-                      chips.push({ label: "Sin actividad", variant: "outline" });
-                    }
-
-                    return (
-                      <div key={employee.id} className="rounded-2xl border border-border/80 bg-muted/30 p-4 space-y-2">
-                        <div className="flex justify-between gap-3">
-                          <div>
-                            <p className="font-semibold">{employee.full_name || employee.email}</p>
-                            <p className="text-xs text-muted-foreground">{employee.email}</p>
-                          </div>
-                          <div className="flex flex-col gap-1">
-                            <Button size="sm" variant="outline" onClick={() => openScheduleForEmployee(employee.id)}>
-                              Programar
-                            </Button>
-                            <Button size="sm" variant="ghost" onClick={() => openAbsenceForEmployee(employee.id)}>
-                              Ausencia
-                            </Button>
-                          </div>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {chips.map((chip) => (
-                            <Badge key={chip.label} variant={chip.variant}>
-                              {chip.label}
-                            </Badge>
-                          ))}
-                        </div>
-                        <div className="text-xs text-muted-foreground flex gap-4">
-                          <span>Programadas {scheduled.toFixed(2)}h</span>
-                          <span>Registradas {worked.toFixed(2)}h</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {filteredEmployeesList.length > visibleStatusEmployees.length && (
-                <p className="text-xs text-muted-foreground text-right">
-                  Mostrando {visibleStatusEmployees.length} de {filteredEmployeesList.length} empleados
-                </p>
-              )}
-            </Card>
           </div>
         </div>
       </div>
     </div>
+  </div>
   );
 };
 

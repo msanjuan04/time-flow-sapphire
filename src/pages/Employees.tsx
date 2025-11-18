@@ -50,6 +50,7 @@ import { getCompanyPlanDefinition } from "@/config/companyPlans";
 import { DEMO_COMPANY_IDS, DEMO_SHOWCASE_HEADCOUNT } from "@/config/demo";
 import { FunctionsHttpError } from "@supabase/functions-js";
 import ScheduleHoursDialog from "@/components/ScheduleHoursDialog";
+import EmployeeInsights from "@/components/EmployeeInsights";
 
 /* --------------------------- utilidades locales --------------------------- */
 const exportCSV = (filename: string, headers: string[], rows: (string | number)[][]) => {
@@ -130,6 +131,7 @@ interface InviteSummary {
   expires_at: string;
   center_id: string | null;
   team_id: string | null;
+  accepted_at: string | null;
 }
 
 const Employees = () => {
@@ -170,7 +172,7 @@ const Employees = () => {
   // Ficha de empleado
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsEvents, setDetailsEvents] = useState<DetailEvent[]>([]);
-  const [detailTab, setDetailTab] = useState<"hours" | "map">("hours");
+  const [detailTab, setDetailTab] = useState<"hours" | "map" | "insights">("hours");
   const [detailHours, setDetailHours] = useState<DetailSession[]>([]);
   const [detailHoursLoading, setDetailHoursLoading] = useState(false);
   const [detailHoursStart, setDetailHoursStart] = useState(() => defaultStartDate());
@@ -180,6 +182,7 @@ const Employees = () => {
   const [detailMapStart, setDetailMapStart] = useState(() => defaultStartDate());
   const [detailMapEnd, setDetailMapEnd] = useState(() => defaultEndDate());
   const [detailMapWeekday, setDetailMapWeekday] = useState("all");
+  const [detailMapReadyTick, setDetailMapReadyTick] = useState(0);
   const detailMapContainerRef = useRef<HTMLDivElement>(null);
   const detailMapRef = useRef<L.Map | null>(null);
   const detailMapMarkersRef = useRef<L.Marker[]>([]);
@@ -280,7 +283,8 @@ const Employees = () => {
 
   // Cache de ubicaciones
   const [locCache, setLocCache] = useState<Record<string, { lat: number; lng: number } | null>>({});
-  const [invites, setInvites] = useState<InviteSummary[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<InviteSummary[]>([]);
+  const [recentAcceptedInvites, setRecentAcceptedInvites] = useState<InviteSummary[]>([]);
   const [invitesLoading, setInvitesLoading] = useState(false);
   const [invitesError, setInvitesError] = useState<string | null>(null);
   const [inviteAction, setInviteAction] = useState<{ id: string; action: "resend" | "revoke" } | null>(null);
@@ -412,7 +416,12 @@ const Employees = () => {
       return;
     }
 
-    if (!detailMapContainerRef.current) return;
+    if (!detailMapContainerRef.current) {
+      const retry = setTimeout(() => {
+        setDetailMapReadyTick((tick) => tick + 1);
+      }, 75);
+      return () => clearTimeout(retry);
+    }
 
     const mapInstance = L.map(detailMapContainerRef.current, {
       center: [40.4168, -3.7038],
@@ -433,7 +442,7 @@ const Employees = () => {
     return () => {
       cleanupDetailMap();
     };
-  }, [detailsOpen, detailTab, cleanupDetailMap]);
+  }, [detailsOpen, detailTab, cleanupDetailMap, detailMapReadyTick]);
 
   useEffect(() => {
     const mapInstance = detailMapRef.current;
@@ -625,29 +634,43 @@ const Employees = () => {
     }
   };
 
+  const fetchInvitesByStatus = useCallback(
+    async (status: "pending" | "accepted") => {
+      const { data, error } = await supabase.functions.invoke<{ invites: InviteSummary[] }>(
+        "list-invites",
+        { body: { status } }
+      );
+      if (error) throw error;
+      return data?.invites ?? [];
+    },
+    []
+  );
+
   const fetchInvites = useCallback(async () => {
     if (!canManageInvites) return;
     setInvitesLoading(true);
     setInvitesError(null);
     try {
-      const { data, error } = await supabase.functions.invoke<{ invites: InviteSummary[] }>("list-invites", {
-        body: { status: "pending" },
-      });
-      if (error) throw error;
-      setInvites(data?.invites ?? []);
+      const [pending, accepted] = await Promise.all([
+        fetchInvitesByStatus("pending"),
+        fetchInvitesByStatus("accepted"),
+      ]);
+      setPendingInvites(pending);
+      setRecentAcceptedInvites(accepted.slice(0, 5));
     } catch (err) {
       console.error("Error fetching invites:", err);
       setInvitesError("No pudimos cargar las invitaciones.");
     } finally {
       setInvitesLoading(false);
     }
-  }, [canManageInvites]);
+  }, [canManageInvites, fetchInvitesByStatus]);
 
   useEffect(() => {
     if (canManageInvites) {
       fetchInvites();
     } else {
-      setInvites([]);
+      setPendingInvites([]);
+      setRecentAcceptedInvites([]);
     }
   }, [canManageInvites, fetchInvites]);
 
@@ -903,7 +926,7 @@ const getFunctionErrorMessage = async (error: unknown) => {
                 </div>
                 <p className="text-sm text-muted-foreground">{planInfo.description}</p>
                 <p className="text-xs text-muted-foreground">
-                  Invitaciones pendientes: {invites.length}
+                  Invitaciones pendientes: {pendingInvites.length}
                 </p>
               </div>
               <div className="flex-1">
@@ -1024,15 +1047,15 @@ const getFunctionErrorMessage = async (error: unknown) => {
             {invitesError && (
               <p className="text-sm text-destructive">{invitesError}</p>
             )}
-            {invitesLoading && invites.length === 0 ? (
+            {invitesLoading && pendingInvites.length === 0 ? (
               <Skeleton className="h-20 w-full" />
-            ) : invites.length === 0 ? (
+            ) : pendingInvites.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-4">
                 No hay invitaciones pendientes.
               </p>
             ) : (
               <div className="divide-y divide-border rounded-lg border border-border/60">
-                {invites.map((invite) => (
+                {pendingInvites.map((invite) => (
                   <div
                     key={invite.id}
                     className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-3"
@@ -1079,6 +1102,39 @@ const getFunctionErrorMessage = async (error: unknown) => {
                 ))}
               </div>
             )}
+          </Card>
+        )}
+
+        {canManageInvites && recentAcceptedInvites.length > 0 && (
+          <Card className="glass-card p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-semibold">Últimas invitaciones aceptadas</h3>
+                <p className="text-xs text-muted-foreground">
+                  Historial rápido de los últimos accesos activados.
+                </p>
+              </div>
+              <Badge variant="outline" className="text-xs">
+                {recentAcceptedInvites.length} registro
+                {recentAcceptedInvites.length === 1 ? "" : "s"}
+              </Badge>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {recentAcceptedInvites.map((invite) => (
+                <div key={invite.id} className="rounded-xl border bg-muted/20 p-3 space-y-2">
+                  <p className="font-medium">{invite.email}</p>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                    <Badge variant="outline" className="capitalize">
+                      {invite.role}
+                    </Badge>
+                    <span>Aceptada {invite.accepted_at ? new Date(invite.accepted_at).toLocaleDateString("es-ES") : "—"}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Invitada el {new Date(invite.created_at).toLocaleDateString("es-ES")}
+                  </p>
+                </div>
+              ))}
+            </div>
           </Card>
         )}
 
@@ -1399,11 +1455,12 @@ const getFunctionErrorMessage = async (error: unknown) => {
                   </div>
                 </div>
 
-                <Tabs value={detailTab} onValueChange={(value) => setDetailTab(value as "hours" | "map")} className="space-y-4">
+                <Tabs value={detailTab} onValueChange={(value) => setDetailTab(value as "hours" | "map" | "insights")} className="space-y-4">
                   <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 rounded-2xl border px-3 py-2">
-                    <TabsList className="w-full sm:w-auto grid grid-cols-2 rounded-xl bg-muted/40 p-1">
+                    <TabsList className="w-full sm:w-auto grid grid-cols-3 rounded-xl bg-muted/40 p-1">
                       <TabsTrigger value="hours" className="text-xs sm:text-sm">Horas</TabsTrigger>
                       <TabsTrigger value="map" className="text-xs sm:text-sm">Mapa</TabsTrigger>
+                      <TabsTrigger value="insights" className="text-xs sm:text-sm">Insights</TabsTrigger>
                     </TabsList>
                   </div>
                 <TabsContent value="hours" className="space-y-4">
@@ -1606,6 +1663,13 @@ const getFunctionErrorMessage = async (error: unknown) => {
                         </div>
                       </div>
                     </div>
+                  </TabsContent>
+                  <TabsContent value="insights" className="space-y-4">
+                    <EmployeeInsights
+                      employeeId={selectedEmployee.id}
+                      employeeName={selectedEmployee.full_name || selectedEmployee.email}
+                      companyId={companyId || ""}
+                    />
                   </TabsContent>
                 </Tabs>
 

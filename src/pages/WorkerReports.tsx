@@ -234,6 +234,32 @@ const WorkerReports = () => {
     fetchWorkerData();
   }, [fetchWorkerData]);
 
+  // Subscribe to scheduled_hours changes in real-time
+  useEffect(() => {
+    if (!user?.id || !companyId) return;
+
+    const channel = supabase
+      .channel(`worker-reports-scheduled-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "scheduled_hours",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => {
+          console.log("🔄 Scheduled hours updated, refreshing reports...");
+          fetchWorkerData();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id, companyId, fetchWorkerData]);
+
   // Export helpers (cliente, no tocan backend)
   const exportCSVLocal = () => {
     const headers = ["Fecha", "Entrada", "Salida", "Horas"];
