@@ -6,6 +6,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -66,6 +73,20 @@ const HORIZON_FORWARD_DAYS = 180;
 const PREVIEW_GROUPS = 12;
 const HISTORY_DAYS = 120;
 
+type WeekSchedule = {
+  morningStart: string;
+  morningEnd: string;
+  afternoonStart: string;
+  afternoonEnd: string;
+};
+
+const createEmptyWeekSchedule = (): WeekSchedule => ({
+  morningStart: "",
+  morningEnd: "",
+  afternoonStart: "",
+  afternoonEnd: "",
+});
+
 const ScheduleHoursDialog = ({ open, onOpenChange, employee }: ScheduleHoursDialogProps) => {
   const { user } = useAuth();
   const { companyId } = useMembership();
@@ -84,6 +105,10 @@ const ScheduleHoursDialog = ({ open, onOpenChange, employee }: ScheduleHoursDial
   const [entriesLoading, setEntriesLoading] = useState(false);
   const [upcomingGroups, setUpcomingGroups] = useState<ScheduleGroup[]>([]);
   const hydrateRef = useRef(true);
+  const [weeklySchedules, setWeeklySchedules] = useState<WeekSchedule[]>(
+    () => Array.from({ length: 4 }, createEmptyWeekSchedule)
+  );
+  const [copyWeekTargets, setCopyWeekTargets] = useState<number[]>([2, 3, 4, 1]);
 
   const computeHoursFromTimes = useCallback((start: string, end: string): number => {
     const [sh, sm] = start.split(":").map((v) => Number(v));
@@ -267,38 +292,72 @@ const ScheduleHoursDialog = ({ open, onOpenChange, employee }: ScheduleHoursDial
         .gte("date", startIso);
       if (deleteResult.error) throw deleteResult.error;
 
-      // Generate scheduled hours for the next HORIZON_FORWARD_DAYS
+      // Generate scheduled hours for the next HORIZON_FORWARD_DAYS using weekly templates
       const payload: any[] = [];
       const reasonMetadata = JSON.stringify({
         reason: trimmedReason,
         changed_at: new Date().toISOString(),
-        days: enabledDays.map((d) => ({
-          day: d.day,
-          dayName: d.dayName,
-          startTime: d.startTime,
-          endTime: d.endTime,
-          expectedHours: d.expectedHours,
-        })),
+        template: weeklySchedules,
       });
+      const computeHours = (start: string, end: string) => {
+        const [sh, sm] = start.split(":").map(Number);
+        const [eh, em] = end.split(":").map(Number);
+        if ([sh, sm, eh, em].some((value) => Number.isNaN(value))) return 0;
+        return Math.max(0, (eh * 60 + em) - (sh * 60 + sm)) / 60;
+      };
+      const isDayEnabled = (dayOfWeek: number) =>
+        daySchedules.some((ds) => ds.day === dayOfWeek && ds.enabled);
 
       for (let i = 0; i < HORIZON_FORWARD_DAYS; i++) {
         const date = new Date(startDate);
         date.setDate(startDate.getDate() + i);
-        const dayOfWeek = date.getDay(); // 0 = Domingo, 1 = Lunes, etc.
-        const daySchedule = daySchedules.find((ds) => ds.day === dayOfWeek && ds.enabled);
+        const dayOfWeek = date.getDay();
+        if (!isDayEnabled(dayOfWeek)) continue;
 
-        if (daySchedule) {
-          payload.push({
-            user_id: employee.id,
-            company_id: companyId,
-            date: date.toISOString().slice(0, 10),
-            expected_hours: Number(daySchedule.expectedHours.toFixed(2)),
-            created_by: user.id,
-            notes: reasonMetadata,
-            start_time: daySchedule.startTime,
-            end_time: daySchedule.endTime,
-          });
-        }
+        const weekIndex = Math.floor(i / 7) % weeklySchedules.length;
+        const weekTemplate = weeklySchedules[weekIndex];
+        const morningHours =
+          weekTemplate.morningStart && weekTemplate.morningEnd
+            ? computeHours(weekTemplate.morningStart, weekTemplate.morningEnd)
+            : 0;
+        const afternoonHours =
+          weekTemplate.afternoonStart && weekTemplate.afternoonEnd
+            ? computeHours(weekTemplate.afternoonStart, weekTemplate.afternoonEnd)
+            : 0;
+        const expected_hours = Number((morningHours + afternoonHours).toFixed(2));
+        if (expected_hours <= 0) continue;
+        const start_time =
+          weekTemplate.morningStart ||
+          weekTemplate.afternoonStart ||
+          daySchedules.find((ds) => ds.day === dayOfWeek)?.startTime ||
+          "09:00";
+        const end_time =
+          weekTemplate.afternoonEnd ||
+          weekTemplate.morningEnd ||
+          daySchedules.find((ds) => ds.day === dayOfWeek)?.endTime ||
+          "17:00";
+        const noteSegments = [
+          `Semana ${weekIndex + 1}`,
+          weekTemplate.morningStart && weekTemplate.morningEnd
+            ? `Mañana ${weekTemplate.morningStart}-${weekTemplate.morningEnd}`
+            : null,
+          weekTemplate.afternoonStart && weekTemplate.afternoonEnd
+            ? `Tarde ${weekTemplate.afternoonStart}-${weekTemplate.afternoonEnd}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(" • ");
+
+        payload.push({
+          user_id: employee.id,
+          company_id: companyId,
+          date: date.toISOString().slice(0, 10),
+          expected_hours,
+          created_by: user.id,
+          notes: `${reasonMetadata} | ${noteSegments}`,
+          start_time,
+          end_time,
+        });
       }
 
       if (payload.length > 0) {
@@ -588,6 +647,97 @@ const ScheduleHoursDialog = ({ open, onOpenChange, employee }: ScheduleHoursDial
               </Button>
             </div>
           </div>
+
+          <Card className="glass-card space-y-4 rounded-2xl border border-border/60 bg-muted/30 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
+                  Semanas rotativas
+                </p>
+                <h3 className="text-lg font-semibold">Configura turnos por semana</h3>
+              </div>
+              <span className="text-xs text-muted-foreground">Duplicar mañanas/tardes entre semanas</span>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              {weeklySchedules.map((week, index) => (
+                <div
+                  key={`week-block-${index}`}
+                  className="rounded-2xl border border-border/60 bg-muted/40 p-3 space-y-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="font-semibold">Semana {index + 1}</span>
+                    <div className="flex items-center gap-2 text-[11px]">
+                      <Select
+                        value={copyWeekTargets[index].toString()}
+                        onValueChange={(value) => {
+                          const numeric = Number(value);
+                          setCopyWeekTargets((prev) => {
+                            const next = [...prev];
+                            next[index] = numeric;
+                            return next;
+                          });
+                        }}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Copiar a" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[1, 2, 3, 4].map((weekNumber) => (
+                            <SelectItem
+                              key={`copy-${index}-${weekNumber}`}
+                              value={weekNumber.toString()}
+                              disabled={weekNumber === index + 1}
+                            >
+                              Semana {weekNumber}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => handleCopyWeek(index, copyWeekTargets[index])}
+                      >
+                        Copiar
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="grid gap-2">
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Mañana</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          type="time"
+                          value={week.morningStart}
+                          onChange={(e) => updateWeekSchedule(index, { morningStart: e.target.value })}
+                        />
+                        <Input
+                          type="time"
+                          value={week.morningEnd}
+                          onChange={(e) => updateWeekSchedule(index, { morningEnd: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">Tarde</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Input
+                          type="time"
+                          value={week.afternoonStart}
+                          onChange={(e) => updateWeekSchedule(index, { afternoonStart: e.target.value })}
+                        />
+                        <Input
+                          type="time"
+                          value={week.afternoonEnd}
+                          onChange={(e) => updateWeekSchedule(index, { afternoonEnd: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
 
           <div className="space-y-3 rounded-2xl border bg-muted/40 p-4">
             <div>

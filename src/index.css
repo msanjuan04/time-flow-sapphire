@@ -68,6 +68,12 @@ All colors MUST be HSL.
     --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     --transition-bounce: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
 
+    --calendar-dot-work: var(--primary);
+    --calendar-dot-vacation: 134 64% 45%;
+    --calendar-dot-absence: 0 84% 60%;
+    --calendar-dot-incomplete: 30 100% 55%;
+    --calendar-dot-holiday: 210 14% 68%;
+
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 220 13% 13%;
     --sidebar-primary: 219 100% 55%;
@@ -204,45 +210,138 @@ All colors MUST be HSL.
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 0.15rem;
-    min-height: 2.75rem;
+    justify-content: flex-start;
+    gap: 0.35rem;
+    min-height: 90px;
+    padding: 8px 4px 10px;
   }
 
   .calendar-day-number {
     font-variant-numeric: tabular-nums;
+    font-size: 1.15rem;
+    font-weight: 600;
   }
 
-  .calendar-status-row {
+  .calendar-day-indicators {
     display: flex;
     gap: 0.35rem;
+    align-items: center;
+    justify-content: center;
   }
 
-  .calendar-status-dot {
-    display: inline-block;
+  .calendar-indicator-pill {
     width: 0.45rem;
     height: 0.45rem;
     border-radius: 999px;
+    transition: transform 0.15s ease;
+    box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.08);
   }
 
-  .calendar-status-dot-work {
-    background: hsl(var(--primary));
-    box-shadow: 0 0 0 1px hsl(var(--primary) / 0.2);
+  .calendar-indicator-pill:hover {
+    transform: translateY(-1px);
   }
 
-  .calendar-status-dot-absence {
-    background: hsl(var(--destructive));
-    box-shadow: 0 0 0 1px hsl(var(--destructive) / 0.2);
+  .calendar-indicator-pill-work {
+    background: hsl(var(--calendar-dot-work));
   }
 
-  .calendar-status-dot-scheduled {
+  .calendar-indicator-pill-absence {
+    background: hsl(var(--calendar-dot-absence));
+  }
+
+  .calendar-indicator-pill-vacation {
+    background: hsl(var(--calendar-dot-vacation));
+  }
+
+  .calendar-indicator-pill-incomplete {
+    background: hsl(var(--calendar-dot-incomplete));
+  }
+
+  .calendar-indicator-pill-holiday {
+    background: hsl(var(--calendar-dot-holiday));
+  }
+
+  .calendar-indicator-pill-empty {
+    opacity: 0.1;
     background: hsl(var(--muted-foreground));
-    box-shadow: 0 0 0 1px hsl(var(--muted-foreground) / 0.2);
   }
 
-  .calendar-status-dot-approved {
-    background: #f97316;
-    box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.3);
+  .calendar-expanded {
+    width: 100%;
+  }
+
+  .calendar-expanded .rdp-day {
+    width: 6.2rem;
+    min-height: 104px;
+    border-radius: 12px;
+    padding: 0.5rem 0.3rem;
+    margin: 0 auto;
+  }
+
+  .calendar-expanded .rdp-months,
+  .calendar-expanded .rdp-table,
+  .calendar-expanded .rdp-month {
+    display: block;
+  }
+
+  .calendar-expanded .rdp-table {
+    border-collapse: separate;
+    border-spacing: 0 10px;
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .calendar-expanded .rdp {
+    width: 100%;
+    display: block;
+  }
+
+  .calendar-expanded .rdp-months {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+  }
+
+  .calendar-expanded .rdp-month {
+    flex: 1;
+    width: 100%;
+  }
+
+  .calendar-expanded .rdp-months > * {
+    width: 100%;
+  }
+
+  .calendar-expanded .rdp-months .rdp-table {
+    width: 100%;
+  }
+
+  .calendar-expanded .rdp-row {
+    height: auto;
+  }
+
+  .calendar-expanded .rdp-day_selected {
+    width: 100%;
+    height: 100%;
+    border-radius: 12px;
+    transform: none;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.15);
+    color: hsl(var(--foreground));
+    font-weight: 600;
+  }
+
+  @media (min-width: 768px) {
+    .calendar-expanded .rdp-day {
+      width: 3.8rem;
+      height: 3.8rem;
+    }
+  }
+
+  @media (max-width: 430px) {
+    .calendar-expanded .rdp-day {
+      width: 3.3rem;
+      height: 3.3rem;
+    }
   }
 
   .calendar-legend-item {

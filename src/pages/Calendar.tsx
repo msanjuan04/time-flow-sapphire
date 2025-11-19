@@ -1,5 +1,5 @@
 // src/pages/Calendar.tsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useMembership } from "@/hooks/useMembership";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,7 +7,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Calendar as CalendarIcon, Clock, AlertCircle, MapPin, ExternalLink } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
-import { format, startOfMonth, endOfMonth, parseISO, isSameDay } from "date-fns";
+import CalendarDayIndicators, { DayStatusKey } from "@/components/CalendarDayIndicators";
+import { SPANISH_HOLIDAYS } from "@/data/spainHolidays";
+import { format, startOfMonth, endOfMonth, parse, parseISO, isSameDay } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -45,6 +47,8 @@ interface ScheduledHours {
   id: string;
   date: string;
   expected_hours: number;
+  start_time: string | null;
+  end_time: string | null;
 }
 
 interface ApprovedAbsence {
@@ -70,6 +74,14 @@ const WorkerCalendar = () => {
   const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [scheduledHours, setScheduledHours] = useState<ScheduledHours[]>([]);
+  const scheduledMap = useMemo(() => {
+    const map = new Map<string, number>();
+    scheduledHours.forEach((scheduled) => {
+      map.set(scheduled.date, scheduled.expected_hours);
+    });
+    return map;
+  }, [scheduledHours]);
+  const holidaySet = useMemo(() => new Set(SPANISH_HOLIDAYS.map((holiday) => holiday.date)), []);
   const [timeEvents, setTimeEvents] = useState<TimeEvent[]>([]);
   const [approvedAdjustments, setApprovedAdjustments] = useState<ApprovedAbsence[]>([]);
   const [selectedDateData, setSelectedDateData] = useState<{
@@ -78,6 +90,7 @@ const WorkerCalendar = () => {
     absence: Absence | null;
     events: TimeEvent[];
     approvedAbsences: ApprovedAbsence[];
+    schedule: ScheduledHours | null;
   } | null>(null);
 
   const [miniMapsEnabled, setMiniMapsEnabled] = useState<boolean>(() => {
@@ -254,6 +267,25 @@ const WorkerCalendar = () => {
     return sh ? Number(sh.expected_hours) : 0;
   };
 
+  const getScheduledEntry = (checkDate: Date): ScheduledHours | null =>
+    scheduledHours.find((x) => isSameDay(parseISO(x.date), checkDate)) || null;
+
+  const formatScheduleLabel = (schedule?: ScheduledHours | null) => {
+    if (!schedule?.start_time && !schedule?.end_time) return "Sin horario asignado";
+    const formatTimeValue = (value?: string | null) => {
+      if (!value) return "--:--";
+      try {
+        const parsed = parse(value, "HH:mm:ss", new Date());
+        return format(parsed, "HH:mm");
+      } catch {
+        return value.slice(0, 5);
+      }
+    };
+    const start = formatTimeValue(schedule.start_time);
+    const end = formatTimeValue(schedule.end_time);
+    return `${start} - ${end}`;
+  };
+
   const getAbsenceForDate = (checkDate: Date): Absence | null =>
     absences.find((a) => {
       const start = parseISO(a.start_date);
@@ -281,62 +313,68 @@ const WorkerCalendar = () => {
     const absence = getAbsenceForDate(date);
     const events = getEventsForDate(date);
     const adjustments = getApprovedAbsencesForDate(date);
-    setSelectedDateData({ worked, expected, absence, events, approvedAbsences: adjustments });
+    setSelectedDateData({
+      worked,
+      expected,
+      absence,
+      events,
+      approvedAbsences: adjustments,
+      schedule: getScheduledEntry(date),
+    });
   }, [date, workSessions, scheduledHours, absences, timeEvents, approvedAdjustments]);
+
+  const getAbsencesForDate = (checkDate: Date): Absence[] =>
+    absences.filter((a) => {
+      const start = parseISO(a.start_date);
+      const end = parseISO(a.end_date);
+      return checkDate >= start && checkDate <= end;
+    });
+
+  const getDayStatuses = (dayDate: Date): DayStatusKey[] => {
+    const statuses: DayStatusKey[] = [];
+    const dateKey = format(dayDate, "yyyy-MM-dd");
+    const isHoliday = holidaySet.has(dateKey);
+    if (isHoliday) {
+      statuses.push("holiday");
+    }
+    const dayAbsences = getAbsencesForDate(dayDate);
+    const hasVacation = dayAbsences.some((absence) => absence.absence_type === "vacation");
+    const hasOtherAbsence = !hasVacation && dayAbsences.length > 0;
+
+    if (hasVacation) {
+      statuses.push("vacation");
+    } else if (hasOtherAbsence) {
+      statuses.push("absence");
+    }
+
+    const expectedHours = scheduledMap.get(dateKey) ?? 0;
+    const workedHours = getWorkedHours(dayDate);
+    const isIncomplete = expectedHours > 0 && workedHours < expectedHours && !hasVacation && !hasOtherAbsence;
+    if (isIncomplete) {
+      statuses.push("incomplete");
+    }
+
+    if (workedHours > 0 && !hasVacation) {
+      statuses.push("work");
+    }
+
+    return statuses;
+  };
 
   const modifiers = {
     hasWork: (day: Date) => getWorkedHours(day) > 0,
-    hasAbsence: (day: Date) => getAbsenceForDate(day) !== null,
-    hasScheduled: (day: Date) => getExpectedHours(day) > 0,
+    hasAbsence: (day: Date) => getAbsencesForDate(day).length > 0,
+    hasScheduled: (day: Date) => scheduledMap.has(format(day, "yyyy-MM-dd")),
     hasApproval: (day: Date) => getApprovedAbsencesForDate(day).length > 0,
   };
 
-  const dayContent = ({ date: dayDate, activeModifiers }: DayContentProps) => {
-    const indicators: Array<{ key: string; className: string; label: string }> = [];
-    if (activeModifiers.hasAbsence) {
-      indicators.push({
-        key: "absence",
-        className: "calendar-status-dot calendar-status-dot-absence",
-        label: "Ausencia registrada",
-      });
-    }
-    if (activeModifiers.hasWork) {
-      indicators.push({
-        key: "work",
-        className: "calendar-status-dot calendar-status-dot-work",
-        label: "Día trabajado",
-      });
-    }
-    if (activeModifiers.hasScheduled) {
-      indicators.push({
-        key: "scheduled",
-        className: "calendar-status-dot calendar-status-dot-scheduled",
-        label: "Horas programadas",
-      });
-    }
-    if (activeModifiers.hasApproval) {
-      indicators.push({
-        key: "approval",
-        className: "calendar-status-dot calendar-status-dot-approved",
-        label: "Ajuste aprobado",
-      });
-    }
+  const dayContent = ({ date: dayDate }: DayContentProps) => {
+    const statuses = getDayStatuses(dayDate);
 
     return (
       <div className="calendar-day-wrapper">
         <span className="calendar-day-number">{dayDate.getDate()}</span>
-        {indicators.length > 0 && (
-          <div className="calendar-status-row">
-            {indicators.map((indicator) => (
-              <span
-                key={indicator.key}
-                className={indicator.className}
-                aria-label={indicator.label}
-                title={indicator.label}
-              />
-            ))}
-          </div>
-        )}
+        <CalendarDayIndicators statuses={statuses} />
       </div>
     );
   };
@@ -376,7 +414,7 @@ const WorkerCalendar = () => {
               <p className="text-sm font-medium">{format(date ?? new Date(), "PP", { locale: es })}</p>
             </div>
           </div>
-          <div className="rounded-2xl border bg-muted/30 p-2">
+          <div className="rounded-2xl border bg-muted/30 p-2 calendar-expanded">
             <Calendar
               mode="single"
               selected={date}
@@ -388,36 +426,43 @@ const WorkerCalendar = () => {
             />
           </div>
 
-          <div className="pt-2 grid gap-2 sm:grid-cols-3">
+          <div className="pt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
             <div className="calendar-legend-item">
-              <span className="calendar-status-dot calendar-status-dot-work" />
+              <span className="calendar-indicator-pill calendar-indicator-pill-work" />
               <div>
                 <p className="text-sm font-medium">Día trabajado</p>
-                <p className="text-xs text-muted-foreground">Registro de fichajes</p>
+                <p className="text-xs text-muted-foreground">Horas registradas</p>
               </div>
             </div>
             <div className="calendar-legend-item">
-              <span className="calendar-status-dot calendar-status-dot-absence" />
+              <span className="calendar-indicator-pill calendar-indicator-pill-vacation" />
               <div>
-                <p className="text-sm font-medium">Ausencia</p>
-                <p className="text-xs text-muted-foreground">Vacaciones o bajas</p>
+                <p className="text-sm font-medium">Vacaciones</p>
+                <p className="text-xs text-muted-foreground">Períodos aprobados</p>
               </div>
             </div>
-          <div className="calendar-legend-item">
-            <span className="calendar-status-dot calendar-status-dot-scheduled" />
-            <div>
-              <p className="text-sm font-medium">Horas programadas</p>
-              <p className="text-xs text-muted-foreground">Turnos asignados</p>
+            <div className="calendar-legend-item">
+              <span className="calendar-indicator-pill calendar-indicator-pill-incomplete" />
+              <div>
+                <p className="text-sm font-medium">Horas incompletas</p>
+                <p className="text-xs text-muted-foreground">Faltan horas esperadas</p>
+              </div>
+            </div>
+            <div className="calendar-legend-item">
+              <span className="calendar-indicator-pill calendar-indicator-pill-absence" />
+              <div>
+                <p className="text-sm font-medium">Ausencia</p>
+                <p className="text-xs text-muted-foreground">Bajas o permisos</p>
+              </div>
+            </div>
+            <div className="calendar-legend-item">
+              <span className="calendar-indicator-pill calendar-indicator-pill-holiday" />
+              <div>
+                <p className="text-sm font-medium">Festivo nacional</p>
+                <p className="text-xs text-muted-foreground">Día no laborable oficial</p>
+              </div>
             </div>
           </div>
-          <div className="calendar-legend-item">
-            <span className="calendar-status-dot calendar-status-dot-approved" />
-            <div>
-              <p className="text-sm font-medium">Ajustes aprobados</p>
-              <p className="text-xs text-muted-foreground">Correcciones autorizadas</p>
-            </div>
-          </div>
-        </div>
       </Card>
 
         {selectedDateData && date && (
@@ -474,6 +519,10 @@ const WorkerCalendar = () => {
                 <div className="flex items-center gap-2">
                   <Clock className="h-5 w-5 text-primary" />
                   <h3 className="font-semibold">Horas</h3>
+                </div>
+                <div className="rounded-2xl bg-muted/40 px-3 py-2 text-sm flex items-center justify-between">
+                  <span>Horario asignado</span>
+                  <span className="font-semibold">{formatScheduleLabel(selectedDateData.schedule)}</span>
                 </div>
                 <div className="space-y-3">
                   <div className="flex justify-between items-center p-3 bg-muted rounded-lg">

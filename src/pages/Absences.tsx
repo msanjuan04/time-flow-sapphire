@@ -3,7 +3,6 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Calendar, Send, CheckCircle, XCircle, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -20,6 +19,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { ABSENCE_REASONS } from "@/data/absenceReasons";
 
 interface AbsencePayload {
   type: "absence";
@@ -46,7 +53,8 @@ const Absences = () => {
   const [endDate, setEndDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
-  const [reason, setReason] = useState("");
+  const [selectedReason, setSelectedReason] = useState(ABSENCE_REASONS[0].value);
+  const [otherReason, setOtherReason] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
 
   useEffect(() => {
@@ -77,9 +85,16 @@ const Absences = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const selectedReasonMeta = ABSENCE_REASONS.find((item) => item.value === selectedReason);
+    const finalReason =
+      selectedReason === "otro" ? otherReason.trim() : selectedReasonMeta?.label ?? selectedReason;
     
-    if (!startDate || !endDate || !reason.trim()) {
+    if (!startDate || !endDate || !finalReason) {
       toast.error("Por favor completa todos los campos");
+      return;
+    }
+    if (selectedReason === "otro" && !otherReason.trim()) {
+      toast.error("Especifica el motivo de la ausencia");
       return;
     }
 
@@ -96,7 +111,7 @@ const Absences = () => {
           user_id: user?.id,
           submitted_by: user?.id,
           company_id: companyId,
-          reason,
+          reason: finalReason,
           status: "pending",
         payload: {
           type: "absence",
@@ -105,7 +120,7 @@ const Absences = () => {
           start_time: startTime || null,
           end_time: endTime || null,
         },
-        description: `${reason}${startTime ? ` desde las ${startTime}` : ""}${
+        description: `${finalReason}${startTime ? ` desde las ${startTime}` : ""}${
           endTime ? ` hasta las ${endTime}` : ""
         }`,
         });
@@ -117,7 +132,8 @@ const Absences = () => {
       setEndDate("");
       setStartTime("");
       setEndTime("");
-      setReason("");
+      setSelectedReason(ABSENCE_REASONS[0].value);
+      setOtherReason("");
       setDialogOpen(false);
       fetchAbsences();
     } catch (error) {
@@ -218,16 +234,35 @@ const Absences = () => {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="reason">Motivo</Label>
-                  <Textarea
-                    id="reason"
-                    value={reason}
-                    onChange={(e) => setReason(e.target.value)}
-                    placeholder="Describe el motivo de tu ausencia..."
-                    rows={4}
-                    required
-                  />
+                  <Label htmlFor="absence-reason">Motivo</Label>
+                  <Select
+                    value={selectedReason}
+                    onValueChange={setSelectedReason}
+                  >
+                    <SelectTrigger id="absence-reason">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ABSENCE_REASONS.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
+                {selectedReason === "otro" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="absence-other">Describe el motivo</Label>
+                    <Input
+                      id="absence-other"
+                      value={otherReason}
+                      onChange={(e) => setOtherReason(e.target.value)}
+                      placeholder="Explica el motivo de la ausencia"
+                      required
+                    />
+                  </div>
+                )}
                 <div className="flex gap-2 justify-end">
                   <Button
                     type="button"

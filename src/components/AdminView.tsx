@@ -12,6 +12,7 @@ import { CompanySelector } from "@/components/CompanySelector";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { DEMO_COMPANY_IDS } from "@/config/demo";
+import VacationAssignment from "@/components/admin/VacationAssignment";
 
 interface DailyStats {
   date: string;
@@ -67,7 +68,7 @@ interface RawRecentEvent extends Partial<RecentEvent> {
 const DASHBOARD_REFRESH_MS = 60000;
 
 const AdminView = () => {
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const { companyId, membership, loading: membershipLoading } = useMembership();
   const isDemoCompany = companyId ? DEMO_COMPANY_IDS.includes(companyId) : false;
   const navigate = useNavigate();
@@ -735,6 +736,9 @@ const AdminView = () => {
             </div>
           </div>
         </Card>
+        {membership?.role === "owner" && user?.id && (
+          <VacationAssignment companyId={companyId} ownerId={user.id} />
+        )}
       </div>
     </div>
   );

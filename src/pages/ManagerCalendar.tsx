@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useMembership } from "@/hooks/useMembership";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -32,6 +33,9 @@ import { BackButton } from "@/components/BackButton";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { SPANISH_HOLIDAYS } from "@/data/spainHolidays";
+import { ABSENCE_REASONS } from "@/data/absenceReasons";
+import CalendarDayIndicators, { DayStatusKey } from "@/components/CalendarDayIndicators";
 
 interface Employee {
   id: string;
@@ -89,6 +93,7 @@ const ManagerCalendar = () => {
   const [timeEvents, setTimeEvents] = useState<ManagerTimeEvent[]>([]);
   const [scheduledHours, setScheduledHours] = useState<ScheduledHour[]>([]);
   const [absences, setAbsences] = useState<AbsenceRecord[]>([]);
+  const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
   const [selectedDayEvents, setSelectedDayEvents] = useState<ManagerTimeEvent[]>([]);
   const [eventType, setEventType] = useState<string>("clock_in");
   const [eventTime, setEventTime] = useState<string>("");
@@ -100,6 +105,10 @@ const ManagerCalendar = () => {
   const [quickHours, setQuickHours] = useState("8");
   const [quickNote, setQuickNote] = useState("Jornada completa");
   const [teamDayOverview, setTeamDayOverview] = useState<Record<string, DayOverview>>({});
+  const holidaySet = useMemo(
+    () => new Set(SPANISH_HOLIDAYS.map((holiday) => holiday.date)),
+    []
+  );
 
   // Schedule hours form
   const [scheduleDate, setScheduleDate] = useState("");
@@ -110,7 +119,8 @@ const ManagerCalendar = () => {
   const [absenceType, setAbsenceType] = useState("vacation");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [absenceReason, setAbsenceReason] = useState("");
+  const [absenceReasonType, setAbsenceReasonType] = useState(ABSENCE_REASONS[0].value);
+  const [absenceOtherReason, setAbsenceOtherReason] = useState("");
 
   useEffect(() => {
     if (membership) {
@@ -198,6 +208,19 @@ const ManagerCalendar = () => {
         `and(start_date.lte.${format(monthEnd, "yyyy-MM-dd")},end_date.gte.${format(monthStart, "yyyy-MM-dd")})`
       );
     setAbsences((abs as AbsenceRecord[]) || []);
+
+    const { data: sessionsData, error: sessionsError } = await supabase
+      .from("work_sessions")
+      .select("id, clock_in_time, clock_out_time, total_work_duration")
+      .eq("company_id", membership.company_id)
+      .eq("user_id", selectedEmployee)
+      .gte("clock_in_time", monthStart.toISOString())
+      .lte("clock_in_time", monthEnd.toISOString());
+    if (sessionsError) {
+      console.error("Error fetching sessions:", sessionsError);
+    } else {
+      setWorkSessions((sessionsData as WorkSession[]) || []);
+    }
   }, [membership, selectedEmployee, date]);
 
   // Load month events for selected employee
@@ -435,9 +458,25 @@ const ManagerCalendar = () => {
     }
   };
 
+  const updateWeekSchedule = (weekIndex: number, patch: Partial<WeekSchedule>) => {
+    setWeeklySchedules((prev) =>
+      prev.map((week, idx) => (idx === weekIndex ? { ...week, ...patch } : week))
+    );
+  };
+
   const handleCreateAbsence = async () => {
-    if (!membership || !selectedEmployee || !startDate || !endDate) {
+    const reasonMeta = ABSENCE_REASONS.find((item) => item.value === absenceReasonType);
+    const finalReason =
+      absenceReasonType === "otro"
+        ? absenceOtherReason.trim()
+        : reasonMeta?.label ?? absenceReasonType;
+
+    if (!membership || !selectedEmployee || !startDate || !endDate || !finalReason) {
       toast.error("Por favor completa todos los campos requeridos");
+      return;
+    }
+    if (absenceReasonType === "otro" && !absenceOtherReason.trim()) {
+      toast.error("Especifica el motivo de la ausencia");
       return;
     }
 
@@ -448,7 +487,7 @@ const ManagerCalendar = () => {
         absence_type: absenceType as "vacation" | "sick_leave" | "personal" | "other",
         start_date: startDate,
         end_date: endDate,
-        reason: absenceReason || null,
+        reason: finalReason,
         status: "approved",
         created_by: selectedEmployee,
         approved_by: selectedEmployee,
@@ -462,7 +501,8 @@ const ManagerCalendar = () => {
       setAbsenceType("vacation");
       setStartDate("");
       setEndDate("");
-      setAbsenceReason("");
+      setAbsenceReasonType(ABSENCE_REASONS[0].value);
+      setAbsenceOtherReason("");
     } catch (error) {
       toast.error("Error al registrar ausencia");
       console.error(error);
@@ -638,55 +678,101 @@ const ManagerCalendar = () => {
   });
   const visibleStatusEmployees = filteredEmployeesList.slice(0, 8);
   const dateLabelForStatus = date ? format(date, "PP", { locale: es }) : "Fecha no seleccionada";
-  const calendarModifiers = {
-    hasWork: (day: Date) => timeEvents.some((event) => isSameDay(parseISO(event.event_time), day)),
-    hasAbsence: (day: Date) =>
-      absences.some((absence) => {
+
+  const workedHoursByDate = useMemo(() => {
+    const map = new Map<string, number>();
+    workSessions.forEach((session) => {
+      if (!session.clock_in_time) return;
+      const dateKey = format(parseISO(session.clock_in_time), "yyyy-MM-dd");
+      let duration = 0;
+      if (session.total_work_duration) {
+        const parts = session.total_work_duration.split(":").map((segment) => Number(segment));
+        const [h = 0, m = 0, s = 0] = parts;
+        duration =
+          (Number.isFinite(h) ? h : 0) +
+          (Number.isFinite(m) ? m / 60 : 0) +
+          (Number.isFinite(s) ? s / 3600 : 0);
+      } else if (session.clock_out_time) {
+        const startTime = parseISO(session.clock_in_time).getTime();
+        const endTime = parseISO(session.clock_out_time).getTime();
+        if (!Number.isNaN(startTime) && !Number.isNaN(endTime) && endTime > startTime) {
+          duration = (endTime - startTime) / (1000 * 60 * 60);
+        }
+      }
+      if (duration > 0) {
+        map.set(dateKey, (map.get(dateKey) ?? 0) + duration);
+      }
+    });
+    return map;
+  }, [workSessions]);
+
+  const scheduledMap = useMemo(() => {
+    const map = new Map<string, number>();
+    scheduledHours.forEach((scheduled) => {
+      map.set(scheduled.date, scheduled.expected_hours);
+    });
+    return map;
+  }, [scheduledHours]);
+
+  const getAbsencesForDate = useCallback(
+    (target: Date) =>
+      absences.filter((absence) => {
         const start = parseISO(absence.start_date);
         const end = parseISO(absence.end_date);
-        return day >= start && day <= end;
+        return target >= start && target <= end;
       }),
-    hasScheduled: (day: Date) =>
-      scheduledHours.some((scheduled) => isSameDay(parseISO(scheduled.date), day)),
+    [absences]
+  );
+
+  const getDayStatuses = useCallback(
+    (dayDate: Date): DayStatusKey[] => {
+      const statuses: DayStatusKey[] = [];
+      const dateKey = format(dayDate, "yyyy-MM-dd");
+      const isHoliday = holidaySet.has(dateKey);
+      if (isHoliday) {
+        statuses.push("holiday");
+      }
+      const dayAbsences = getAbsencesForDate(dayDate);
+      const hasVacation = dayAbsences.some((absence) => absence.absence_type === "vacation");
+      const hasNonVacationAbsence = !hasVacation && dayAbsences.some((absence) => absence.absence_type !== "vacation");
+      if (hasVacation) {
+        statuses.push("vacation");
+      } else if (hasNonVacationAbsence) {
+        statuses.push("absence");
+      }
+
+      const expectedHours = scheduledMap.get(dateKey) ?? 0;
+      const workedHours = workedHoursByDate.get(dateKey) ?? 0;
+      const hasIncompleteHours =
+        expectedHours > 0 && workedHours < expectedHours && !hasVacation && !hasNonVacationAbsence;
+      if (hasIncompleteHours) {
+        statuses.push("incomplete");
+      }
+
+      if (workedHours > 0 && !hasVacation) {
+        statuses.push("work");
+      }
+
+      return statuses;
+    },
+    [getAbsencesForDate, scheduledMap, workedHoursByDate, holidaySet]
+  );
+  const calendarModifiers = {
+    hasWork: (day: Date) => {
+      const key = format(day, "yyyy-MM-dd");
+      return (workedHoursByDate.get(key) ?? 0) > 0;
+    },
+    hasAbsence: (day: Date) => getAbsencesForDate(day).length > 0,
+    hasScheduled: (day: Date) => scheduledMap.has(format(day, "yyyy-MM-dd")),
   };
-  const renderDayContent = ({ date: dayDate, activeModifiers }: DayContentProps) => {
-    const indicators: Array<{ key: string; className: string; label: string }> = [];
-    if (activeModifiers?.hasAbsence) {
-      indicators.push({
-        key: "absence",
-        className: "calendar-status-dot calendar-status-dot-absence",
-        label: "Ausencia registrada",
-      });
-    }
-    if (activeModifiers?.hasWork) {
-      indicators.push({
-        key: "work",
-        className: "calendar-status-dot calendar-status-dot-work",
-        label: "Día con fichajes",
-      });
-    }
-    if (activeModifiers?.hasScheduled) {
-      indicators.push({
-        key: "scheduled",
-        className: "calendar-status-dot calendar-status-dot-scheduled",
-        label: "Horas programadas",
-      });
-    }
+
+  const renderDayContent = ({ date: dayDate }: DayContentProps) => {
+    const statuses = getDayStatuses(dayDate);
+
     return (
       <div className="calendar-day-wrapper">
         <span className="calendar-day-number">{dayDate.getDate()}</span>
-        {indicators.length > 0 && (
-          <div className="calendar-status-row">
-            {indicators.map((indicator) => (
-              <span
-                key={indicator.key}
-                aria-label={indicator.label}
-                className={indicator.className}
-                title={indicator.label}
-              />
-            ))}
-          </div>
-        )}
+        <CalendarDayIndicators statuses={statuses} />
       </div>
     );
   };
@@ -794,9 +880,9 @@ const ManagerCalendar = () => {
         </DialogContent>
       </Dialog>
 
-      <div className="grid md:grid-cols-3 gap-6">
+      <div className="grid md:grid-cols-[minmax(220px,0.7fr)_minmax(760px,3fr)_minmax(260px,0.8fr)] gap-6">
         {/* Sidebar empleados */}
-        <Card className="glass-card p-6 h-full">
+        <Card className="glass-card p-6 h-full w-full max-w-[280px] mx-auto">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
               <Users className="h-5 w-5 text-primary" />
@@ -827,7 +913,7 @@ const ManagerCalendar = () => {
         </Card>
 
         {/* Contenido principal */}
-        <div className="md:col-span-2 space-y-4">
+        <div className="md:col-span-2 space-y-5 flex flex-col">
           {/* Acciones generales */}
           <div className="flex flex-wrap gap-2">
             {selectedEmployee && (
@@ -894,13 +980,36 @@ const ManagerCalendar = () => {
                         <Input id="end-date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="absence-reason">Motivo (opcional)</Label>
-                        <Textarea id="absence-reason" value={absenceReason} onChange={(e) => setAbsenceReason(e.target.value)} placeholder="Añade un motivo..." />
+                        <Label htmlFor="absence-reason">Motivo</Label>
+                        <Select value={absenceReasonType} onValueChange={setAbsenceReasonType}>
+                          <SelectTrigger id="absence-reason">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ABSENCE_REASONS.map((item) => (
+                              <SelectItem key={item.value} value={item.value}>
+                                {item.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
+                      {absenceReasonType === "otro" && (
+                        <div className="space-y-2">
+                          <Label htmlFor="absence-other">Describe el motivo</Label>
+                          <Input
+                            id="absence-other"
+                            value={absenceOtherReason}
+                            onChange={(e) => setAbsenceOtherReason(e.target.value)}
+                            placeholder="Especifica el motivo de la ausencia"
+                          />
+                        </div>
+                      )}
                       <Button onClick={handleCreateAbsence} className="w-full">Registrar</Button>
                     </div>
                   </DialogContent>
                 </Dialog>
+
               </>
             )}
 
@@ -944,13 +1053,13 @@ const ManagerCalendar = () => {
               <p className="text-xs text-muted-foreground">
                 Esta acción crea o actualiza las <code>scheduled_hours</code> para el día seleccionado.
               </p>
-            </Card>
-          )}
+          </Card>
+        )}
 
-          {/* Calendario + gestión del día */}
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="space-y-6">
-              <Card className="glass-card p-6 space-y-5">
+        {/* Calendario + gestión del día */}
+        <div className="grid gap-6 md:grid-cols-[minmax(540px,1.7fr)_minmax(260px,0.8fr)] items-start">
+            <div className="space-y-6 flex-1">
+              <Card className="glass-card p-6 space-y-5 w-full flex-1">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">
@@ -967,7 +1076,7 @@ const ManagerCalendar = () => {
                     </p>
                   </div>
                 </div>
-                <div className="rounded-2xl border bg-muted/30 p-2">
+                <div className="rounded-2xl border bg-muted/30 p-2 calendar-expanded">
                   <Calendar
                     mode="single"
                     selected={date}
@@ -985,32 +1094,46 @@ const ManagerCalendar = () => {
                     className="w-full pointer-events-auto"
                   />
                 </div>
-                <div className="pt-2 grid gap-2 sm:grid-cols-3">
+                <div className="pt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                   <div className="calendar-legend-item">
-                    <span className="calendar-status-dot calendar-status-dot-work" />
+                    <span className="calendar-indicator-pill calendar-indicator-pill-work" />
                     <div>
-                      <p className="text-sm font-medium">Día con fichajes</p>
-                      <p className="text-xs text-muted-foreground">Registros realizados</p>
+                      <p className="text-sm font-medium">Día trabajado</p>
+                      <p className="text-xs text-muted-foreground">Fichajes registrados</p>
                     </div>
                   </div>
                   <div className="calendar-legend-item">
-                    <span className="calendar-status-dot calendar-status-dot-absence" />
+                    <span className="calendar-indicator-pill calendar-indicator-pill-vacation" />
+                    <div>
+                      <p className="text-sm font-medium">Vacaciones</p>
+                      <p className="text-xs text-muted-foreground">Vacaciones aprobadas</p>
+                    </div>
+                  </div>
+                  <div className="calendar-legend-item">
+                    <span className="calendar-indicator-pill calendar-indicator-pill-incomplete" />
+                    <div>
+                      <p className="text-sm font-medium">Horas incompletas</p>
+                      <p className="text-xs text-muted-foreground">Faltan horas programadas</p>
+                    </div>
+                  </div>
+                  <div className="calendar-legend-item">
+                    <span className="calendar-indicator-pill calendar-indicator-pill-absence" />
                     <div>
                       <p className="text-sm font-medium">Ausencia</p>
-                      <p className="text-xs text-muted-foreground">Vacaciones o bajas</p>
+                      <p className="text-xs text-muted-foreground">Bajas o permisos</p>
                     </div>
                   </div>
                   <div className="calendar-legend-item">
-                    <span className="calendar-status-dot calendar-status-dot-scheduled" />
+                    <span className="calendar-indicator-pill calendar-indicator-pill-holiday" />
                     <div>
-                      <p className="text-sm font-medium">Horas programadas</p>
-                      <p className="text-xs text-muted-foreground">Turnos creados</p>
+                      <p className="text-sm font-medium">Festivo nacional</p>
+                      <p className="text-xs text-muted-foreground">Día no laborable oficial</p>
                     </div>
                   </div>
                 </div>
               </Card>
 
-              <Card className="glass-card p-6 space-y-4">
+              <Card className="glass-card p-6 space-y-4 w-full">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">Estado por trabajador</p>
