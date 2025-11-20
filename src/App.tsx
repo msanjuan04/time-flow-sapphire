@@ -19,6 +19,7 @@ const AbsencesPage = lazy(() => import("./pages/Absences"));
 const CalendarPage = lazy(() => import("./pages/Calendar"));
 const ManagerCalendarPage = lazy(() => import("./pages/ManagerCalendar"));
 const LocationReportPage = lazy(() => import("./pages/LocationReport"));
+const CompanySettingsPage = lazy(() => import("./pages/CompanySettings"));
 const CorrectionRequestsPage = lazy(() => import("./pages/CorrectionRequests"));
 const DevicesPage = lazy(() => import("./pages/Devices"));
 const KioskPage = lazy(() => import("./pages/Kiosk"));
@@ -203,6 +204,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <DevicesPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/company-settings"
+              element={
+                <ProtectedRoute allowedRoles={["owner", "admin", "manager"]}>
+                  <CompanySettingsPage />
                 </ProtectedRoute>
               }
             />

@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.81.0'
+import { GEOFENCE_RADIUS_METERS, calculateDistanceMeters } from '../_shared/geofence.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -17,6 +18,7 @@ interface ClockRequest {
   source?: 'mobile' | 'web' | 'kiosk';
   user_id?: string; // For kiosk mode
   company_id?: string; // Active company
+  notes?: string;
 }
 
 interface MembershipResult {
@@ -52,7 +54,7 @@ Deno.serve(async (req) => {
 
     // Get request body
     const body: ClockRequest = await req.json();
-    const { action, latitude, longitude, photo_url, device_id, source = 'web', user_id, company_id } = body;
+    const { action, latitude, longitude, photo_url, device_id, source = 'web', user_id, company_id, notes } = body;
 
     let currentUserId: string;
 
@@ -145,7 +147,7 @@ Deno.serve(async (req) => {
     // Get user's company membership
     let membershipQuery = supabaseAdmin
       .from('memberships')
-      .select('company_id, company:companies(id, name, status)')
+      .select('company_id, company:companies(id, name, status, hq_lat, hq_lng)')
       .eq('user_id', currentUserId);
     
     // If company_id is provided, filter by it
@@ -240,6 +242,17 @@ Deno.serve(async (req) => {
       );
     }
 
+    let distanceMeters: number | null = null;
+    let isWithinGeofence: boolean | null = null;
+
+    const hasCompanyLocation = typeof company?.hq_lat === 'number' && typeof company?.hq_lng === 'number';
+    const hasWorkerLocation = typeof latitude === 'number' && typeof longitude === 'number';
+
+    if (hasCompanyLocation && hasWorkerLocation) {
+      distanceMeters = calculateDistanceMeters(latitude!, longitude!, company.hq_lat!, company.hq_lng!);
+      isWithinGeofence = distanceMeters <= GEOFENCE_RADIUS_METERS;
+    }
+
     // Insert time event
     const { error: eventError } = await supabaseAdmin.from('time_events').insert({
       user_id: currentUserId,
@@ -249,7 +262,10 @@ Deno.serve(async (req) => {
       device_id: device_id || null,
       latitude: latitude || null,
       longitude: longitude || null,
+      distance_meters: distanceMeters,
+      is_within_geofence: isWithinGeofence,
       photo_url: photo_url || null,
+      notes: notes || null,
       event_time: new Date().toISOString(),
     });
 
@@ -335,6 +351,8 @@ Deno.serve(async (req) => {
         status: currentStatus,
         event_type: eventType,
         timestamp: new Date().toISOString(),
+        distance_meters: distanceMeters,
+        is_within_geofence: isWithinGeofence,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

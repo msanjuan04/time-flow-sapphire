@@ -273,6 +273,8 @@ export type Database = {
         Row: {
           created_at: string
           id: string
+          hq_lat: number | null
+          hq_lng: number | null
           name: string
           owner_user_id: string | null
           plan: string
@@ -283,6 +285,8 @@ export type Database = {
         Insert: {
           created_at?: string
           id?: string
+          hq_lat?: number | null
+          hq_lng?: number | null
           name: string
           owner_user_id?: string | null
           plan?: string
@@ -293,6 +297,8 @@ export type Database = {
         Update: {
           created_at?: string
           id?: string
+          hq_lat?: number | null
+          hq_lng?: number | null
           name?: string
           owner_user_id?: string | null
           plan?: string
@@ -907,8 +913,10 @@ export type Database = {
           event_time: string
           event_type: Database["public"]["Enums"]["event_type"]
           id: string
+          is_within_geofence: boolean | null
           latitude: number | null
           longitude: number | null
+          distance_meters: number | null
           meta: Json | null
           notes: string | null
           photo_url: string | null
@@ -919,9 +927,11 @@ export type Database = {
           company_id: string
           created_at?: string
           device_id?: string | null
+          distance_meters?: number | null
           event_time?: string
           event_type: Database["public"]["Enums"]["event_type"]
           id?: string
+          is_within_geofence?: boolean | null
           latitude?: number | null
           longitude?: number | null
           meta?: Json | null
@@ -934,9 +944,11 @@ export type Database = {
           company_id?: string
           created_at?: string
           device_id?: string | null
+          distance_meters?: number | null
           event_time?: string
           event_type?: Database["public"]["Enums"]["event_type"]
           id?: string
+          is_within_geofence?: boolean | null
           latitude?: number | null
           longitude?: number | null
           meta?: Json | null

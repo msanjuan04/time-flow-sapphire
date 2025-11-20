@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Download, Calendar, Clock, TrendingUp, Info } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ArrowLeft, Download, Calendar, Clock, TrendingUp, Info, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -53,11 +54,13 @@ const parseTimeToMinutes = (time: string | null) => {
 };
 
 const hoursFromHistory = (entry: ScheduleHistoryRow) => {
+  const expected = Number(entry.expected_hours ?? 0);
+  if (!Number.isNaN(expected) && expected > 0) {
+    return expected;
+  }
   const start = parseTimeToMinutes(entry.start_time ?? null);
   const end = parseTimeToMinutes(entry.end_time ?? null);
-  if (start === null || end === null) {
-    return Number(entry.expected_hours ?? 0);
-  }
+  if (start === null || end === null) return expected;
   return Math.max(0, (end - start) / 60);
 };
 
@@ -82,6 +85,12 @@ const WorkerReports = () => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
   const [approvedAdjustments, setApprovedAdjustments] = useState<ApprovedAbsenceRecord[]>([]);
+  const defaultRangeEnd = new Date();
+  const defaultRangeStart = new Date();
+  defaultRangeStart.setDate(defaultRangeEnd.getDate() - 30);
+  const [customStartDate, setCustomStartDate] = useState<string>(defaultRangeStart.toISOString().slice(0, 10));
+  const [customEndDate, setCustomEndDate] = useState<string>(defaultRangeEnd.toISOString().slice(0, 10));
+  const [exportingRange, setExportingRange] = useState(false);
 
   const fetchWorkerData = useCallback(async () => {
     if (!user?.id || !companyId) return;
@@ -297,7 +306,7 @@ const WorkerReports = () => {
 
   // Export helpers (cliente, no tocan backend)
   const exportCSVLocal = () => {
-    const headers = ["Fecha", "Entrada", "Salida", "Horas"];
+    const headers = ["Fecha", "Entrada", "Salida", "Horas", "Estado"];
     const rows = sessions.map((s) => {
       const start = s.clock_in_time ? new Date(s.clock_in_time) : null;
       const end = s.clock_out_time ? new Date(s.clock_out_time) : null;
@@ -313,10 +322,110 @@ const WorkerReports = () => {
         start ? start.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "",
         end ? end.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "",
         hours,
+        "",
       ];
     });
+
+    approvedAdjustments.forEach((adj) => {
+      rows.push([
+        adj.date,
+        "-",
+        "-",
+        "",
+        `Ausencia: ${adj.absence_type}${adj.notes ? ` (${adj.notes})` : ""}`,
+      ]);
+    });
+
+    rows.push(["", "", "Total horas", (totalHours || 0).toFixed(2), ""]);
     exportCSV(`mis_horas_${period}`, headers, rows);
     toast.success("CSV exportado");
+  };
+
+  const exportCustomRangeCsv = async () => {
+    if (!user?.id || !companyId) {
+      toast.error("No se encontró usuario o empresa");
+      return;
+    }
+    if (!customStartDate || !customEndDate) {
+      toast.error("Selecciona una fecha de inicio y fin");
+      return;
+    }
+    const startDate = new Date(customStartDate);
+    const endDate = new Date(customEndDate);
+    endDate.setHours(23, 59, 59, 999);
+    if (endDate < startDate) {
+      toast.error("La fecha fin debe ser mayor o igual a la fecha inicio");
+      return;
+    }
+
+    setExportingRange(true);
+    try {
+      const { data: rangeSessions, error } = await supabase
+        .from("work_sessions")
+        .select("clock_in_time, clock_out_time, total_work_duration")
+        .eq("user_id", user.id)
+        .eq("company_id", companyId)
+        .gte("clock_in_time", startDate.toISOString())
+        .lte("clock_in_time", endDate.toISOString())
+        .order("clock_in_time", { ascending: true });
+
+      if (error) throw error;
+
+      const headers = ["Fecha", "Entrada", "Salida", "Horas", "Estado"];
+      let total = 0;
+      const rows = (rangeSessions || []).map((s) => {
+        const start = s.clock_in_time ? new Date(s.clock_in_time) : null;
+        const end = s.clock_out_time ? new Date(s.clock_out_time) : null;
+        const hours =
+          start && (end || true)
+            ? (
+                ((end ? end.getTime() : Date.now()) - start.getTime()) /
+                (1000 * 60 * 60)
+              )
+            : 0;
+        total += hours;
+        return [
+          start ? start.toISOString().slice(0, 10) : "",
+          start ? start.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "",
+          end ? end.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "",
+          hours ? hours.toFixed(2) : "",
+          "",
+        ];
+      });
+
+      const { data: rangeAbsences, error: absenceError } = await supabase
+        .from("approved_absences")
+        .select("date, absence_type, notes")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .gte("date", customStartDate)
+        .lte("date", customEndDate);
+
+      if (absenceError) {
+        console.error("Error fetching range absences", absenceError);
+      } else {
+        (rangeAbsences || []).forEach((adj) => {
+          rows.push([
+            adj.date,
+            "-",
+            "-",
+            "",
+            `Ausencia: ${adj.absence_type}${adj.notes ? ` (${adj.notes})` : ""}`,
+          ]);
+        });
+      }
+
+      rows.push(["", "", "Total horas", total.toFixed(2), ""]);
+
+      const filename = `mis_horas_${customStartDate}_${customEndDate}`;
+      exportCSV(filename, headers, rows);
+      toast.success("CSV exportado");
+    } catch (err) {
+      console.error("Error exportando CSV de rango", err);
+      toast.error("No pudimos exportar ese rango. Revisa las fechas.");
+    } finally {
+      setExportingRange(false);
+    }
   };
 
   const handleDownloadPDF = () => {
@@ -392,6 +501,39 @@ const WorkerReports = () => {
             </DropdownMenu>
           </div>
         </motion.div>
+        <Card className="glass-card p-4 flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <Download className="w-4 h-4" />
+              Exportar por rango de fechas
+            </h3>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-muted-foreground">Desde</label>
+              <Input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="w-[150px]"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-xs text-muted-foreground">Hasta</label>
+              <Input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="w-[150px]"
+              />
+            </div>
+            <Button size="sm" onClick={exportCustomRangeCsv} disabled={exportingRange}>
+              {exportingRange ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
+              Descargar CSV (rango)
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Puedes elegir cualquier rango, por ejemplo hasta 365 días, y el CSV incluirá el total al final.
+          </p>
+        </Card>
         <div ref={reportRef} className="space-y-6">
         {/* Jornada asignada */}
         <Card className="glass-card p-6 flex flex-col gap-2">

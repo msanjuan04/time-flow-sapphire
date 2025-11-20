@@ -565,6 +565,15 @@ const AdminView = () => {
             >
               <Users className="w-5 h-5" />
             </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => navigate("/company-settings")}
+              className="hover-scale"
+              title="Ubicación y configuración"
+            >
+              <Settings className="w-5 h-5" />
+            </Button>
             <Button variant="ghost" size="icon" onClick={signOut} className="hover-scale">
               <LogOut className="w-5 h-5" />
             </Button>

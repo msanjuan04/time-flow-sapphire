@@ -10,6 +10,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import NotificationBell from "@/components/NotificationBell";
 import { CompanySelector } from "@/components/CompanySelector";
+import { calculateDistanceMeters } from "@/utils/distance";
+import { GEOFENCE_RADIUS_METERS } from "@/config/geofence";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import WorkerScheduleSection from "@/components/WorkerScheduleSection";
 
 type WorkerStatus = "out" | "in" | "on_break";
@@ -50,6 +54,13 @@ const WorkerView = () => {
   const [lastEvent, setLastEvent] = useState<{ type: ClockAction; timestamp: string } | null>(null);
   const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
   const [todaySchedule, setTodaySchedule] = useState<{ start_time: string | null; end_time: string | null; expected_hours: number } | null>(null);
+  const [companyLocation, setCompanyLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [outsideConfirm, setOutsideConfirm] = useState<{
+    action: ClockAction;
+    distance: number;
+    location: { latitude: number; longitude: number };
+  } | null>(null);
+  const [outsideNote, setOutsideNote] = useState("");
 
   // Update clock every second
   useEffect(() => {
@@ -120,6 +131,30 @@ const WorkerView = () => {
       fetchTodaySchedule();
     }
   }, [user, companyId, fetchStatus]);
+
+  useEffect(() => {
+    const fetchCompanyLocation = async () => {
+      if (!companyId) return;
+      const { data, error } = await supabase
+        .from("companies")
+        .select("hq_lat, hq_lng")
+        .eq("id", companyId)
+        .maybeSingle();
+
+      if (error) {
+        console.error("Error loading company location", error);
+        return;
+      }
+
+      if (data?.hq_lat !== null && data?.hq_lng !== null) {
+        setCompanyLocation({ lat: Number(data.hq_lat), lng: Number(data.hq_lng) });
+      } else {
+        setCompanyLocation(null);
+      }
+    };
+
+    fetchCompanyLocation();
+  }, [companyId]);
 
   // Subscribe to scheduled_hours changes in real-time
   useEffect(() => {
@@ -220,7 +255,13 @@ const WorkerView = () => {
     return {};
   };
 
-  const callClockAPI = async (action: ClockAction) => {
+  const callClockAPI = async (
+    action: ClockAction,
+    options?: {
+      locationOverride?: { latitude: number; longitude: number };
+      note?: string;
+    }
+  ) => {
     if (!navigator.onLine) {
       toast.error("Sin conexión a internet", {
         description: "Activa tu conexión para registrar el fichaje.",
@@ -237,7 +278,7 @@ const WorkerView = () => {
     setLoading(true);
     try {
       // Ensure we have a location right before sending
-      let loc = location;
+      let loc = options?.locationOverride ?? location;
       if (!loc?.latitude || !loc?.longitude) {
         const fresh = await getFreshLocation();
         if (fresh.latitude && fresh.longitude) {
@@ -261,12 +302,17 @@ const WorkerView = () => {
           longitude: loc?.longitude,
           source: 'web',
           company_id: companyId,
+          notes: options?.note || undefined,
         },
       });
 
       if (response.error) throw response.error;
 
-      const result = response.data;
+      const result = response.data as {
+        timestamp?: string;
+        is_within_geofence?: boolean | null;
+        distance_meters?: number | null;
+      };
       
       await fetchStatus();
 
@@ -284,6 +330,15 @@ const WorkerView = () => {
       toast.success(messages[action], {
         description: new Date(timestamp).toLocaleTimeString("es-ES"),
       });
+
+      if (result?.is_within_geofence === false) {
+        const distanceLabel =
+          typeof result.distance_meters === "number" ? `${Math.round(result.distance_meters)} m` : "fuera de zona";
+        toast.warning("Estás fichando fuera de la zona habitual", {
+          description:
+            "Se registrará como fichaje fuera de zona. Si es un error, contacta con tu empresa. " + distanceLabel,
+        });
+      }
     } catch (error) {
       console.error("Clock API error:", error);
       const rawMessage =
@@ -305,10 +360,10 @@ const WorkerView = () => {
     }
   };
 
-  const handleClockIn = () => callClockAPI('in');
-  const handleClockOut = () => callClockAPI('out');
-  const handleBreakStart = () => callClockAPI('break_start');
-  const handleBreakEnd = () => callClockAPI('break_end');
+  const handleClockIn = () => attemptAction('in');
+  const handleClockOut = () => attemptAction('out');
+  const handleBreakStart = () => attemptAction('break_start');
+  const handleBreakEnd = () => attemptAction('break_end');
 
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -395,6 +450,46 @@ const WorkerView = () => {
   };
 
   const isActionDisabled = loading || isOffline;
+
+  const attemptAction = async (action: ClockAction) => {
+    let loc = location;
+    if (!loc?.latitude || !loc?.longitude) {
+      const fresh = await getFreshLocation();
+      if (fresh.latitude && fresh.longitude) {
+        loc = { latitude: fresh.latitude, longitude: fresh.longitude };
+        setLocation(loc);
+        setGpsEnabled(true);
+        setGpsWarningShown(false);
+      }
+    }
+
+    const hasCompanyLoc = companyLocation?.lat !== undefined && companyLocation?.lng !== undefined;
+    if (loc && hasCompanyLoc) {
+      const distance = calculateDistanceMeters(loc.latitude, loc.longitude, companyLocation!.lat, companyLocation!.lng);
+      if (distance > GEOFENCE_RADIUS_METERS) {
+        setOutsideConfirm({ action, distance, location: loc });
+        return;
+      }
+    }
+
+    await callClockAPI(action, { locationOverride: loc ?? undefined });
+  };
+
+  const confirmOutsideClock = async () => {
+    if (!outsideConfirm) return;
+    const note = outsideNote.trim() || undefined;
+    await callClockAPI(outsideConfirm.action, {
+      locationOverride: outsideConfirm.location,
+      note,
+    });
+    setOutsideConfirm(null);
+    setOutsideNote("");
+  };
+
+  const cancelOutsideClock = () => {
+    setOutsideConfirm(null);
+    setOutsideNote("");
+  };
 
   if (!user?.id || !companyId || (!membership && membershipLoading)) {
     return (
@@ -788,6 +883,42 @@ const WorkerView = () => {
           />
         </motion.div>
       </div>
+
+      <Dialog open={!!outsideConfirm} onOpenChange={(open) => !open && cancelOutsideClock()}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Fichaje fuera de la zona definida</DialogTitle>
+            <DialogDescription>
+              Estás a más de {GEOFENCE_RADIUS_METERS} m del punto configurado por tu empresa.
+              Si continúas, el fichaje quedará marcado como “fuera de zona”.
+            </DialogDescription>
+          </DialogHeader>
+          {outsideConfirm && (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Distancia estimada: <strong>{Math.round(outsideConfirm.distance)} m</strong>
+              </p>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Motivo (opcional)</label>
+                <Textarea
+                  value={outsideNote}
+                  onChange={(e) => setOutsideNote(e.target.value)}
+                  placeholder="Ej. Estoy en cliente, incidencia, teletrabajo puntual..."
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter className="flex gap-2 sm:justify-between">
+            <Button variant="outline" onClick={cancelOutsideClock}>
+              Cancelar
+            </Button>
+            <Button onClick={confirmOutsideClock} disabled={loading}>
+              {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Sí, fichar fuera de zona
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
