@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import NotificationBell from "@/components/NotificationBell";
 import { CompanySelector } from "@/components/CompanySelector";
+import WorkerScheduleSection from "@/components/WorkerScheduleSection";
 
 type WorkerStatus = "out" | "in" | "on_break";
 
@@ -773,6 +774,18 @@ const WorkerView = () => {
               </div>
             </Card>
           )}
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <WorkerScheduleSection
+            userId={user.id}
+            companyId={companyId}
+            workerName={user.full_name || user.email}
+          />
         </motion.div>
       </div>
     </div>

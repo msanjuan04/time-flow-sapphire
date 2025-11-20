@@ -99,7 +99,7 @@ serve(async (req)=>{
     }
     // Send email via Resend
     try {
-      const siteUrl = Deno.env.get("SITE_URL") || "http://localhost:8080";
+      const siteUrl = Deno.env.get("SITE_URL") || "https://gneraitiq.com";
       const resendApiKey = Deno.env.get("RESEND_API_KEY");
       const fromEmail = Deno.env.get("EMAIL_FROM") || "GTiQ <no-reply@gtiq.local>";
       const inviteUrl = `${siteUrl}/accept-invite?token=${token}`;
