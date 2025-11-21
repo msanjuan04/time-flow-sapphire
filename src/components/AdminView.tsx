@@ -11,7 +11,6 @@ import NotificationBell from "@/components/NotificationBell";
 import { CompanySelector } from "@/components/CompanySelector";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { DEMO_COMPANY_IDS } from "@/config/demo";
 import VacationAssignment from "@/components/admin/VacationAssignment";
 
 interface DailyStats {
@@ -19,24 +18,6 @@ interface DailyStats {
   hours: number;
   checkIns: number;
 }
-
-const mockWeeklyData: DailyStats[] = [
-  { date: "lun", hours: 7.8, checkIns: 12 },
-  { date: "mar", hours: 8.1, checkIns: 14 },
-  { date: "mié", hours: 7.5, checkIns: 11 },
-  { date: "jue", hours: 8.6, checkIns: 15 },
-  { date: "vie", hours: 7.9, checkIns: 13 },
-  { date: "sáb", hours: 5.2, checkIns: 6 },
-  { date: "dom", hours: 4.6, checkIns: 4 },
-];
-
-const mockStats = {
-  activeUsers: 24,
-  todayCheckIns: 68,
-  pendingIncidents: 2,
-  totalHoursToday: 182,
-  totalHoursWeek: 950,
-};
 
 interface WorkSessionRecord {
   clock_in_time: string | null;
@@ -70,7 +51,6 @@ const DASHBOARD_REFRESH_MS = 60000;
 const AdminView = () => {
   const { signOut, user } = useAuth();
   const { companyId, membership, loading: membershipLoading } = useMembership();
-  const isDemoCompany = companyId ? DEMO_COMPANY_IDS.includes(companyId) : false;
   const navigate = useNavigate();
   const [stats, setStats] = useState({
     activeUsers: 0,
@@ -411,15 +391,9 @@ const AdminView = () => {
       })
     : null;
 
-  const hasWeeklyHours = weeklyData.some((day) => day.hours > 0);
-  const hasWeeklyCheckIns = weeklyData.some((day) => day.checkIns > 0);
-  const usingMockWeeklyData = isDemoCompany || !hasWeeklyHours;
-  const usingMockCheckIns = isDemoCompany || !hasWeeklyCheckIns;
-  const weeklyChartData = usingMockWeeklyData ? mockWeeklyData : weeklyData;
-  const weeklyCheckInChartData = usingMockCheckIns ? mockWeeklyData : weeklyData;
-  const shouldUseMockStats =
-    isDemoCompany || (stats.activeUsers === 0 && stats.todayCheckIns === 0 && stats.totalHoursWeek === 0);
-  const statsDisplay = shouldUseMockStats ? mockStats : stats;
+  const weeklyChartData = weeklyData;
+  const weeklyCheckInChartData = weeklyData;
+  const statsDisplay = stats;
 
   if (loading || membershipLoading || !companyId) {
     return (
