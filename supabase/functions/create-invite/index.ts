@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { ensureWorkerProfile } from "../_shared/invite-helpers.ts";
 import { getPlanLimit } from "../_shared/company-plan.ts";
+import { resolveSiteUrl } from "../_shared/site-url.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -197,7 +198,8 @@ serve(async (req) => {
     try {
       const resendApiKey = Deno.env.get("RESEND_API_KEY");
       const fromEmail = Deno.env.get("EMAIL_FROM") || "GTiQ <no-reply@gtiq.local>";
-      const siteUrl = Deno.env.get("SITE_URL") || "http://localhost:8080";
+      const siteUrl = resolveSiteUrl(req);
+      console.log("[create-invite] Using site URL", siteUrl);
       const inviteUrl = `${siteUrl}/accept-invite?token=${token}`;
 
       const authUrl = `${siteUrl}/auth`;

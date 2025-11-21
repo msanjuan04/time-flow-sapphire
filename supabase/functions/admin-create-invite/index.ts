@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { requireSuperadmin, writeAudit, extractRequestMetadata } from "../_shared/admin.ts";
 import { handleCorsOptions, createJsonResponse, createErrorResponse } from "../_shared/cors.ts";
 import { getPlanLimit } from "../_shared/company-plan.ts";
+import { resolveSiteUrl } from "../_shared/site-url.ts";
 serve(async (req)=>{
   if (req.method === "OPTIONS") return handleCorsOptions();
   try {
@@ -99,7 +100,8 @@ serve(async (req)=>{
     }
     // Send email via Resend
     try {
-      const siteUrl = Deno.env.get("SITE_URL") || "https://gneraitiq.com";
+      const siteUrl = resolveSiteUrl(req);
+      console.log("[admin-create-invite] Using site URL", siteUrl);
       const resendApiKey = Deno.env.get("RESEND_API_KEY");
       const fromEmail = Deno.env.get("EMAIL_FROM") || "GTiQ <no-reply@gtiq.local>";
       const inviteUrl = `${siteUrl}/accept-invite?token=${token}`;
