@@ -75,11 +75,43 @@ Deno.serve(async (req) => {
       );
     }
 
-    const notifyUsers = async (userIds: string[], payload: { title: string; message: string; type: 'info' | 'success' | 'warning' | 'error'; entity_type?: string | null; entity_id?: string | null; company_id: string }) => {
-      if (!userIds.length) return;
+    const notifyUsers = async (
+      userIds: string[],
+      payload: {
+        title: string;
+        message: string;
+        type: 'info' | 'success' | 'warning' | 'error';
+        entity_type?: string | null;
+        entity_id?: string | null;
+        company_id: string;
+      },
+      options?: {
+        deduplicateByEntity?: boolean;
+      }
+    ) => {
+      let targetUserIds = Array.from(new Set(userIds));
+
+      if (!targetUserIds.length) return;
       try {
+        if (options?.deduplicateByEntity && payload.entity_type && payload.entity_id) {
+          const { data: existing } = await supabaseAdmin
+            .from('notifications')
+            .select('user_id')
+            .eq('company_id', payload.company_id)
+            .eq('entity_type', payload.entity_type)
+            .eq('entity_id', payload.entity_id)
+            .in('user_id', targetUserIds);
+
+          if (existing?.length) {
+            const alreadyNotified = new Set(existing.map((row: any) => row.user_id));
+            targetUserIds = targetUserIds.filter((id) => !alreadyNotified.has(id));
+          }
+        }
+
+        if (!targetUserIds.length) return;
+
         await supabaseAdmin.from('notifications').insert(
-          userIds.map((userId) => ({
+          targetUserIds.map((userId) => ({
             company_id: payload.company_id,
             user_id: userId,
             title: payload.title,
@@ -254,20 +286,24 @@ Deno.serve(async (req) => {
     }
 
     // Insert time event
-    const { error: eventError } = await supabaseAdmin.from('time_events').insert({
-      user_id: currentUserId,
-      company_id: companyId,
-      event_type: eventType,
-      source,
-      device_id: device_id || null,
-      latitude: latitude || null,
-      longitude: longitude || null,
-      distance_meters: distanceMeters,
-      is_within_geofence: isWithinGeofence,
-      photo_url: photo_url || null,
-      notes: notes || null,
-      event_time: new Date().toISOString(),
-    });
+    const { data: newEvent, error: eventError } = await supabaseAdmin
+      .from('time_events')
+      .insert({
+        user_id: currentUserId,
+        company_id: companyId,
+        event_type: eventType,
+        source,
+        device_id: device_id || null,
+        latitude: latitude || null,
+        longitude: longitude || null,
+        distance_meters: distanceMeters,
+        is_within_geofence: isWithinGeofence,
+        photo_url: photo_url || null,
+        notes: notes || null,
+        event_time: new Date().toISOString(),
+      })
+      .select('id')
+      .single();
 
     if (eventError) {
       console.error('Event insert error:', eventError);
@@ -331,6 +367,47 @@ Deno.serve(async (req) => {
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+    }
+
+    if (isWithinGeofence === false) {
+      const { data: admins } = await supabaseAdmin
+        .from('memberships')
+        .select('user_id')
+        .eq('company_id', companyId)
+        .in('role', ['owner', 'admin']);
+
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('full_name, email')
+        .eq('id', currentUserId)
+        .maybeSingle();
+
+      const recipientIds = Array.from(new Set((admins || []).map((m: any) => m.user_id)));
+      const distanceLabel = typeof distanceMeters === 'number' ? `${Math.round(distanceMeters)} m` : 'distancia no disponible';
+      const coordinatesLabel =
+        typeof latitude === 'number' && typeof longitude === 'number'
+          ? `(${latitude.toFixed(5)}, ${longitude.toFixed(5)})`
+          : 'sin coordenadas';
+      const userLabel = profile?.full_name || profile?.email || 'Empleado';
+      const actionLabels: Record<ClockRequest['action'], string> = {
+        in: 'una entrada',
+        out: 'una salida',
+        break_start: 'el inicio de una pausa',
+        break_end: 'el fin de una pausa',
+      };
+
+      await notifyUsers(
+        recipientIds,
+        {
+          company_id: companyId,
+          title: 'Fichaje fuera de zona',
+          message: `${userLabel} registró ${actionLabels[action]} fuera del punto configurado (${distanceLabel} del centro). Ubicación reportada: ${coordinatesLabel}.`,
+          type: 'warning',
+          entity_type: 'time_event',
+          entity_id: newEvent?.id || null,
+        },
+        { deduplicateByEntity: true }
+      );
     }
 
     // Determine current status
