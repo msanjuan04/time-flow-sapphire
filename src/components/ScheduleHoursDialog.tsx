@@ -48,15 +48,6 @@ interface ScheduleGroup {
   end_time: string | null;
 }
 
-interface DaySchedule {
-  day: number; // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
-  dayName: string;
-  enabled: boolean;
-  startTime: string;
-  endTime: string;
-  expectedHours: number;
-}
-
 const WEEKDAYS = [
   { day: 1, name: "Lunes", short: "Lun" },
   { day: 2, name: "Martes", short: "Mar" },
@@ -71,19 +62,41 @@ const HORIZON_FORWARD_DAYS = 180;
 const PREVIEW_GROUPS = 12;
 const HISTORY_DAYS = 120;
 
-type WeekSchedule = {
+type DayTemplate = {
+  day: number; // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
+  name: string;
+  short: string;
+  enabled: boolean;
   morningStart: string;
   morningEnd: string;
   afternoonStart: string;
   afternoonEnd: string;
 };
 
-const createEmptyWeekSchedule = (): WeekSchedule => ({
+type WeekTemplate = {
+  days: DayTemplate[];
+};
+
+const createEmptyDayTemplate = (wd: typeof WEEKDAYS[number]): DayTemplate => ({
+  day: wd.day,
+  name: wd.name,
+  short: wd.short,
+  enabled: false,
   morningStart: "",
   morningEnd: "",
   afternoonStart: "",
   afternoonEnd: "",
 });
+
+const createEmptyWeekTemplate = (): WeekTemplate => ({
+  days: WEEKDAYS.map(createEmptyDayTemplate),
+});
+
+// Evitar desajustes de zona horaria: parseamos fechas yyyy-mm-dd en UTC.
+const parseDateOnlyUtc = (value: string): Date => {
+  const [y, m, d] = value.split("-").map(Number);
+  return new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+};
 
 const ScheduleHoursDialog = ({
   open,
@@ -92,18 +105,6 @@ const ScheduleHoursDialog = ({
 }: ScheduleHoursDialogProps) => {
   const { user } = useAuth();
   const { companyId } = useMembership();
-
-  // Días habilitados (aunque no se muestren, se usan para saber qué días trabajan)
-  const [daySchedules, setDaySchedules] = useState<DaySchedule[]>(() =>
-    WEEKDAYS.map((wd) => ({
-      day: wd.day,
-      dayName: wd.name,
-      enabled: wd.day >= 1 && wd.day <= 5, // Lunes a Viernes por defecto
-      startTime: "09:00",
-      endTime: "17:00",
-      expectedHours: 8,
-    }))
-  );
 
   // Fecha desde la que se aplican las semanas
   const [startDate, setStartDate] = useState<string>(() => {
@@ -118,8 +119,8 @@ const ScheduleHoursDialog = ({
   const [upcomingGroups, setUpcomingGroups] = useState<ScheduleGroup[]>([]);
   const hydrateRef = useRef(true);
 
-  const [weeklySchedules, setWeeklySchedules] = useState<WeekSchedule[]>(
-    () => Array.from({ length: 4 }, createEmptyWeekSchedule)
+  const [weeklySchedules, setWeeklySchedules] = useState<WeekTemplate[]>(
+    () => Array.from({ length: 4 }, createEmptyWeekTemplate)
   );
   const [copyWeekTargets, setCopyWeekTargets] = useState<number[]>([2, 3, 4, 1]);
 
@@ -131,14 +132,18 @@ const ScheduleHoursDialog = ({
     return Math.max(0, minutes / 60);
   }, []);
 
-  // Actualizar una semana concreta con nuevos valores
-  const updateWeekSchedule = (
+  const updateDaySchedule = (
     weekIndex: number,
-    updates: Partial<WeekSchedule>
+    dayIndex: number,
+    updates: Partial<DayTemplate>
   ) => {
     setWeeklySchedules((prev) => {
       const next = [...prev];
-      next[weekIndex] = { ...next[weekIndex], ...updates };
+      const week = { ...next[weekIndex] };
+      const days = [...week.days];
+      days[dayIndex] = { ...days[dayIndex], ...updates };
+      week.days = days;
+      next[weekIndex] = week;
       return next;
     });
   };
@@ -149,7 +154,9 @@ const ScheduleHoursDialog = ({
     if (toIndex < 0 || toIndex >= weeklySchedules.length) return;
     setWeeklySchedules((prev) => {
       const next = [...prev];
-      next[toIndex] = { ...prev[fromWeekIndex] };
+      next[toIndex] = {
+        days: prev[fromWeekIndex].days.map((d) => ({ ...d })),
+      };
       return next;
     });
   };
@@ -205,73 +212,67 @@ const ScheduleHoursDialog = ({
 
       setUpcomingGroups(limitedGroups);
 
-      // Cargar horarios actuales para saber qué días están habilitados
+      // Cargar horarios actuales para saber qué días están habilitados por semana
       if (hydrateRef.current) {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-        const nextWeek = new Date(today);
-        nextWeek.setDate(today.getDate() + 7);
+        const base = startDate ? parseDateOnlyUtc(startDate) : parseDateOnlyUtc(new Date().toISOString().slice(0, 10));
+        const end = new Date(base);
+        end.setUTCDate(end.getUTCDate() + 27); // 4 semanas completas
 
         const { data: existingSchedules } = await supabase
           .from("scheduled_hours")
           .select("date, start_time, end_time, expected_hours")
           .eq("user_id", employee.id)
           .eq("company_id", companyId)
-          .gte("date", today.toISOString().split("T")[0])
-          .lte("date", nextWeek.toISOString().split("T")[0])
+          .gte("date", base.toISOString().split("T")[0])
+          .lte("date", end.toISOString().split("T")[0])
           .order("date", { ascending: true });
 
         if (existingSchedules && existingSchedules.length > 0) {
-          const dayMap = new Map<
-            number,
-            { start_time: string; end_time: string; expected_hours: number }
-          >();
+          const hydratedWeeks = Array.from(
+            { length: 4 },
+            createEmptyWeekTemplate
+          );
+
           (existingSchedules as any[]).forEach((sh: any) => {
-            const date = new Date(sh.date);
-            const dayOfWeek = date.getDay();
-            if (!dayMap.has(dayOfWeek)) {
-              dayMap.set(dayOfWeek, {
-                start_time: sh.start_time ?? "09:00",
-                end_time: sh.end_time ?? "17:00",
-                expected_hours: Number(sh.expected_hours ?? 8),
-              });
-            }
+            const date = parseDateOnlyUtc(sh.date);
+            const dayOfWeek = date.getUTCDay();
+            const daysFromStart = Math.floor(
+              (date.getTime() - base.getTime()) / (1000 * 60 * 60 * 24)
+            );
+            if (daysFromStart < 0) return;
+            const weekIndex = Math.floor(daysFromStart / 7) % hydratedWeeks.length;
+            const dayIndex = hydratedWeeks[weekIndex].days.findIndex(
+              (d) => d.day === dayOfWeek
+            );
+            if (dayIndex === -1) return;
+            hydratedWeeks[weekIndex].days[dayIndex] = {
+              ...hydratedWeeks[weekIndex].days[dayIndex],
+              enabled: true,
+              morningStart: sh.start_time ?? "",
+              morningEnd: sh.end_time ?? "",
+              afternoonStart: "",
+              afternoonEnd: "",
+            };
           });
 
-          setDaySchedules((prev) =>
-            prev.map((ds) => {
-              const existing = dayMap.get(ds.day);
-              if (existing) {
-                return {
-                  ...ds,
-                  enabled: true,
-                  startTime: existing.start_time,
-                  endTime: existing.end_time,
-                  expectedHours: existing.expected_hours,
-                };
-              }
-              return ds;
-            })
-          );
+          setWeeklySchedules(hydratedWeeks);
         } else if (rows.length > 0) {
-          // Fallback al historial si no hay horarios actuales
+          // Fallback: mantén las semanas vacías pero rellena horas por defecto sin habilitar días
           const latest = rows[0];
-          const defaultStart = latest.start_time ?? "09:00";
-          const defaultEnd = latest.end_time ?? "17:00";
-          const defaultHours = Number(latest.expected_hours ?? 8);
-
-          setDaySchedules((prev) =>
-            prev.map((ds) => ({
-              ...ds,
-              startTime: defaultStart,
-              endTime: defaultEnd,
-              expectedHours: defaultHours,
+          const defaultStart = latest.start_time ?? "";
+          const defaultEnd = latest.end_time ?? "";
+          setWeeklySchedules((prev) =>
+            prev.map((week) => ({
+              days: week.days.map((d) => ({
+                ...d,
+                morningStart: defaultStart,
+                morningEnd: defaultEnd,
+              })),
             }))
           );
         }
 
-        // Si el último ajuste tiene applied_from, la usamos como valor inicial
-        if (rows.length > 0 && rows[0].applied_from) {
+        if (rows.length > 0 && rows[0].applied_from && rows[0].applied_from !== startDate) {
           setStartDate(rows[0].applied_from);
         }
 
@@ -283,7 +284,7 @@ const ScheduleHoursDialog = ({
     } finally {
       setEntriesLoading(false);
     }
-  }, [open, employee?.id, companyId]);
+  }, [open, employee?.id, companyId, startDate]);
 
   useEffect(() => {
     if (open) {
@@ -294,6 +295,14 @@ const ScheduleHoursDialog = ({
       hydrateRef.current = true;
     }
   }, [open, loadUpcomingEntries]);
+
+  // Al cambiar la fecha de inicio, reseteamos las semanas para evitar arrastrar días previos
+  useEffect(() => {
+    if (!open) return;
+    hydrateRef.current = true;
+    setWeeklySchedules(Array.from({ length: 4 }, createEmptyWeekTemplate));
+    loadUpcomingEntries();
+  }, [startDate, open, loadUpcomingEntries]);
 
   const handleSave = async () => {
     if (!user?.id || !companyId || !employee?.id) {
@@ -306,12 +315,11 @@ const ScheduleHoursDialog = ({
       return;
     }
 
-    const baseDate = new Date(startDate);
+    const baseDate = parseDateOnlyUtc(startDate);
     if (Number.isNaN(baseDate.getTime())) {
       toast.error("Fecha de inicio no válida");
       return;
     }
-    baseDate.setHours(0, 0, 0, 0);
     const startIso = baseDate.toISOString().slice(0, 10);
 
     const trimmedReason = changeReason.trim();
@@ -320,16 +328,30 @@ const ScheduleHoursDialog = ({
       return;
     }
 
-    const enabledDays = daySchedules.filter((ds) => ds.enabled);
-    if (enabledDays.length === 0) {
+    const enabledDayTemplates = weeklySchedules.flatMap((week, weekIndex) =>
+      week.days
+        .filter((d) => d.enabled)
+        .map((d) => ({ ...d, weekIndex }))
+    );
+
+    if (enabledDayTemplates.length === 0) {
       toast.error("Debes seleccionar al menos un día de trabajo");
       return;
     }
 
-    for (const day of enabledDays) {
-      const hours = computeHoursFromTimes(day.startTime, day.endTime);
-      if (hours <= 0 || hours > 24) {
-        toast.error(`Revisa las horas del ${day.dayName}`);
+    const validateDayTemplate = (day: DayTemplate) => {
+      const morningSet = day.morningStart && day.morningEnd;
+      const afternoonSet = day.afternoonStart && day.afternoonEnd;
+      if (!morningSet && !afternoonSet) return false;
+      const morningHours = morningSet ? computeHoursFromTimes(day.morningStart, day.morningEnd) : 0;
+      const afternoonHours = afternoonSet ? computeHoursFromTimes(day.afternoonStart, day.afternoonEnd) : 0;
+      if (morningHours < 0 || afternoonHours < 0) return false;
+      return morningHours + afternoonHours > 0 && morningHours + afternoonHours <= 24;
+    };
+
+    for (const day of enabledDayTemplates) {
+      if (!validateDayTemplate(day)) {
+        toast.error(`Revisa las horas del ${day.name}`);
         return;
       }
     }
@@ -359,52 +381,48 @@ const ScheduleHoursDialog = ({
         return Math.max(0, (eh * 60 + em) - (sh * 60 + sm)) / 60;
       };
 
-      const isDayEnabled = (dayOfWeek: number) =>
-        daySchedules.some((ds) => ds.day === dayOfWeek && ds.enabled);
+      const firstEnabledDay = enabledDayTemplates[0];
+      const historyHours: number[] = [];
 
       for (let i = 0; i < HORIZON_FORWARD_DAYS; i++) {
-        const date = new Date(baseDate);
-        date.setDate(baseDate.getDate() + i);
-        const dayOfWeek = date.getDay();
-        if (!isDayEnabled(dayOfWeek)) continue;
+      const date = new Date(baseDate);
+      date.setUTCDate(baseDate.getUTCDate() + i);
+      const dayOfWeek = date.getUTCDay();
 
         const weekIndex = Math.floor(i / 7) % weeklySchedules.length;
         const weekTemplate = weeklySchedules[weekIndex];
+        const dayTemplate = weekTemplate.days.find((d) => d.day === dayOfWeek);
+        if (!dayTemplate || !dayTemplate.enabled) continue;
 
         const morningHours =
-          weekTemplate.morningStart && weekTemplate.morningEnd
-            ? computeHours(weekTemplate.morningStart, weekTemplate.morningEnd)
+          dayTemplate.morningStart && dayTemplate.morningEnd
+            ? computeHours(dayTemplate.morningStart, dayTemplate.morningEnd)
             : 0;
         const afternoonHours =
-          weekTemplate.afternoonStart && weekTemplate.afternoonEnd
-            ? computeHours(
-                weekTemplate.afternoonStart,
-                weekTemplate.afternoonEnd
-              )
+          dayTemplate.afternoonStart && dayTemplate.afternoonEnd
+            ? computeHours(dayTemplate.afternoonStart, dayTemplate.afternoonEnd)
             : 0;
 
         const expected_hours = Number((morningHours + afternoonHours).toFixed(2));
         if (expected_hours <= 0) continue;
 
+        if (historyHours.length < 7) {
+          historyHours.push(expected_hours);
+        }
+
         const start_time =
-          weekTemplate.morningStart ||
-          weekTemplate.afternoonStart ||
-          daySchedules.find((ds) => ds.day === dayOfWeek)?.startTime ||
-          "09:00";
+          dayTemplate.morningStart || dayTemplate.afternoonStart || "";
 
         const end_time =
-          weekTemplate.afternoonEnd ||
-          weekTemplate.morningEnd ||
-          daySchedules.find((ds) => ds.day === dayOfWeek)?.endTime ||
-          "17:00";
+          dayTemplate.afternoonEnd || dayTemplate.morningEnd || "";
 
         const noteSegments = [
           `Semana ${weekIndex + 1}`,
-          weekTemplate.morningStart && weekTemplate.morningEnd
-            ? `Mañana ${weekTemplate.morningStart}-${weekTemplate.morningEnd}`
+          dayTemplate.morningStart && dayTemplate.morningEnd
+            ? `Mañana ${dayTemplate.morningStart}-${dayTemplate.morningEnd}`
             : null,
-          weekTemplate.afternoonStart && weekTemplate.afternoonEnd
-            ? `Tarde ${weekTemplate.afternoonStart}-${weekTemplate.afternoonEnd}`
+          dayTemplate.afternoonStart && dayTemplate.afternoonEnd
+            ? `Tarde ${dayTemplate.afternoonStart}-${dayTemplate.afternoonEnd}`
             : null,
         ]
           .filter(Boolean)
@@ -440,25 +458,39 @@ const ScheduleHoursDialog = ({
       }
 
       const avgHours =
-        enabledDays.reduce((sum, d) => sum + d.expectedHours, 0) /
-        enabledDays.length;
+        historyHours.reduce((sum, h) => sum + h, 0) /
+        (historyHours.length || 1);
 
-      const historyInsert = await supabase
-        .from("schedule_adjustments_history")
-        .insert({
-          user_id: employee.id,
-          company_id: companyId,
-          applied_from: startIso,
-          expected_hours: avgHours,
-          reason: trimmedReason,
-          created_by: user.id,
-          changed_at: new Date().toISOString(),
-          start_time: enabledDays[0]?.startTime ?? "09:00",
-          end_time: enabledDays[0]?.endTime ?? "17:00",
-        } as any); // cast por si TS se queja
-      if (historyInsert.error) {
-        console.error("Error inserting history:", historyInsert.error);
-        throw historyInsert.error;
+      let historyError: string | null = null;
+      try {
+        const historyInsert = await supabase
+          .from("schedule_adjustments_history")
+          .insert({
+            user_id: employee.id,
+            company_id: companyId,
+            applied_from: startIso,
+            expected_hours: avgHours,
+            reason: trimmedReason,
+            created_by: user.id,
+            changed_at: new Date().toISOString(),
+            start_time:
+              firstEnabledDay?.morningStart ||
+              firstEnabledDay?.afternoonStart ||
+              null,
+            end_time:
+              firstEnabledDay?.afternoonEnd ||
+              firstEnabledDay?.morningEnd ||
+              null,
+          } as any); // cast por si TS se queja
+        if (historyInsert.error) {
+          historyError = historyInsert.error.message || "Error al registrar historial";
+        }
+      } catch (err: any) {
+        historyError = err?.message || "Error al registrar historial";
+      }
+
+      if (historyError) {
+        console.warn("Horario guardado, pero fallo el historial:", historyError);
       }
 
       toast.success(
@@ -619,58 +651,89 @@ const ScheduleHoursDialog = ({
                       </div>
                     </div>
 
-                    <div className="grid gap-2">
-                      <div className="space-y-1">
-                        <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                          Mañana
-                        </p>
-                        <div className="grid grid-cols-2 gap-2">
-                          <Input
-                            type="time"
-                            value={week.morningStart}
-                            onChange={(e) =>
-                              updateWeekSchedule(index, {
-                                morningStart: e.target.value,
-                              })
-                            }
-                          />
-                          <Input
-                            type="time"
-                            value={week.morningEnd}
-                            onChange={(e) =>
-                              updateWeekSchedule(index, {
-                                morningEnd: e.target.value,
-                              })
-                            }
-                          />
-                        </div>
-                      </div>
+                    <div className="grid gap-3">
+                      {week.days.map((day, dayIdx) => (
+                        <div
+                          key={`${index}-${day.day}`}
+                          className={`rounded-xl border p-3 ${
+                            day.enabled ? "bg-background" : "bg-muted/60"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <label className="flex items-center gap-2 text-sm font-medium">
+                              <input
+                                type="checkbox"
+                                checked={day.enabled}
+                                onChange={(e) =>
+                                  updateDaySchedule(index, dayIdx, {
+                                    enabled: e.target.checked,
+                                  })
+                                }
+                              />
+                              {day.name}
+                            </label>
+                            <span className="text-xs text-muted-foreground">
+                              {day.enabled ? "Trabaja" : "Libre"}
+                            </span>
+                          </div>
 
-                      <div className="space-y-1">
-                        <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                          Tarde
-                        </p>
-                        <div className="grid grid-cols-2 gap-2">
-                          <Input
-                            type="time"
-                            value={week.afternoonStart}
-                            onChange={(e) =>
-                              updateWeekSchedule(index, {
-                                afternoonStart: e.target.value,
-                              })
-                            }
-                          />
-                          <Input
-                            type="time"
-                            value={week.afternoonEnd}
-                            onChange={(e) =>
-                              updateWeekSchedule(index, {
-                                afternoonEnd: e.target.value,
-                              })
-                            }
-                          />
+                          {day.enabled && (
+                            <div className="mt-3 grid gap-2">
+                              <div className="space-y-1">
+                                <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                                  Mañana
+                                </p>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <Input
+                                    type="time"
+                                    value={day.morningStart}
+                                    onChange={(e) =>
+                                      updateDaySchedule(index, dayIdx, {
+                                        morningStart: e.target.value,
+                                      })
+                                    }
+                                  />
+                                  <Input
+                                    type="time"
+                                    value={day.morningEnd}
+                                    onChange={(e) =>
+                                      updateDaySchedule(index, dayIdx, {
+                                        morningEnd: e.target.value,
+                                      })
+                                    }
+                                  />
+                                </div>
+                              </div>
+
+                              <div className="space-y-1">
+                                <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                                  Tarde
+                                </p>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <Input
+                                    type="time"
+                                    value={day.afternoonStart}
+                                    onChange={(e) =>
+                                      updateDaySchedule(index, dayIdx, {
+                                        afternoonStart: e.target.value,
+                                      })
+                                    }
+                                  />
+                                  <Input
+                                    type="time"
+                                    value={day.afternoonEnd}
+                                    onChange={(e) =>
+                                      updateDaySchedule(index, dayIdx, {
+                                        afternoonEnd: e.target.value,
+                                      })
+                                    }
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
+                      ))}
                     </div>
                   </div>
                 ))}
@@ -694,7 +757,9 @@ const ScheduleHoursDialog = ({
                 disabled={
                   saving ||
                   !changeReason.trim() ||
-                  !daySchedules.some((ds) => ds.enabled)
+                  !weeklySchedules.some((week) =>
+                    week.days.some((ds) => ds.enabled)
+                  )
                 }
                 className="hover-scale"
               >

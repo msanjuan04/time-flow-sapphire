@@ -374,10 +374,13 @@ const Employees = () => {
 
   useEffect(() => {
     if (!user) return void navigate("/auth");
-    if (role && role !== "owner" && role !== "admin") return void navigate("/");
+
+    const isAllowedRole = role === "owner" || role === "admin" || role === "manager";
+    if (!isSuperadmin && role && !isAllowedRole) return void navigate("/");
+
     if (companyId) fetchEmployees();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId, role, user]);
+  }, [companyId, role, user, isSuperadmin]);
 
   useEffect(() => setPage(1), [searchQuery, roleFilter]);
 
