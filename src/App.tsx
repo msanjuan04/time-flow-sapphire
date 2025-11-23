@@ -23,6 +23,8 @@ const CompanySettingsPage = lazy(() => import("./pages/CompanySettings"));
 const CorrectionRequestsPage = lazy(() => import("./pages/CorrectionRequests"));
 const DevicesPage = lazy(() => import("./pages/Devices"));
 const KioskPage = lazy(() => import("./pages/Kiosk"));
+const KioskFreePage = lazy(() => import("./pages/KioskFree"));
+const KioskEmployeePage = lazy(() => import("./pages/KioskEmployee"));
 const AdminOverviewPage = lazy(() => import("./pages/AdminOverview"));
 const AdminCompaniesPage = lazy(() => import("./pages/AdminCompanies"));
 const AdminCompanyDetailPage = lazy(() => import("./pages/AdminCompanyDetail"));
@@ -216,6 +218,8 @@ const App = () => (
               }
             />
             <Route path="/kiosk" element={<KioskPage />} />
+            <Route path="/kiosk-free" element={<KioskFreePage />} />
+            <Route path="/kiosk/employee/:token" element={<KioskEmployeePage />} />
 
             <Route
               path="/admin"

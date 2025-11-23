@@ -75,7 +75,8 @@ const Kiosk = () => {
       setDevice(data);
       setAuthenticated(true);
       toast.success(`Kiosko activado: ${data.name}`);
-      // Redirige a la pantalla de auth para introducir el código del worker (redir hard para evitar caché)
+
+      // Flujo clásico con auth
       const target = `/auth?kiosk=1&pin=${pinToUse}`;
       setRedirecting(true);
       navigate(target, { replace: true });

@@ -58,6 +58,13 @@ interface Center {
   name: string;
 }
 
+interface Employee {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  login_code: string | null;
+}
+
 const Devices = () => {
   const { user } = useAuth();
   const { companyId, role, loading: membershipLoading } = useMembership();
@@ -69,6 +76,7 @@ const Devices = () => {
   const [showNewDevice, setShowNewDevice] = useState(false);
   const [showQRDialog, setShowQRDialog] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
+  // Modo kiosko único (auth clásico)
 
   // Form state
   const [deviceName, setDeviceName] = useState("");
@@ -127,6 +135,19 @@ const Devices = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleModeChange = async (_mode: "auth" | "free") => {
+    toast.info("Modo kiosko fijo en autenticado.");
+  };
+
+  const fetchCompanyMode = async () => {
+    // mantenemos modo auth fijo
+    setKioskMode("auth");
+  };
+
+  const fetchEmployees = async () => {
+    setEmployees([]);
   };
 
   const fetchCenters = async () => {
@@ -236,7 +257,6 @@ const Devices = () => {
 
   const getKioskURL = (pin: string) => {
     const base = PUBLIC_SITE_URL || window.location.origin;
-    // Redirigimos directamente a la pantalla de login/código
     return `${base}/auth`;
   };
 
@@ -247,7 +267,7 @@ const Devices = () => {
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex justify-between items-center"
+          className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
         >
           <div className="flex items-center gap-3">
             <BackButton to="/" />
@@ -260,6 +280,9 @@ const Devices = () => {
                 Configura tablets y dispositivos kiosko
               </p>
             </div>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Los QR abrirán la pantalla de login (/auth) como siempre.
           </div>
           <Dialog open={showNewDevice} onOpenChange={setShowNewDevice}>
             <DialogTrigger asChild>
@@ -444,6 +467,31 @@ const Devices = () => {
             <div className="flex flex-col items-center gap-4 py-4">
               {selectedDevice && (
                 <>
+                  {kioskMode === "free" && (
+                    <div className="space-y-2 w-full">
+                      <Label>Empleado para este QR</Label>
+                      <Select value={selectedEmployeeId} onValueChange={setSelectedEmployeeId}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecciona empleado" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {employees.map((emp) => (
+                            <SelectItem key={emp.id} value={emp.id}>
+                              {emp.full_name || emp.email} — {emp.login_code}
+                            </SelectItem>
+                          ))}
+                          {employees.length === 0 && (
+                            <SelectItem value="none" disabled>
+                              No hay empleados con código
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        El QR abrirá la pantalla libre `/kiosk/employee/:token` para este empleado.
+                      </p>
+                    </div>
+                  )}
                   <div className="p-4 bg-white rounded-lg">
                     <QRCodeSVG
                       value={getKioskURL(selectedDevice.secret_hash)}
