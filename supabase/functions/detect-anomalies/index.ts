@@ -75,6 +75,17 @@ serve(async (req) => {
       );
     }
 
+    // Si no hay eventos en las últimas 24h, no notificar para evitar ruido
+    const newestEventTime = new Date(timeEvents[0].event_time);
+    const twentyFourHoursAgo = new Date();
+    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
+    if (newestEventTime < twentyFourHoursAgo) {
+      return new Response(
+        JSON.stringify({ anomalies: [], message: 'No recent events (last 24h), skipping notifications' }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Get absences for conflict detection
     const { data: absences } = await supabaseAdmin
       .from('absences')

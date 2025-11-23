@@ -236,7 +236,8 @@ const Devices = () => {
 
   const getKioskURL = (pin: string) => {
     const base = PUBLIC_SITE_URL || window.location.origin;
-    return `${base}/kiosk?pin=${pin}`;
+    // Redirigimos directamente a la pantalla de login/código
+    return `${base}/auth`;
   };
 
   return (
@@ -437,7 +438,7 @@ const Devices = () => {
             <DialogHeader>
               <DialogTitle>Código QR - {selectedDevice?.name}</DialogTitle>
               <DialogDescription>
-                Escanea este código QR para acceder al kiosko
+                Escanea este código QR para abrir la pantalla de acceso y fichar
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-col items-center gap-4 py-4">
@@ -468,7 +469,7 @@ const Devices = () => {
                     </div>
                   </div>
                   <div className="space-y-2 w-full">
-                    <Label>URL del kiosko</Label>
+                    <Label>URL de acceso</Label>
                     <div className="flex gap-2">
                       <Input
                         value={getKioskURL(selectedDevice.secret_hash)}
