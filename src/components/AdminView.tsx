@@ -377,6 +377,8 @@ const AdminView = () => {
   const safeTotalHoursWeek = Number.isFinite(statsDisplay.totalHoursWeek)
     ? statsDisplay.totalHoursWeek
     : 0;
+  const [mobileStatsOpen, setMobileStatsOpen] = useState(true);
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
 
   if (loading || membershipLoading || !companyId) {
     return (
@@ -402,8 +404,8 @@ const AdminView = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
-      <div className="max-w-7xl mx-auto space-y-6 pt-8 animate-fade-in">
+    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 px-3 sm:px-4 py-4">
+      <div className="max-w-7xl mx-auto space-y-5 sm:space-y-6 pt-6 sm:pt-8 animate-fade-in">
         {error && (
           <Card className="border-destructive bg-destructive/10 text-destructive-foreground p-4 flex flex-col gap-2">
             <div className="flex items-center gap-2">
@@ -456,8 +458,8 @@ const AdminView = () => {
         )}
         
         {/* Header */}
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-4 sm:gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-start sm:items-center gap-3">
             <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
               <BarChart3 className="w-6 h-6 text-primary-foreground" />
             </div>
@@ -474,7 +476,7 @@ const AdminView = () => {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="hidden lg:flex items-center gap-2">
             <CompanySelector />
             <NotificationBell />
             <Button
@@ -535,11 +537,77 @@ const AdminView = () => {
               <LogOut className="w-5 h-5" />
             </Button>
           </div>
+
+          {/* Mobile action toggle */}
+          <div className="lg:hidden">
+            <Button
+              variant="outline"
+              className="w-full justify-between"
+              onClick={() => setMobileActionsOpen((prev) => !prev)}
+            >
+              <span className="font-semibold">Acciones rápidas</span>
+              <span className="text-sm text-muted-foreground">
+                {mobileActionsOpen ? "Ocultar" : "Mostrar"}
+              </span>
+            </Button>
+            {mobileActionsOpen && (
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <Button variant="outline" size="sm" className="justify-center" onClick={() => navigate("/devices")}><Tablet className="w-4 h-4 mr-1" />Dispositivos</Button>
+                <Button variant="outline" size="sm" className="justify-center" onClick={() => navigate("/manager-calendar")}><Calendar className="w-4 h-4 mr-1" />Calendario</Button>
+                <Button variant="outline" size="sm" className="justify-center" onClick={() => navigate("/correction-requests")}><AlertCircle className="w-4 h-4 mr-1" />Correcciones</Button>
+                <Button variant="outline" size="sm" className="justify-center" onClick={() => navigate("/reports")}><BarChart3 className="w-4 h-4 mr-1" />Reportes</Button>
+                <Button variant="outline" size="sm" className="justify-center" onClick={() => navigate("/people")}><Users className="w-4 h-4 mr-1" />Personas</Button>
+                <Button variant="outline" size="sm" className="justify-center" onClick={() => navigate("/company-settings")}><Settings className="w-4 h-4 mr-1" />Ubicación</Button>
+                <Button variant="outline" size="sm" className="justify-center" onClick={() => navigate("/")} >Volver</Button>
+                <Button variant="destructive" size="sm" className="justify-center" onClick={() => { signOut(); navigate("/auth", { replace: true }); }}>Cerrar sesión</Button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          <Card className="glass-card p-6 hover-scale smooth-transition">
+        <div className="lg:hidden">
+          <Button
+            variant="outline"
+            className="w-full justify-between mb-2"
+            onClick={() => setMobileStatsOpen((prev) => !prev)}
+          >
+            <span className="font-semibold">Resumen rápido</span>
+            <span className="text-sm text-muted-foreground">
+              {mobileStatsOpen ? "Ocultar" : "Mostrar"}
+            </span>
+          </Button>
+          {mobileStatsOpen && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+              <Card className="glass-card p-4 sm:p-6 hover-scale smooth-transition">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Trabajadores activos</p>
+                    <p className="text-3xl font-bold mt-1">{statsDisplay.activeUsers}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <Users className="w-6 h-6 text-primary" />
+                  </div>
+                </div>
+              </Card>
+
+              <Card className="glass-card p-4 sm:p-6 hover-scale smooth-transition">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">Fichajes de hoy</p>
+                    <p className="text-3xl font-bold mt-1">{statsDisplay.todayCheckIns}</p>
+                  </div>
+                  <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
+                    <Calendar className="w-6 h-6 text-primary" />
+                  </div>
+                </div>
+              </Card>
+            </div>
+          )}
+        </div>
+
+        <div className="hidden lg:grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
+          <Card className="glass-card p-4 sm:p-6 hover-scale smooth-transition">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Trabajadores activos</p>
@@ -551,7 +619,7 @@ const AdminView = () => {
             </div>
           </Card>
 
-          <Card className="glass-card p-6 hover-scale smooth-transition">
+          <Card className="glass-card p-4 sm:p-6 hover-scale smooth-transition">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-muted-foreground">Fichajes de hoy</p>
@@ -567,7 +635,7 @@ const AdminView = () => {
         {/* Charts Section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Hours Chart */}
-          <Card className="glass-card p-6">
+          <Card className="glass-card p-4 sm:p-6">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-primary" />
               Horas trabajadas - Última semana
@@ -597,7 +665,7 @@ const AdminView = () => {
           </Card>
 
           {/* Check-ins Chart */}
-          <Card className="glass-card p-6">
+          <Card className="glass-card p-4 sm:p-6">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-primary" />
               Fichajes - Última semana
@@ -630,7 +698,7 @@ const AdminView = () => {
         </div>
 
         {/* Recent Events */}
-        <Card className="glass-card p-6">
+        <Card className="glass-card p-4 sm:p-6">
           <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
             <Clock className="w-5 h-5 text-primary" />
             Fichajes recientes
@@ -673,7 +741,7 @@ const AdminView = () => {
         </Card>
 
         {/* Weekly Summary */}
-        <Card className="glass-card p-6">
+        <Card className="glass-card p-4 sm:p-6">
           <h2 className="text-xl font-semibold mb-4">Resumen semanal</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center p-4 rounded-xl bg-primary/5">

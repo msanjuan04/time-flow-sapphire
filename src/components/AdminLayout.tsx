@@ -23,15 +23,15 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10">
-      <div className="flex">
+      <div className="flex flex-col lg:flex-row">
         {/* Sidebar */}
-        <aside className="w-64 min-h-screen border-r bg-card/50 backdrop-blur-sm">
-          <div className="p-6">
-            <div className="flex items-center gap-2 mb-8">
+        <aside className="w-full lg:w-64 lg:min-h-screen border-b lg:border-b-0 lg:border-r bg-card/50 backdrop-blur-sm">
+          <div className="p-4 sm:p-6">
+            <div className="flex items-center gap-2 mb-6 sm:mb-8">
               <Shield className="w-6 h-6 text-primary" />
               <h2 className="text-lg font-bold">Admin Panel</h2>
             </div>
-            <nav className="space-y-2">
+            <nav className="grid grid-cols-2 gap-2 lg:block">
               {menuItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = location.pathname === item.path;
@@ -40,7 +40,7 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
                     key={item.path}
                     variant={isActive ? "secondary" : "ghost"}
                     className={cn(
-                      "w-full justify-start",
+                      "w-full justify-start text-sm",
                       isActive && "bg-primary/10"
                     )}
                     onClick={() => navigate(item.path)}
@@ -52,7 +52,7 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
               })}
             </nav>
           </div>
-          <div className="absolute bottom-6 left-6 right-6 space-y-2">
+          <div className="hidden lg:block absolute bottom-6 left-6 right-6 space-y-2">
             <Button
               variant="outline"
               className="w-full"
@@ -74,7 +74,28 @@ export const AdminLayout = ({ children }: AdminLayoutProps) => {
         </aside>
 
         {/* Main Content */}
-        <main className="flex-1 p-8">{children}</main>
+        <main className="flex-1 p-4 sm:p-6 lg:p-8">
+          <div className="lg:hidden grid grid-cols-2 gap-2 mb-4">
+            <Button
+              variant="outline"
+              onClick={() => navigate("/")}
+              className="w-full text-sm"
+            >
+              Volver a la app
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                signOut();
+                navigate("/auth", { replace: true });
+              }}
+              className="w-full text-sm"
+            >
+              <LogOut className="w-4 h-4 mr-2" /> Cerrar sesión
+            </Button>
+          </div>
+          {children}
+        </main>
       </div>
     </div>
   );

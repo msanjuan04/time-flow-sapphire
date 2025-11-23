@@ -36,6 +36,12 @@ import { cn } from "@/lib/utils";
 import { SPANISH_HOLIDAYS } from "@/data/spainHolidays";
 import { ABSENCE_REASONS } from "@/data/absenceReasons";
 import CalendarDayIndicators, { DayStatusKey } from "@/components/CalendarDayIndicators";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 interface Employee {
   id: string;
@@ -788,8 +794,8 @@ const ManagerCalendar = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
       <div className="max-w-7xl mx-auto space-y-6 pt-8 animate-fade-in">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-3">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
+          <div className="flex items-start md:items-center gap-3">
             <BackButton />
             <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
               <CalendarIcon className="h-6 w-6 text-primary-foreground" />
@@ -801,10 +807,10 @@ const ManagerCalendar = () => {
               </p>
             </div>
           </div>
-          <div className="flex-1 flex justify-end gap-3">
+          <div className="flex flex-wrap gap-2 w-full md:w-auto justify-start md:justify-end">
             <Button
               variant="outline"
-              className="hover-scale"
+              className="hover-scale w-full sm:w-auto"
               onClick={() => {
                 setNoticeText(generateNotice());
                 setNoticeDialogOpen(true);
@@ -812,10 +818,15 @@ const ManagerCalendar = () => {
             >
               Redactar aviso
             </Button>
-            <Button variant="secondary" onClick={handleCompanyHoliday} className="hover-scale">
+            <Button
+              variant="secondary"
+              onClick={handleCompanyHoliday}
+              className="hover-scale w-full sm:w-auto"
+            >
               Marcar festivo de empresa
             </Button>
           </div>
+        </div>
       </div>
 
       {/* Diálogo de edición de evento */}
@@ -897,18 +908,18 @@ const ManagerCalendar = () => {
           />
           <div className="max-h-[600px] overflow-auto space-y-2 pr-2">
             {filteredEmployeesList.map((e) => (
-                <Button
-                  key={e.id}
-                  variant={selectedEmployee === e.id ? "default" : "outline"}
-                  className={cn(
-                    "w-full justify-start smooth-transition",
-                    selectedEmployee === e.id && "hover-scale"
-                  )}
-                  onClick={() => setSelectedEmployee(e.id)}
-                >
-                  {e.full_name || e.email}
-                </Button>
-              ))}
+              <Button
+                key={e.id}
+                variant={selectedEmployee === e.id ? "default" : "outline"}
+                className={cn(
+                  "w-full justify-start smooth-transition",
+                  selectedEmployee === e.id && "hover-scale"
+                )}
+                onClick={() => setSelectedEmployee(e.id)}
+              >
+                {e.full_name || e.email}
+              </Button>
+            ))}
           </div>
         </Card>
 
@@ -1009,58 +1020,110 @@ const ManagerCalendar = () => {
                     </div>
                   </DialogContent>
                 </Dialog>
-
               </>
             )}
-
           </div>
-          {selectedEmployee && date && (
-            <Card className="glass-card p-6 space-y-3">
-              <div className="flex flex-wrap items-end gap-3">
-                <div className="flex flex-col">
-                  <Label>Horas rápidas</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="0.5"
-                    value={quickHours}
-                    onChange={(e) => setQuickHours(e.target.value)}
-                    className="w-24"
-                  />
-                </div>
-                <div className="flex-1 flex flex-col">
-                  <Label>Nota</Label>
-                  <Input
-                    placeholder="Ej. Jornada completa"
-                    value={quickNote}
-                    onChange={(e) => setQuickNote(e.target.value)}
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <Button size="sm" onClick={() => handleQuickSchedule(8, "8h estándar")} className="hover-scale">
-                    Asignar 8h estándar
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => handleQuickSchedule(Number(quickHours) || 8, quickNote)}
-                    className="hover-scale"
-                  >
-                    Configurar jornada completa
-                  </Button>
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Esta acción crea o actualiza las <code>scheduled_hours</code> para el día seleccionado.
-              </p>
-          </Card>
-        )}
 
-        {/* Calendario + gestión del día */}
-        <div className="grid gap-6 md:grid-cols-[minmax(540px,1.7fr)_minmax(260px,0.8fr)] items-start">
+          {selectedEmployee && date && (
+            <>
+              {/* Mobile accordion */}
+              <div className="sm:hidden">
+                <Accordion type="single" collapsible defaultValue="quick-actions">
+                  <AccordionItem value="quick-actions">
+                    <AccordionTrigger className="text-left">Gestión rápida del día</AccordionTrigger>
+                    <AccordionContent className="pt-2">
+                      <Card className="glass-card p-4 space-y-3">
+                        <div className="flex flex-col gap-3">
+                          <div className="flex flex-col">
+                            <Label>Horas rápidas</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={quickHours}
+                              onChange={(e) => setQuickHours(e.target.value)}
+                              className="w-full"
+                            />
+                          </div>
+                          <div className="flex flex-col">
+                            <Label>Nota</Label>
+                            <Input
+                              placeholder="Ej. Jornada completa"
+                              value={quickNote}
+                              onChange={(e) => setQuickNote(e.target.value)}
+                            />
+                          </div>
+                          <div className="flex flex-col gap-2">
+                            <Button size="sm" onClick={() => handleQuickSchedule(8, "8h estándar")} className="hover-scale w-full">
+                              Asignar 8h estándar
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => handleQuickSchedule(Number(quickHours) || 8, quickNote)}
+                              className="hover-scale w-full"
+                            >
+                              Configurar jornada completa
+                            </Button>
+                          </div>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Esta acción crea o actualiza las <code>scheduled_hours</code> para el día seleccionado.
+                        </p>
+                      </Card>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </div>
+
+              {/* Desktop / tablet block */}
+              <Card className="hidden sm:block glass-card p-6 space-y-3">
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                  <div className="flex flex-col sm:min-w-[100px]">
+                    <Label>Horas rápidas</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={quickHours}
+                      onChange={(e) => setQuickHours(e.target.value)}
+                      className="w-24"
+                    />
+                  </div>
+                  <div className="flex-1 flex flex-col min-w-[220px]">
+                    <Label>Nota</Label>
+                    <Input
+                      placeholder="Ej. Jornada completa"
+                      value={quickNote}
+                      onChange={(e) => setQuickNote(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    <Button size="sm" onClick={() => handleQuickSchedule(8, "8h estándar")} className="hover-scale w-full sm:w-auto">
+                      Asignar 8h estándar
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => handleQuickSchedule(Number(quickHours) || 8, quickNote)}
+                      className="hover-scale w-full sm:w-auto"
+                    >
+                      Configurar jornada completa
+                    </Button>
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Esta acción crea o actualiza las <code>scheduled_hours</code> para el día seleccionado.
+                </p>
+              </Card>
+            </>
+          )}
+
+          {/* Calendario + gestión del día */}
+          <div className="grid gap-6 md:grid-cols-[minmax(540px,1.7fr)_minmax(260px,0.8fr)] items-start">
             <div className="space-y-6 flex-1">
               <Card className="glass-card p-6 space-y-5 w-full flex-1">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">
                       Calendario mensual
@@ -1069,7 +1132,7 @@ const ManagerCalendar = () => {
                       {format(date ?? new Date(), "MMMM yyyy", { locale: es })}
                     </h2>
                   </div>
-                  <div className="text-right">
+                  <div className="text-left sm:text-right">
                     <p className="text-xs text-muted-foreground">Día seleccionado</p>
                     <p className="text-sm font-medium">
                       {date ? format(date, "PP", { locale: es }) : "Sin seleccionar"}
@@ -1238,7 +1301,7 @@ const ManagerCalendar = () => {
               </Card>
             </div>
 
-            <Card className="glass-card p-6 space-y-4">
+            <Card className="hidden sm:block glass-card p-6 space-y-4">
               <h3 className="text-lg font-semibold flex items-center gap-2">
                 <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
                   <AlertCircle className="w-4 h-4 text-primary" />
@@ -1251,8 +1314,8 @@ const ManagerCalendar = () => {
                 </p>
               ) : (
                 <>
-                  <div className="flex gap-2 items-end">
-                    <div className="flex-1">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <div className="flex-1 min-w-[180px]">
                       <Label>Tipo de evento</Label>
                       <Select value={eventType} onValueChange={setEventType}>
                         <SelectTrigger>
@@ -1266,11 +1329,11 @@ const ManagerCalendar = () => {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="w-40">
+                    <div className="w-full sm:w-40">
                       <Label>Hora</Label>
                       <Input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} />
                     </div>
-                    <Button onClick={handleAddEvent} className="hover-scale">Añadir</Button>
+                    <Button onClick={handleAddEvent} className="hover-scale w-full sm:w-auto">Añadir</Button>
                   </div>
 
                   <div className="pt-2">
@@ -1306,7 +1369,7 @@ const ManagerCalendar = () => {
                     )}
                   </div>
 
-                  <div className="pt-4 border-t flex items-center justify-between">
+                  <div className="pt-4 border-t flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <span className="text-sm text-muted-foreground">Otras acciones</span>
                     <Button
                       variant="outline"
@@ -1319,7 +1382,7 @@ const ManagerCalendar = () => {
                         setAbsenceReason("Festivo");
                         setIsAbsenceDialogOpen(true);
                       }}
-                      className="hover-scale"
+                      className="hover-scale w-full sm:w-auto"
                     >
                       Marcar festivo
                     </Button>
@@ -1327,11 +1390,102 @@ const ManagerCalendar = () => {
                 </>
               )}
             </Card>
+
+            {/* Mobile accordion for day management */}
+            <div className="sm:hidden">
+              <Accordion type="single" collapsible defaultValue="day-management">
+                <AccordionItem value="day-management">
+                  <AccordionTrigger className="text-left">Gestión del día seleccionado</AccordionTrigger>
+                  <AccordionContent className="pt-2">
+                    {!selectedEmployee || !date ? (
+                      <p className="text-sm text-muted-foreground">
+                        Selecciona un empleado y un día del calendario.
+                      </p>
+                    ) : (
+                      <Card className="glass-card p-4 space-y-4">
+                        <div className="flex flex-col gap-3">
+                          <div className="flex flex-col">
+                            <Label>Tipo de evento</Label>
+                            <Select value={eventType} onValueChange={setEventType}>
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="clock_in">Entrada</SelectItem>
+                                <SelectItem value="clock_out">Salida</SelectItem>
+                                <SelectItem value="pause_start">Inicio pausa</SelectItem>
+                                <SelectItem value="pause_end">Fin pausa</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex flex-col">
+                            <Label>Hora</Label>
+                            <Input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} />
+                          </div>
+                          <Button onClick={handleAddEvent} className="hover-scale w-full">Añadir</Button>
+                        </div>
+
+                        <div className="pt-2">
+                          <h4 className="font-medium mb-3">Eventos del día</h4>
+                          {selectedDayEvents.length === 0 ? (
+                            <p className="text-sm text-muted-foreground py-4 text-center">No hay eventos.</p>
+                          ) : (
+                            <ul className="space-y-2">
+                              {selectedDayEvents.map((e) => (
+                                <li key={e.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 smooth-transition hover:bg-muted/70">
+                                  <span className="text-sm font-medium">
+                                    {e.event_type === "clock_in"
+                                      ? "Entrada"
+                                      : e.event_type === "clock_out"
+                                      ? "Salida"
+                                      : e.event_type === "pause_start"
+                                      ? "Inicio pausa"
+                                      : "Fin pausa"}
+                                    {" • "}
+                                    {format(parseISO(e.event_time), "HH:mm")}
+                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    <Button size="icon" variant="ghost" onClick={() => openEdit(e)} title="Editar" className="hover-scale">
+                                      <Pencil className="w-4 h-4" />
+                                    </Button>
+                                    <Button size="icon" variant="ghost" onClick={() => handleDeleteEvent(e.id)} title="Eliminar" className="hover-scale">
+                                      <Trash2 className="w-4 h-4" />
+                                    </Button>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+
+                        <div className="pt-4 border-t flex flex-col gap-3">
+                          <span className="text-sm text-muted-foreground">Otras acciones</span>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              if (!date) return;
+                              setAbsenceType("other");
+                              const d = format(date, "yyyy-MM-dd");
+                              setStartDate(d);
+                              setEndDate(d);
+                              setAbsenceReason("Festivo");
+                              setIsAbsenceDialogOpen(true);
+                            }}
+                            className="hover-scale w-full"
+                          >
+                            Marcar festivo
+                          </Button>
+                        </div>
+                      </Card>
+                    )}
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
   );
 };
 

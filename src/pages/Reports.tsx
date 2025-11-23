@@ -1581,9 +1581,9 @@ const Reports = () => {
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex justify-between items-center"
+          className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-start md:items-center gap-3">
             <Button
               variant="ghost"
               size="icon"
@@ -1602,13 +1602,13 @@ const Reports = () => {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" onClick={handlePreviewPDF} className="hover-scale">
+          <div className="flex flex-wrap gap-2 w-full md:w-auto justify-start md:justify-end">
+            <Button variant="outline" onClick={handlePreviewPDF} className="hover-scale w-full sm:w-auto">
               <Download className="w-4 h-4 mr-2" /> Descargar PDF
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="hover-scale">
+                <Button variant="outline" className="hover-scale w-full sm:w-auto">
                   <ListChecks className="w-4 h-4 mr-2" /> Secciones PDF
                 </Button>
               </DropdownMenuTrigger>
@@ -1633,7 +1633,7 @@ const Reports = () => {
             </DropdownMenu>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="hover-scale">
+                <Button variant="outline" className="hover-scale w-full sm:w-auto">
                   <Download className="w-4 h-4 mr-2" /> Exportar
                 </Button>
               </DropdownMenuTrigger>
