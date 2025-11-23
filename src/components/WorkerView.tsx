@@ -125,6 +125,11 @@ const WorkerView = () => {
     }
   }, [companyId, user?.id]);
 
+  const toNumberOrNull = (value: any) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+
   useEffect(() => {
     if (user && companyId) {
       fetchStatus();
@@ -147,7 +152,13 @@ const WorkerView = () => {
       }
 
       if (data?.hq_lat !== null && data?.hq_lng !== null) {
-        setCompanyLocation({ lat: Number(data.hq_lat), lng: Number(data.hq_lng) });
+        const lat = toNumberOrNull(data.hq_lat);
+        const lng = toNumberOrNull(data.hq_lng);
+        if (lat !== null && lng !== null) {
+          setCompanyLocation({ lat, lng });
+        } else {
+          setCompanyLocation(null);
+        }
       } else {
         setCompanyLocation(null);
       }
@@ -306,7 +317,10 @@ const WorkerView = () => {
         },
       });
 
-      if (response.error) throw response.error;
+      if (response.error) {
+        const serverMessage = (response.data as any)?.error || response.error.message || "Error en clock";
+        throw new Error(serverMessage);
+      }
 
       const result = response.data as {
         timestamp?: string;
@@ -460,13 +474,32 @@ const WorkerView = () => {
         setLocation(loc);
         setGpsEnabled(true);
         setGpsWarningShown(false);
+      } else {
+        toast.warning("No pudimos obtener tu ubicación", {
+          description: "El fichaje se enviará sin verificar geovalla.",
+        });
       }
     }
 
-    const hasCompanyLoc = companyLocation?.lat !== undefined && companyLocation?.lng !== undefined;
+    const hasCompanyLoc =
+      companyLocation &&
+      Number.isFinite(companyLocation.lat) &&
+      Number.isFinite(companyLocation.lng);
+
+    if (!hasCompanyLoc) {
+      toast.warning("Tu empresa no tiene punto de control configurado", {
+        description: "No se puede validar la distancia. Configura la ubicación en ajustes.",
+      });
+    }
+
     if (loc && hasCompanyLoc) {
-      const distance = calculateDistanceMeters(loc.latitude, loc.longitude, companyLocation!.lat, companyLocation!.lng);
-      if (distance > GEOFENCE_RADIUS_METERS) {
+      const distance = calculateDistanceMeters(
+        Number(loc.latitude),
+        Number(loc.longitude),
+        Number(companyLocation!.lat),
+        Number(companyLocation!.lng)
+      );
+      if (Number.isFinite(distance) && distance > GEOFENCE_RADIUS_METERS) {
         setOutsideConfirm({ action, distance, location: loc });
         return;
       }

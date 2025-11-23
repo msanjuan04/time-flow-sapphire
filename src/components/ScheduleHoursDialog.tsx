@@ -58,7 +58,8 @@ const WEEKDAYS = [
   { day: 0, name: "Domingo", short: "Dom" },
 ];
 
-const HORIZON_FORWARD_DAYS = 180;
+// Generamos planificación recurrente hasta ~1 año vista para que el patrón de 4 semanas se repita sin cortes.
+const HORIZON_FORWARD_DAYS = 365;
 const PREVIEW_GROUPS = 12;
 const HISTORY_DAYS = 120;
 

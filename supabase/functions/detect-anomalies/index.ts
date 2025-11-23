@@ -287,9 +287,32 @@ serve(async (req) => {
 
     // Create notifications for each anomaly
     const notifications = [];
+    const nowIso = new Date().toISOString();
+    const yesterdayIso = (() => {
+      const d = new Date();
+      d.setDate(d.getDate() - 1);
+      return d.toISOString();
+    })();
     for (const anomaly of anomalies) {
       // Only notify if confidence is high enough (>= 65%)
       if (anomaly.confidence >= 65) {
+        // Deduplicate: skip if an anomaly notification for this employee exists in last 24h
+        const { data: existingRecent, error: existingError } = await supabaseAdmin
+          .from('notifications')
+          .select('id')
+          .eq('company_id', company_id)
+          .eq('entity_type', 'anomaly')
+          .eq('entity_id', anomaly.employee_id)
+          .gte('created_at', yesterdayIso)
+          .limit(1);
+
+        if (existingError) {
+          console.error('Error checking existing anomaly notifications:', existingError);
+        }
+        if (existingRecent && existingRecent.length > 0) {
+          continue;
+        }
+
         for (const ownerId of ownerAdminIds) {
           notifications.push({
             company_id,
@@ -299,6 +322,7 @@ serve(async (req) => {
             type: 'warning',
             entity_type: 'anomaly',
             entity_id: anomaly.employee_id,
+            created_at: nowIso,
           });
         }
       }
@@ -332,4 +356,3 @@ serve(async (req) => {
     );
   }
 });
-

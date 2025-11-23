@@ -36,13 +36,13 @@ export const useWorkerSchedule = ({ userId, companyId }: UseWorkerScheduleParams
   const weekEnd = useMemo(() => endOfWeek(weekStart, { weekStartsOn: 1 }), [weekStart]);
 
   const fetchWeekSchedule = useCallback(
-    async (targetStart?: Date) => {
+    async (targetStart?: Date): Promise<WorkerScheduleDay[]> => {
       const baseStart = targetStart || weekStart;
       const fallbackWeek = buildEmptyWeek(baseStart);
 
       if (!userId || !companyId) {
         setScheduleDays(fallbackWeek);
-        return;
+        return fallbackWeek;
       }
 
       const targetEnd = endOfWeek(baseStart, { weekStartsOn: 1 });
@@ -62,7 +62,7 @@ export const useWorkerSchedule = ({ userId, companyId }: UseWorkerScheduleParams
         if (error) {
           console.error("Error fetching worker schedule:", error);
           setScheduleDays(fallbackWeek);
-          return;
+          return fallbackWeek;
         }
 
         const scheduleMap = new Map<
@@ -98,6 +98,7 @@ export const useWorkerSchedule = ({ userId, companyId }: UseWorkerScheduleParams
         });
 
         setScheduleDays(days);
+        return days;
       } finally {
         setLoading(false);
       }

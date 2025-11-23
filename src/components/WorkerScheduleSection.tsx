@@ -27,7 +27,7 @@ const sanitize = (value?: string | null) =>
     .replace(/^-+|-+$/g, "");
 
 const WorkerScheduleSection = ({ userId, companyId, workerName }: Props) => {
-  const { weekStart, weekEnd, scheduleDays, loading, goToNextWeek, goToPreviousWeek } = useWorkerSchedule({
+  const { weekStart, weekEnd, scheduleDays, loading, goToNextWeek, goToPreviousWeek, refresh } = useWorkerSchedule({
     userId,
     companyId,
   });
@@ -38,11 +38,15 @@ const WorkerScheduleSection = ({ userId, companyId, workerName }: Props) => {
     "yyyyMMdd"
   )}`;
 
-  const handleCsv = () => downloadScheduleCsv(filenameBase, rows);
+  const handleCsv = async () => {
+    const fresh = await refresh();
+    downloadScheduleCsv(filenameBase, buildScheduleRows(fresh || scheduleDays));
+  };
   const handlePdf = async () => {
+    const fresh = await refresh();
     await downloadSchedulePdf({
       filename: filenameBase,
-      rows,
+      rows: buildScheduleRows(fresh || scheduleDays),
       workerName,
       periodLabel,
     });

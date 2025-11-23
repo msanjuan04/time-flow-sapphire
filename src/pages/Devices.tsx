@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,6 +38,8 @@ import { motion } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 import { BackButton } from "@/components/BackButton";
 
+const PUBLIC_SITE_URL = (import.meta.env.VITE_PUBLIC_SITE_URL || "").replace(/\/+$/, "");
+
 interface Device {
   id: string;
   name: string;
@@ -72,6 +74,7 @@ const Devices = () => {
   const [deviceName, setDeviceName] = useState("");
   const [deviceType, setDeviceType] = useState<"kiosk" | "mobile">("kiosk");
   const [deviceCenter, setDeviceCenter] = useState<string>("");
+  const autoCreatedRef = useRef(false);
 
   useEffect(() => {
     if (!membershipLoading) {
@@ -107,7 +110,17 @@ const Devices = () => {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setDevices(data || []);
+      const list = data || [];
+      setDevices(list);
+
+      // Si no hay kioskos, crea uno automáticamente con PIN
+      const hasKiosk = list.some((d) => d.type === "kiosk");
+      if (!hasKiosk && !autoCreatedRef.current) {
+        autoCreatedRef.current = true;
+        await createDefaultKiosk();
+        // Refresca la lista tras crear
+        await fetchDevices();
+      }
     } catch (error) {
       console.error("Error fetching devices:", error);
       toast.error("Error al cargar dispositivos");
@@ -128,6 +141,29 @@ const Devices = () => {
 
   const generatePIN = () => {
     return Math.random().toString(36).substring(2, 8).toUpperCase();
+  };
+
+  const createDefaultKiosk = async () => {
+    if (!companyId) return;
+    try {
+      const pin = generatePIN();
+      const { error } = await supabase.from("devices").insert({
+        company_id: companyId,
+        name: "Kiosko Principal",
+        type: "kiosk",
+        center_id: null,
+        secret_hash: pin,
+        meta: {
+          created_by: user?.id,
+          auto_created: true,
+        },
+      });
+      if (error) throw error;
+      toast.success(`Kiosko creado automáticamente (PIN ${pin})`);
+    } catch (err) {
+      console.error("Auto-create kiosk error:", err);
+      toast.error("No se pudo crear el kiosko por defecto");
+    }
   };
 
   const handleCreateDevice = async (e: React.FormEvent) => {
@@ -199,7 +235,8 @@ const Devices = () => {
   };
 
   const getKioskURL = (pin: string) => {
-    return `${window.location.origin}/kiosk?pin=${pin}`;
+    const base = PUBLIC_SITE_URL || window.location.origin;
+    return `${base}/kiosk?pin=${pin}`;
   };
 
   return (

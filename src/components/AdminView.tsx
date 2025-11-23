@@ -98,8 +98,17 @@ const AdminView = () => {
   const fetchStats = useCallback(async () => {
     if (!companyId) return;
     const today = new Date();
-    const startOfToday = new Date(today.setHours(0, 0, 0, 0)).toISOString();
-    const startOfWeek = new Date(today.setDate(today.getDate() - today.getDay())).toISOString();
+    const startOfToday = new Date(today);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const startOfWeek = new Date(today);
+    const day = startOfWeek.getDay();
+    const diff = (day === 0 ? -6 : 1 - day); // lunes como inicio
+    startOfWeek.setDate(startOfWeek.getDate() + diff);
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const todayIso = startOfToday.toISOString();
+    const weekIso = startOfWeek.toISOString();
 
     const { count: activeCount, error: activeError } = await supabase
       .from("work_sessions")
@@ -113,21 +122,21 @@ const AdminView = () => {
       .select("*", { count: "exact", head: true })
       .eq("company_id", companyId)
       .eq("event_type", "clock_in")
-      .gte("event_time", startOfToday);
+      .gte("event_time", todayIso);
     if (checkInsError) throw checkInsError;
 
     const { count: incidentsCount, error: incidentsError } = await supabase
       .from("incidents")
       .select("*", { count: "exact", head: true })
       .eq("company_id", companyId)
-      .eq("status", "pending");
+      .gte("created_at", weekIso);
     if (incidentsError) throw incidentsError;
 
     const { data: todaySessions, error: todaySessionsError } = await supabase
       .from("work_sessions")
       .select("clock_in_time, clock_out_time, total_pause_duration")
       .eq("company_id", companyId)
-      .gte("clock_in_time", startOfToday);
+      .gte("clock_in_time", todayIso);
     if (todaySessionsError) throw todaySessionsError;
 
     const totalHoursToday = calculateTotalHours((todaySessions || []) as WorkSessionRecord[]);
@@ -136,7 +145,7 @@ const AdminView = () => {
       .from("work_sessions")
       .select("clock_in_time, clock_out_time, total_pause_duration")
       .eq("company_id", companyId)
-      .gte("clock_in_time", startOfWeek);
+      .gte("clock_in_time", weekIso);
     if (weekSessionsError) throw weekSessionsError;
 
     const totalHoursWeek = calculateTotalHours((weekSessions || []) as WorkSessionRecord[]);
@@ -259,16 +268,7 @@ const AdminView = () => {
         () => {
           fetchStats();
           fetchRecentEvents();
-          // Trigger anomaly detection after a delay (to batch events)
-          setTimeout(async () => {
-            try {
-              await supabase.functions.invoke('detect-anomalies', {
-                body: { company_id: companyId },
-              });
-            } catch (error) {
-              console.error('Error detecting anomalies:', error);
-            }
-          }, 5000); // Wait 5 seconds to batch multiple events
+          // Dejado: el server-side debería encargarse del análisis; evitamos invocaciones desde cliente
         }
       )
       .subscribe();
@@ -319,27 +319,7 @@ const AdminView = () => {
     return () => clearInterval(interval);
   }, [companyId, fetchAllData]);
 
-  // Detect anomalies periodically (every hour)
-  useEffect(() => {
-    if (!companyId) return;
-    
-    const detectAnomalies = async () => {
-      try {
-        await supabase.functions.invoke('detect-anomalies', {
-          body: { company_id: companyId },
-        });
-      } catch (error) {
-        console.error('Error detecting anomalies:', error);
-        // Silently fail - don't disrupt the dashboard
-      }
-    };
-
-    // Run immediately on mount, then every hour
-    detectAnomalies();
-    const anomalyInterval = setInterval(detectAnomalies, 3600000); // 1 hour
-
-    return () => clearInterval(anomalyInterval);
-  }, [companyId]);
+  // Eliminamos la invocación periódica de anomalías desde frontend.
 
   useEffect(() => {
     if (!companyId) return;
@@ -394,6 +374,9 @@ const AdminView = () => {
   const weeklyChartData = weeklyData;
   const weeklyCheckInChartData = weeklyData;
   const statsDisplay = stats;
+  const safeTotalHoursWeek = Number.isFinite(statsDisplay.totalHoursWeek)
+    ? statsDisplay.totalHoursWeek
+    : 0;
 
   if (loading || membershipLoading || !companyId) {
     return (
@@ -695,7 +678,7 @@ const AdminView = () => {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center p-4 rounded-xl bg-primary/5">
               <p className="text-2xl font-bold text-primary">
-                {statsDisplay.totalHoursWeek.toFixed(1)}h
+                {safeTotalHoursWeek.toFixed(1)}h
               </p>
               <p className="text-sm text-muted-foreground mt-1">Horas totales</p>
             </div>

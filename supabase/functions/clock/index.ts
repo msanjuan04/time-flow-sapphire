@@ -374,7 +374,7 @@ Deno.serve(async (req) => {
         .from('memberships')
         .select('user_id')
         .eq('company_id', companyId)
-        .in('role', ['owner', 'admin']);
+        .in('role', ['owner', 'admin', 'manager']);
 
       const { data: profile } = await supabaseAdmin
         .from('profiles')
@@ -408,6 +408,66 @@ Deno.serve(async (req) => {
         },
         { deduplicateByEntity: true }
       );
+    }
+
+    // Aviso por fichaje fuera del horario programado del día (solo en entrada)
+    if (action === 'in') {
+      try {
+        const todayIso = new Date().toISOString().slice(0, 10);
+        const { data: scheduled } = await supabaseAdmin
+          .from('scheduled_hours')
+          .select('start_time, end_time, expected_hours')
+          .eq('user_id', currentUserId)
+          .eq('company_id', companyId)
+          .eq('date', todayIso)
+          .maybeSingle();
+
+        if (scheduled?.start_time && scheduled?.end_time && Number(scheduled.expected_hours) > 0) {
+          const now = new Date();
+          const [sh, sm] = String(scheduled.start_time).split(':').map(Number);
+          const [eh, em] = String(scheduled.end_time).split(':').map(Number);
+          const startMinutes = sh * 60 + sm;
+          const endMinutes = eh * 60 + em;
+          const currentMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+
+          if (
+            Number.isFinite(startMinutes) &&
+            Number.isFinite(endMinutes) &&
+            (currentMinutes < startMinutes || currentMinutes > endMinutes)
+          ) {
+            const { data: admins } = await supabaseAdmin
+              .from('memberships')
+              .select('user_id')
+              .eq('company_id', companyId)
+              .in('role', ['owner', 'admin', 'manager']);
+
+            const { data: profile } = await supabaseAdmin
+              .from('profiles')
+              .select('full_name, email')
+              .eq('id', currentUserId)
+              .maybeSingle();
+
+            const recipientIds = Array.from(new Set((admins || []).map((m: any) => m.user_id)));
+            const userLabel = profile?.full_name || profile?.email || 'Empleado';
+            // Deduplicamos por día para no repetir avisos del mismo empleado fuera de horario
+            const dedupEntityId = `${currentUserId}-${todayIso}-schedule-out-of-hours`;
+            await notifyUsers(
+              recipientIds,
+              {
+                company_id: companyId,
+                title: 'Fichaje fuera de horario',
+                message: `${userLabel} registró un fichaje (${action}) fuera de su horario programado de hoy.`,
+                type: 'warning',
+                entity_type: 'time_event',
+                entity_id: dedupEntityId,
+              },
+              { deduplicateByEntity: true }
+            );
+          }
+        }
+      } catch (scheduleNotifyError) {
+        console.error('Schedule notification check failed:', scheduleNotifyError);
+      }
     }
 
     // Determine current status
