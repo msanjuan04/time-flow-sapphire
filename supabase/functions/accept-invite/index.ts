@@ -153,12 +153,14 @@ serve(async (req) => {
 
     if (!membership) {
       const planLimit = getPlanLimit(invite.companies?.plan);
-      if (planLimit !== null) {
-        const { count: activeMembers } = await supabaseAdmin
+      const isWorkerInvite = invite.role === "worker";
+      if (planLimit !== null && isWorkerInvite) {
+        const { count: activeWorkers } = await supabaseAdmin
           .from("memberships")
           .select("*", { count: "exact", head: true })
-          .eq("company_id", invite.company_id);
-        if ((activeMembers || 0) >= planLimit) {
+          .eq("company_id", invite.company_id)
+          .eq("role", "worker");
+        if ((activeWorkers || 0) >= planLimit) {
           return new Response(JSON.stringify({ error: "No quedan plazas disponibles en el plan actual" }), {
             status: 409,
             headers: { ...corsHeaders, "Content-Type": "application/json" },

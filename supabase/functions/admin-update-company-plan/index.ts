@@ -35,7 +35,8 @@ serve(async (req) => {
       const { count, error: countError } = await supabase
         .from("memberships")
         .select("*", { count: "exact", head: true })
-        .eq("company_id", companyId);
+        .eq("company_id", companyId)
+        .eq("role", "worker");
 
       if (countError) {
         console.error("Failed to count members", countError);

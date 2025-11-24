@@ -111,12 +111,14 @@ serve(async (req) => {
       .maybeSingle();
     const companyName = company?.name || "tu empresa";
     const planLimit = getPlanLimit(company?.plan);
-    if (planLimit !== null) {
-      const { count: activeMembers } = await supabase
+    const isWorkerInvite = body.role === "worker";
+    if (planLimit !== null && isWorkerInvite) {
+      const { count: activeWorkers } = await supabase
         .from("memberships")
         .select("*", { count: "exact", head: true })
-        .eq("company_id", companyId);
-      if ((activeMembers || 0) >= planLimit) {
+        .eq("company_id", companyId)
+        .eq("role", "worker");
+      if ((activeWorkers || 0) >= planLimit) {
         return new Response(
           JSON.stringify({ error: "Has alcanzado el máximo de empleados de tu plan actual" }),
           { status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" } }

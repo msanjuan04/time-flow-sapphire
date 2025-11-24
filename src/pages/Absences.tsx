@@ -26,12 +26,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ABSENCE_REASONS } from "@/data/absenceReasons";
+import { ABSENCE_REASONS, DEFAULT_ABSENCE_REASON } from "@/data/absenceReasons";
+import OwnerQuickNav from "@/components/OwnerQuickNav";
 
 interface AbsencePayload {
   type: "absence";
-  start_date: string;
-  end_date: string;
+  start_date?: string | null;
+  end_date?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
 }
 
 interface Absence {
@@ -53,7 +56,7 @@ const Absences = () => {
   const [endDate, setEndDate] = useState("");
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
-  const [selectedReason, setSelectedReason] = useState(ABSENCE_REASONS[0].value);
+  const [selectedReason, setSelectedReason] = useState(DEFAULT_ABSENCE_REASON);
   const [otherReason, setOtherReason] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -89,16 +92,17 @@ const Absences = () => {
     const finalReason =
       selectedReason === "otro" ? otherReason.trim() : selectedReasonMeta?.label ?? selectedReason;
     
-    if (!startDate || !endDate || !finalReason) {
-      toast.error("Por favor completa todos los campos");
-      return;
-    }
     if (selectedReason === "otro" && !otherReason.trim()) {
       toast.error("Especifica el motivo de la ausencia");
       return;
     }
 
-    if (new Date(startDate) > new Date(endDate)) {
+    if (!finalReason) {
+      toast.error("Por favor indica el motivo");
+      return;
+    }
+
+    if (startDate && endDate && new Date(startDate) > new Date(endDate)) {
       toast.error("La fecha de inicio debe ser anterior a la fecha de fin");
       return;
     }
@@ -115,8 +119,8 @@ const Absences = () => {
           status: "pending",
         payload: {
           type: "absence",
-          start_date: startDate,
-          end_date: endDate,
+          start_date: startDate || null,
+          end_date: endDate || null,
           start_time: startTime || null,
           end_time: endTime || null,
         },
@@ -132,7 +136,7 @@ const Absences = () => {
       setEndDate("");
       setStartTime("");
       setEndTime("");
-      setSelectedReason(ABSENCE_REASONS[0].value);
+      setSelectedReason(DEFAULT_ABSENCE_REASON);
       setOtherReason("");
       setDialogOpen(false);
       fetchAbsences();
@@ -193,13 +197,12 @@ const Absences = () => {
               <form onSubmit={handleSubmit} className="space-y-4 mt-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="startDate">Fecha de inicio</Label>
+                    <Label htmlFor="startDate">Fecha de inicio (opcional)</Label>
                     <Input
                       id="startDate"
                       type="date"
                       value={startDate}
                       onChange={(e) => setStartDate(e.target.value)}
-                      required
                     />
                   </div>
                   <div className="space-y-2">
@@ -214,13 +217,12 @@ const Absences = () => {
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="endDate">Fecha de fin</Label>
+                    <Label htmlFor="endDate">Fecha de fin (opcional)</Label>
                     <Input
                       id="endDate"
                       type="date"
                       value={endDate}
                       onChange={(e) => setEndDate(e.target.value)}
-                      required
                     />
                   </div>
                   <div className="space-y-2">
@@ -280,6 +282,8 @@ const Absences = () => {
           </Dialog>
         </motion.div>
 
+        <OwnerQuickNav />
+
         {/* Absences List */}
         <div className="space-y-4">
           {absences.length === 0 ? (
@@ -296,9 +300,24 @@ const Absences = () => {
             </Card>
           ) : (
             absences.map((absence) => {
-              const startDate = new Date(absence.payload.start_date);
-              const endDate = new Date(absence.payload.end_date);
-              const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+              const startDateValue = absence.payload.start_date ? new Date(absence.payload.start_date) : null;
+              const endDateValue = absence.payload.end_date ? new Date(absence.payload.end_date) : null;
+
+              let dateLabel = "Fecha por concretar";
+              let daysLabel: string | null = null;
+
+              if (startDateValue && endDateValue) {
+                const days =
+                  Math.ceil((endDateValue.getTime() - startDateValue.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                dateLabel = `${startDateValue.toLocaleDateString("es-ES")} - ${endDateValue.toLocaleDateString("es-ES")}`;
+                daysLabel = `${days} ${days === 1 ? "día" : "días"}`;
+              } else if (startDateValue) {
+                dateLabel = startDateValue.toLocaleDateString("es-ES");
+                daysLabel = "1 día";
+              } else if (endDateValue) {
+                dateLabel = endDateValue.toLocaleDateString("es-ES");
+                daysLabel = "1 día";
+              }
 
               return (
                 <motion.div
@@ -311,13 +330,15 @@ const Absences = () => {
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <h3 className="text-lg font-semibold">
-                            {startDate.toLocaleDateString("es-ES")} - {endDate.toLocaleDateString("es-ES")}
+                            {dateLabel}
                           </h3>
                           {getStatusBadge(absence.status)}
                         </div>
-                        <p className="text-sm text-muted-foreground mb-2">
-                          {days} {days === 1 ? "día" : "días"}
-                        </p>
+                        {daysLabel && (
+                          <p className="text-sm text-muted-foreground mb-2">
+                            {daysLabel}
+                          </p>
+                        )}
                       </div>
                     </div>
                     <div className="bg-secondary/10 p-4 rounded-lg">

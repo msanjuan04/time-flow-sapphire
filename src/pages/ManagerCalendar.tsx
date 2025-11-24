@@ -34,8 +34,9 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { SPANISH_HOLIDAYS } from "@/data/spainHolidays";
-import { ABSENCE_REASONS } from "@/data/absenceReasons";
+import { ABSENCE_REASONS, DEFAULT_ABSENCE_REASON } from "@/data/absenceReasons";
 import CalendarDayIndicators, { DayStatusKey } from "@/components/CalendarDayIndicators";
+import OwnerQuickNav from "@/components/OwnerQuickNav";
 import {
   Accordion,
   AccordionContent,
@@ -125,7 +126,7 @@ const ManagerCalendar = () => {
   const [absenceType, setAbsenceType] = useState("vacation");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [absenceReasonType, setAbsenceReasonType] = useState(ABSENCE_REASONS[0].value);
+  const [absenceReasonType, setAbsenceReasonType] = useState(DEFAULT_ABSENCE_REASON);
   const [absenceOtherReason, setAbsenceOtherReason] = useState("");
 
   useEffect(() => {
@@ -507,7 +508,7 @@ const ManagerCalendar = () => {
       setAbsenceType("vacation");
       setStartDate("");
       setEndDate("");
-      setAbsenceReasonType(ABSENCE_REASONS[0].value);
+      setAbsenceReasonType(DEFAULT_ABSENCE_REASON);
       setAbsenceOtherReason("");
     } catch (error) {
       toast.error("Error al registrar ausencia");
@@ -827,6 +828,8 @@ const ManagerCalendar = () => {
             </Button>
           </div>
         </div>
+
+        <OwnerQuickNav />
       </div>
 
       {/* Diálogo de edición de evento */}

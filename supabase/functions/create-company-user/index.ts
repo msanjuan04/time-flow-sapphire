@@ -74,11 +74,13 @@ serve(async (req) => {
     }
 
     const planLimit = getPlanLimit(company.plan);
-    if (planLimit !== null) {
+    const isWorkerRole = role === 'worker';
+    if (planLimit !== null && isWorkerRole) {
       const { count: activeMembers } = await supabaseAdmin
         .from('memberships')
         .select('*', { count: 'exact', head: true })
-        .eq('company_id', company_id);
+        .eq('company_id', company_id)
+        .eq('role', 'worker');
       if ((activeMembers || 0) >= planLimit) {
         return new Response(
           JSON.stringify({ error: "Plan limit reached for this company" }),

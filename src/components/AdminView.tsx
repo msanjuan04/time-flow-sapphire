@@ -1,17 +1,15 @@
 import { useEffect, useState, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, Users, TrendingUp, LogOut, AlertCircle, BarChart3, Calendar, Settings, Tablet, Loader2 } from "lucide-react";
+import { Clock, Users, TrendingUp, LogOut, AlertCircle, BarChart3, Calendar, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
 import { useNavigate } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import NotificationBell from "@/components/NotificationBell";
-import { CompanySelector } from "@/components/CompanySelector";
+import OwnerQuickNav from "@/components/OwnerQuickNav";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import VacationAssignment from "@/components/admin/VacationAssignment";
 
 interface DailyStats {
   date: string;
@@ -371,8 +369,12 @@ const AdminView = () => {
       })
     : null;
 
-  const weeklyChartData = weeklyData;
-  const weeklyCheckInChartData = weeklyData;
+  const weeklyChartData = weeklyData.map((item, index) => ({
+    date: item?.date ?? `Día ${index + 1}`,
+    hours: Number.isFinite(item?.hours) ? item.hours : 0,
+    checkIns: Number.isFinite(item?.checkIns) ? item.checkIns : 0,
+  }));
+  const weeklyCheckInChartData = weeklyChartData;
   const statsDisplay = stats;
   const safeTotalHoursWeek = Number.isFinite(statsDisplay.totalHoursWeek)
     ? statsDisplay.totalHoursWeek
@@ -406,6 +408,7 @@ const AdminView = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 px-3 sm:px-4 py-4">
       <div className="max-w-7xl mx-auto space-y-5 sm:space-y-6 pt-6 sm:pt-8 animate-fade-in">
+        <OwnerQuickNav />
         {error && (
           <Card className="border-destructive bg-destructive/10 text-destructive-foreground p-4 flex flex-col gap-2">
             <div className="flex items-center gap-2">
@@ -475,93 +478,6 @@ const AdminView = () => {
                   : "Esperando primera actualización..."}
               </p>
             </div>
-          </div>
-          <div className="hidden lg:flex items-center gap-2">
-            <CompanySelector />
-            <NotificationBell />
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate("/devices")}
-              className="hover-scale"
-              title="Dispositivos"
-            >
-              <Tablet className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate("/manager-calendar")}
-              className="hover-scale"
-              title="Calendario"
-            >
-              <Calendar className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate("/correction-requests")}
-              className="hover-scale"
-              title="Solicitudes de corrección"
-            >
-              <AlertCircle className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate("/reports")}
-              className="hover-scale"
-              title="Reportes"
-            >
-              <BarChart3 className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate("/people")}
-              className="hover-scale"
-              title="Gestión de Personas"
-            >
-              <Users className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate("/company-settings")}
-              className="hover-scale"
-              title="Ubicación y configuración"
-            >
-              <Settings className="w-5 h-5" />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={signOut} className="hover-scale">
-              <LogOut className="w-5 h-5" />
-            </Button>
-          </div>
-
-          {/* Mobile action toggle */}
-          <div className="lg:hidden">
-            <Button
-              variant="outline"
-              className="w-full justify-between"
-              onClick={() => setMobileActionsOpen((prev) => !prev)}
-            >
-              <span className="font-semibold">Acciones rápidas</span>
-              <span className="text-sm text-muted-foreground">
-                {mobileActionsOpen ? "Ocultar" : "Mostrar"}
-              </span>
-            </Button>
-            {mobileActionsOpen && (
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <Button variant="outline" size="sm" className="justify-center" onClick={() => navigate("/devices")}><Tablet className="w-4 h-4 mr-1" />Dispositivos</Button>
-                <Button variant="outline" size="sm" className="justify-center" onClick={() => navigate("/manager-calendar")}><Calendar className="w-4 h-4 mr-1" />Calendario</Button>
-                <Button variant="outline" size="sm" className="justify-center" onClick={() => navigate("/correction-requests")}><AlertCircle className="w-4 h-4 mr-1" />Correcciones</Button>
-                <Button variant="outline" size="sm" className="justify-center" onClick={() => navigate("/reports")}><BarChart3 className="w-4 h-4 mr-1" />Reportes</Button>
-                <Button variant="outline" size="sm" className="justify-center" onClick={() => navigate("/people")}><Users className="w-4 h-4 mr-1" />Personas</Button>
-                <Button variant="outline" size="sm" className="justify-center" onClick={() => navigate("/company-settings")}><Settings className="w-4 h-4 mr-1" />Ubicación</Button>
-                <Button variant="outline" size="sm" className="justify-center" onClick={() => navigate("/")} >Volver</Button>
-                <Button variant="destructive" size="sm" className="justify-center" onClick={() => { signOut(); navigate("/auth", { replace: true }); }}>Cerrar sesión</Button>
-              </div>
-            )}
           </div>
         </div>
 
@@ -770,9 +686,6 @@ const AdminView = () => {
             </div>
           </div>
         </Card>
-        {membership?.role === "owner" && user?.id && (
-          <VacationAssignment companyId={companyId} ownerId={user.id} />
-        )}
       </div>
     </div>
   );

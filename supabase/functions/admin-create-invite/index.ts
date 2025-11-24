@@ -3,6 +3,7 @@ import { requireSuperadmin, writeAudit, extractRequestMetadata } from "../_share
 import { handleCorsOptions, createJsonResponse, createErrorResponse } from "../_shared/cors.ts";
 import { getPlanLimit } from "../_shared/company-plan.ts";
 import { resolveSiteUrl } from "../_shared/site-url.ts";
+import { ensureWorkerProfile } from "../_shared/invite-helpers.ts";
 serve(async (req)=>{
   if (req.method === "OPTIONS") return handleCorsOptions();
   try {
@@ -46,11 +47,12 @@ serve(async (req)=>{
       return createErrorResponse("Company not found", 404);
     }
     const planLimit = getPlanLimit(company.plan);
-    if (planLimit !== null) {
+    const isWorkerInvite = body.role === "worker";
+    if (planLimit !== null && isWorkerInvite) {
       const { count: memberCount } = await supabase.from("memberships").select("*", {
         count: "exact",
         head: true
-      }).eq("company_id", companyId);
+      }).eq("company_id", companyId).eq("role", "worker");
       if ((memberCount || 0) >= planLimit) {
         console.error("admin-create-invite plan limit reached", {
           companyId,
@@ -58,6 +60,20 @@ serve(async (req)=>{
           planLimit
         });
         return createErrorResponse("Plan limit reached for this company", 409);
+      }
+    }
+    let loginCode: string | null = null;
+    if (isWorkerInvite) {
+      try {
+        const ensured = await ensureWorkerProfile(supabase, {
+          email,
+          centerId: body.center_id ?? undefined,
+          teamId: body.team_id ?? undefined
+        });
+        loginCode = ensured.loginCode;
+      } catch (ensureError) {
+        console.error("admin-create-invite ensure profile failed", ensureError);
+        return createErrorResponse("Failed to prepare invited user", 500);
       }
     }
     // Check existing membership
@@ -122,6 +138,15 @@ serve(async (req)=>{
                 <p>Te han invitado a unirte a la empresa con el rol <strong>${invite.role}</strong>.</p>
                 <p>Puedes aceptar la invitación usando este enlace:</p>
                 <p><a href="${inviteUrl}" style="color:#1d4ed8">Aceptar invitación</a></p>
+                ${loginCode ? `
+                  <div style="margin:16px 0;">
+                    <p style="margin:0 0 8px;font-weight:600;">Tu código personal de acceso:</p>
+                    <p style="font-size:24px;font-weight:600;letter-spacing:3px;background:#f3f4f6;padding:10px 14px;border-radius:10px;display:inline-block;margin:0;color:#0f172a;">
+                      ${loginCode}
+                    </p>
+                    <p style="margin:8px 0 0;font-size:13px;color:#64748b;">Guárdalo por si el enlace expira; podrás iniciar sesión con este código desde la pantalla de acceso.</p>
+                  </div>
+                ` : ``}
                 <p>Si el botón no funciona, copia y pega esta URL en tu navegador:</p>
                 <code style="display:block;padding:8px;background:#f3f4f6;border-radius:6px">${inviteUrl}</code>
               </div>

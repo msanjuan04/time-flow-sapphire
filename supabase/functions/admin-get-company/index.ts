@@ -66,7 +66,8 @@ serve(async (req) => {
     const { count: usersCount } = await supabase
       .from("memberships")
       .select("*", { count: "exact", head: true })
-      .eq("company_id", companyId);
+      .eq("company_id", companyId)
+      .eq("role", "worker");
 
     // Count events this week
     const weekAgo = new Date();

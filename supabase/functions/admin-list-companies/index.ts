@@ -36,7 +36,8 @@ serve(async (req) => {
         const { count: usersCount } = await supabase
           .from("memberships")
           .select("*", { count: "exact", head: true })
-          .eq("company_id", company.id);
+          .eq("company_id", company.id)
+          .eq("role", "worker");
 
         // Get last time event
         const { data: lastEvent } = await supabase

@@ -51,6 +51,8 @@ import { DEMO_COMPANY_IDS, DEMO_SHOWCASE_HEADCOUNT } from "@/config/demo";
 import { FunctionsHttpError } from "@supabase/functions-js";
 import ScheduleHoursDialog from "@/components/ScheduleHoursDialog";
 import EmployeeInsights from "@/components/EmployeeInsights";
+import OwnerQuickNav from "@/components/OwnerQuickNav";
+import VacationAssignment from "@/components/admin/VacationAssignment";
 
 /* --------------------------- utilidades locales --------------------------- */
 const exportCSV = (filename: string, headers: string[], rows: (string | number)[][]) => {
@@ -506,7 +508,8 @@ const Employees = () => {
       const { count: totalCount, error: totalCountError } = await supabase
         .from("memberships")
         .select("*", { count: "exact", head: true })
-        .eq("company_id", companyId);
+        .eq("company_id", companyId)
+        .eq("role", "worker");
       if (!totalCountError) {
         setCompanyHeadcount(totalCount || 0);
       }
@@ -915,6 +918,12 @@ const getFunctionErrorMessage = async (error: unknown) => {
             </div>
           </div>
         </div>
+
+        <OwnerQuickNav />
+
+        {role === "owner" && user?.id && companyId && (
+          <VacationAssignment companyId={companyId} ownerId={user.id} />
+        )}
 
         {canManageInvites && (
           <Card className="glass-card p-5 space-y-4">

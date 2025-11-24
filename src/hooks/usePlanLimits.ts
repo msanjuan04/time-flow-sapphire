@@ -48,7 +48,8 @@ export const usePlanLimits = () => {
       const { count: currentCount } = await supabase
         .from("memberships")
         .select("*", { count: "exact", head: true })
-        .eq("company_id", companyId);
+        .eq("company_id", companyId)
+        .eq("role", "worker");
 
       const currentEmployees = currentCount || 0;
       const canInviteMore = currentEmployees < maxEmployees;

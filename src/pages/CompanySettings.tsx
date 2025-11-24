@@ -12,8 +12,23 @@ import "leaflet/dist/leaflet.css";
 import { Loader2, MapPin, Save, Shield } from "lucide-react";
 import { GEOFENCE_RADIUS_METERS } from "@/config/geofence";
 import { BackButton } from "@/components/BackButton";
+import OwnerQuickNav from "@/components/OwnerQuickNav";
 
 const DEFAULT_CENTER: [number, number] = [40.4168, -3.7038]; // Madrid
+
+const markerIconInline = L.divIcon({
+  className: "hq-marker",
+  html: `<div style="
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    background: #2563eb;
+    border: 3px solid #0f172a;
+    box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.25);
+  "></div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+});
 
 const CompanySettings = () => {
   useDocumentTitle("Configuración de empresa • GTiQ");
@@ -26,6 +41,9 @@ const CompanySettings = () => {
   const [hqLat, setHqLat] = useState<number | null>(null);
   const [hqLng, setHqLng] = useState<number | null>(null);
   const [companyName, setCompanyName] = useState<string>("Empresa");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [locating, setLocating] = useState(false);
 
   useEffect(() => {
     const fetchCompany = async () => {
@@ -97,7 +115,7 @@ const CompanySettings = () => {
     if (markerRef.current) {
       markerRef.current.setLatLng([lat, lng]);
     } else {
-      markerRef.current = L.marker([lat, lng], { draggable: true }).addTo(mapInstance.current);
+      markerRef.current = L.marker([lat, lng], { draggable: true, icon: markerIconInline }).addTo(mapInstance.current);
       markerRef.current.on("dragend", () => {
         const location = markerRef.current?.getLatLng();
         if (location) {
@@ -105,6 +123,65 @@ const CompanySettings = () => {
           setHqLng(location.lng);
         }
       });
+    }
+  };
+
+  const handleGeolocate = () => {
+    if (!navigator.geolocation) {
+      toast.error("Tu navegador no soporta geolocalización");
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude } = position.coords;
+        setHqLat(latitude);
+        setHqLng(longitude);
+        placeMarker(longitude, latitude);
+        mapInstance.current?.setView([latitude, longitude], Math.max(mapInstance.current.getZoom(), 15));
+        setLocating(false);
+      },
+      () => {
+        toast.error("No pudimos obtener tu ubicación");
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 8000 }
+    );
+  };
+
+  const handleSearch = async () => {
+    const query = searchQuery.trim();
+    if (!query) {
+      toast.error("Introduce una dirección o lugar");
+      return;
+    }
+    setSearching(true);
+    try {
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`,
+        { headers: { "Accept-Language": "es" } }
+      );
+      const data = await res.json();
+      if (!Array.isArray(data) || data.length === 0) {
+        toast.error("No encontramos esa ubicación");
+        return;
+      }
+      const match = data[0];
+      const lat = Number(match.lat);
+      const lon = Number(match.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+        toast.error("No pudimos leer las coordenadas");
+        return;
+      }
+      setHqLat(lat);
+      setHqLng(lon);
+      placeMarker(lon, lat);
+      mapInstance.current?.setView([lat, lon], Math.max(mapInstance.current.getZoom(), 15));
+    } catch (error) {
+      console.error("Search geocode error:", error);
+      toast.error("No pudimos buscar esa dirección");
+    } finally {
+      setSearching(false);
     }
   };
 
@@ -152,10 +229,48 @@ const CompanySettings = () => {
           </div>
         </div>
 
+        <OwnerQuickNav />
+
         <Card className="glass-card p-6 space-y-4">
           <div className="flex flex-col gap-2">
             <p className="text-sm text-muted-foreground">Empresa</p>
             <p className="text-lg font-semibold">{companyName}</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="search-address">Buscar dirección o lugar</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="search-address"
+                  placeholder="Ej. Gran Vía, Madrid"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleSearch();
+                    }
+                  }}
+                />
+                <Button type="button" onClick={handleSearch} disabled={searching}>
+                  {searching ? <Loader2 className="w-4 h-4 animate-spin" /> : "Buscar"}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Usa el buscador o toca el mapa para colocar la sede.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label>Usar mi ubicación</Label>
+              <Button type="button" variant="secondary" className="w-full" onClick={handleGeolocate} disabled={locating}>
+                {locating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                {locating ? "Obteniendo ubicación..." : "Detectar ubicación actual"}
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Si das permisos al navegador, colocamos la chincheta donde estás ahora.
+              </p>
+            </div>
           </div>
 
           <div className="rounded-xl border border-border/60 overflow-hidden">
@@ -193,6 +308,7 @@ const CompanySettings = () => {
           </div>
           {!canEdit && <p className="text-xs text-muted-foreground">Solo los owners/admin pueden editar la ubicación.</p>}
         </Card>
+
       </div>
     </div>
   );

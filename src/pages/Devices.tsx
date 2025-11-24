@@ -37,6 +37,7 @@ import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { QRCodeSVG } from "qrcode.react";
 import { BackButton } from "@/components/BackButton";
+import OwnerQuickNav from "@/components/OwnerQuickNav";
 
 const PUBLIC_SITE_URL = (import.meta.env.VITE_PUBLIC_SITE_URL || "").replace(/\/+$/, "");
 
@@ -358,6 +359,8 @@ const Devices = () => {
             </DialogContent>
           </Dialog>
         </motion.div>
+
+        <OwnerQuickNav />
 
         {/* Devices Table */}
         <Card className="glass-card p-6">
