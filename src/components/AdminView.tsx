@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Clock, Users, TrendingUp, LogOut, AlertCircle, BarChart3, Calendar, Loader2 } from "lucide-react";
+import { Clock, Users, TrendingUp, LogOut, AlertCircle, BarChart3, Calendar, Loader2, Coffee } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -10,6 +10,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import OwnerQuickNav from "@/components/OwnerQuickNav";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface DailyStats {
   date: string;
@@ -64,6 +65,11 @@ const AdminView = () => {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [ownerClockStatus, setOwnerClockStatus] = useState<"loading" | "in" | "out" | "break">("loading");
+  const [ownerClockLast, setOwnerClockLast] = useState<string | null>(null);
+  const [ownerClockStart, setOwnerClockStart] = useState<string | null>(null);
+  const [ownerClockElapsed, setOwnerClockElapsed] = useState<number>(0);
+  const [ownerClockPending, setOwnerClockPending] = useState(false);
 
   const fetchCompanyStatus = useCallback(async () => {
     if (!companyId) return;
@@ -237,6 +243,43 @@ const AdminView = () => {
     setRecentEvents(events);
   }, [companyId]);
 
+  const fetchOwnerClockStatus = useCallback(async () => {
+    if (!companyId || !user?.id) return;
+    try {
+      const { data: session } = await supabase
+        .from("work_sessions")
+        .select("clock_in_time, clock_out_time, is_active")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .order("clock_in_time", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const { data: lastEvent } = await supabase
+        .from("time_events")
+        .select("event_type, event_time")
+        .eq("company_id", companyId)
+        .eq("user_id", user.id)
+        .order("event_time", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const status =
+        session?.is_active && lastEvent?.event_type === "pause_start"
+          ? "break"
+          : session?.is_active
+          ? "in"
+          : "out";
+
+      setOwnerClockStatus(status);
+      setOwnerClockStart(session?.clock_in_time ?? null);
+      setOwnerClockLast(lastEvent?.event_time ?? session?.clock_out_time ?? session?.clock_in_time ?? null);
+    } catch (err) {
+      console.error("Error fetching owner clock status:", err);
+      setOwnerClockStatus("out");
+    }
+  }, [companyId, user?.id]);
+
   useEffect(() => {
     if (!companyId) return undefined;
 
@@ -317,6 +360,25 @@ const AdminView = () => {
     return () => clearInterval(interval);
   }, [companyId, fetchAllData]);
 
+  useEffect(() => {
+    fetchOwnerClockStatus();
+  }, [fetchOwnerClockStatus]);
+
+  useEffect(() => {
+    let timer: number | undefined;
+    if (ownerClockStatus === "in" && ownerClockStart) {
+      timer = window.setInterval(() => {
+        const start = new Date(ownerClockStart).getTime();
+        setOwnerClockElapsed(Math.max(0, Math.floor((Date.now() - start) / 1000)));
+      }, 1000);
+    } else {
+      setOwnerClockElapsed(0);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [ownerClockStatus, ownerClockStart]);
+
   // Eliminamos la invocación periódica de anomalías desde frontend.
 
   useEffect(() => {
@@ -359,6 +421,32 @@ const AdminView = () => {
         return <LogOut className={iconClass} />;
       default:
         return <Calendar className={iconClass} />;
+    }
+  };
+
+  const handleOwnerClock = async (action: "in" | "out" | "break_start" | "break_end") => {
+    if (!companyId) {
+      toast.error("No hay empresa activa");
+      return;
+    }
+    setOwnerClockPending(true);
+    try {
+      const { error } = await supabase.functions.invoke("clock", {
+        body: {
+          action,
+          company_id: companyId,
+          source: "owner-dashboard",
+        },
+      });
+      if (error) throw error;
+      toast.success(action === "in" ? "Entrada registrada" : "Salida registrada");
+      await fetchOwnerClockStatus();
+    } catch (err) {
+      console.error("Clock owner error:", err);
+      const message = err instanceof Error ? err.message : "Error al registrar fichaje";
+      toast.error(message);
+    } finally {
+      setOwnerClockPending(false);
     }
   };
 
@@ -420,6 +508,66 @@ const AdminView = () => {
               <Button variant="outline" size="sm" onClick={() => fetchAllData()}>
                 Reintentar
               </Button>
+            </div>
+          </Card>
+        )}
+
+        {membership?.role === "owner" && (
+          <Card className="glass-card p-4 sm:p-6 flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">Mi jornada</p>
+                <h2 className="text-lg font-semibold">Fichaje rápido</h2>
+                <p className="text-sm text-muted-foreground">
+                  {ownerClockStatus === "in"
+                    ? "En jornada"
+                    : ownerClockStatus === "break"
+                    ? "En pausa"
+                    : ownerClockStatus === "loading"
+                    ? "Comprobando estado..."
+                    : "Fuera de jornada"}
+                </p>
+              </div>
+              <Clock className="w-6 h-6 text-primary" />
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+              <Button
+                variant="default"
+                onClick={() => handleOwnerClock("in")}
+                disabled={ownerClockPending || ownerClockStatus === "in"}
+              >
+                {ownerClockPending && ownerClockStatus !== "in" ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Fichar entrada
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => handleOwnerClock("out")}
+                disabled={ownerClockPending || ownerClockStatus === "out"}
+              >
+                {ownerClockPending && ownerClockStatus !== "out" ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                Fichar salida
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => handleOwnerClock(ownerClockStatus === "break" ? "break_end" : "break_start")}
+                disabled={ownerClockPending || ownerClockStatus === "loading" || ownerClockStatus === "out"}
+              >
+                {ownerClockPending && ownerClockStatus !== "in" && ownerClockStatus !== "out" ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : null}
+                <Coffee className="w-4 h-4 mr-2" />
+                {ownerClockStatus === "break" ? "Fin pausa" : "Iniciar pausa"}
+              </Button>
+              {ownerClockLast && (
+                <p className="text-xs text-muted-foreground sm:ml-auto">
+                  Último movimiento: {new Date(ownerClockLast).toLocaleTimeString("es-ES")}
+                </p>
+              )}
+              {ownerClockStatus === "in" && (
+                <p className="text-xs text-muted-foreground sm:ml-auto">
+                  Tiempo en jornada: {new Date(ownerClockElapsed * 1000).toISOString().substr(11, 8)}
+                </p>
+              )}
             </div>
           </Card>
         )}

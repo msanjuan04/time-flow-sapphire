@@ -114,7 +114,7 @@ const App = () => (
             <Route
               path="/me/clock"
               element={
-                <ProtectedRoute allowedRoles={["worker"]}>
+                <ProtectedRoute allowedRoles={["worker", "owner"]}>
                   <WorkerClockPage />
                 </ProtectedRoute>
               }
@@ -122,7 +122,7 @@ const App = () => (
             <Route
               path="/me/history"
               element={
-                <ProtectedRoute allowedRoles={["worker"]}>
+                <ProtectedRoute allowedRoles={["worker", "owner"]}>
                   <WorkerHistoryPage />
                 </ProtectedRoute>
               }
