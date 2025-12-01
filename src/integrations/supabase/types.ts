@@ -275,6 +275,7 @@ export type Database = {
           id: string
           hq_lat: number | null
           hq_lng: number | null
+          max_shift_hours: number | null
           name: string
           owner_user_id: string | null
           plan: string
@@ -287,6 +288,7 @@ export type Database = {
           id?: string
           hq_lat?: number | null
           hq_lng?: number | null
+          max_shift_hours?: number | null
           name: string
           owner_user_id?: string | null
           plan?: string
@@ -299,6 +301,7 @@ export type Database = {
           id?: string
           hq_lat?: number | null
           hq_lng?: number | null
+          max_shift_hours?: number | null
           name?: string
           owner_user_id?: string | null
           plan?: string
@@ -987,8 +990,13 @@ export type Database = {
           clock_out_time: string | null
           company_id: string
           created_at: string
+          corrected_at: string | null
+          corrected_by: string | null
+          correction_reason: string | null
           id: string
           is_active: boolean | null
+          is_corrected: boolean
+          review_status: string
           status: string | null
           total_pause_duration: unknown
           total_work_duration: unknown
@@ -1000,8 +1008,13 @@ export type Database = {
           clock_out_time?: string | null
           company_id: string
           created_at?: string
+          corrected_at?: string | null
+          corrected_by?: string | null
+          correction_reason?: string | null
           id?: string
           is_active?: boolean | null
+          is_corrected?: boolean
+          review_status?: string
           status?: string | null
           total_pause_duration?: unknown
           total_work_duration?: unknown
@@ -1013,8 +1026,13 @@ export type Database = {
           clock_out_time?: string | null
           company_id?: string
           created_at?: string
+          corrected_at?: string | null
+          corrected_by?: string | null
+          correction_reason?: string | null
           id?: string
           is_active?: boolean | null
+          is_corrected?: boolean
+          review_status?: string
           status?: string | null
           total_pause_duration?: unknown
           total_work_duration?: unknown

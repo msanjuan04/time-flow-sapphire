@@ -166,8 +166,15 @@ Deno.serve(async (req) => {
           title: 'Incidencia de fichaje',
           message: params.notifyMessage,
           type: params.severity || 'warning',
-          entity_type: 'incident',
-          entity_id: incident?.id || null,
+          // Deduplicamos por sesión excedida para no silenciar notificaciones de nuevas incidencias distintas
+          entity_type: params.type === 'missing_checkout' ? 'work_session' : 'incident',
+          entity_id: params.type === 'missing_checkout' ? incident?.id || null : incident?.id || null,
+        });
+
+        console.log('Incident created and notifications queued', {
+          incident_id: incident?.id,
+          recipients: Array.from(recipients),
+          type: params.type,
         });
       } catch (error) {
         console.error('Failed to report incident:', error);
@@ -179,7 +186,7 @@ Deno.serve(async (req) => {
     // Get user's company membership
     let membershipQuery = supabaseAdmin
       .from('memberships')
-      .select('company_id, company:companies(id, name, status, hq_lat, hq_lng)')
+      .select('company_id, company:companies(id, name, status, hq_lat, hq_lng, max_shift_hours)')
       .eq('user_id', currentUserId);
     
     // If company_id is provided, filter by it
@@ -219,13 +226,54 @@ Deno.serve(async (req) => {
     }
 
     // Get current active session
-    const { data: activeSession } = await supabaseAdmin
+    let { data: activeSession } = await supabaseAdmin
       .from('work_sessions')
       .select('*')
       .eq('user_id', currentUserId)
       .eq('company_id', companyId)
       .eq('is_active', true)
       .maybeSingle();
+
+    const maxShiftHours =
+      typeof company?.max_shift_hours === 'number' && !Number.isNaN(company.max_shift_hours)
+        ? Number(company.max_shift_hours)
+        : null;
+
+    // Auto-close sessions that exceeded the configured limit so the worker can start a new one
+    let exceededSession: typeof activeSession | null = null;
+    if (activeSession && maxShiftHours !== null) {
+      const startedAt = new Date(activeSession.clock_in_time);
+      const now = new Date();
+      const elapsedHours = (now.getTime() - startedAt.getTime()) / (1000 * 60 * 60);
+
+      if (elapsedHours > maxShiftHours) {
+        const cappedOut = new Date(startedAt.getTime() + maxShiftHours * 60 * 60 * 1000).toISOString();
+        const { error: exceedUpdateError } = await supabaseAdmin
+          .from('work_sessions')
+          .update({
+            clock_out_time: cappedOut,
+            is_active: false,
+            status: 'auto_closed',
+            review_status: 'exceeded_limit',
+          })
+          .eq('id', activeSession.id);
+
+        if (!exceedUpdateError) {
+          exceededSession = { ...activeSession, clock_out_time: cappedOut, is_active: false, status: 'auto_closed' };
+          // Liberamos al trabajador para que pueda iniciar una nueva sesión
+          activeSession = null;
+
+          await reportIncident({
+            type: 'missing_checkout',
+            description: 'Sesión superó el máximo de horas permitido y fue marcada para revisión.',
+            notifyMessage: 'Se detectó una fichada que superó el límite configurado. Revisar y ajustar horas.',
+            severity: 'warning',
+          });
+        } else {
+          console.error('No se pudo marcar la sesión excedida:', exceedUpdateError);
+        }
+      }
+    }
 
     // Determine event type based on action
     let eventType: string;
@@ -263,6 +311,12 @@ Deno.serve(async (req) => {
     }
 
     if ((action === 'out' || action === 'break_start' || action === 'break_end') && !activeSession) {
+      if (exceededSession) {
+        return new Response(
+          JSON.stringify({ error: 'shift_exceeded_max_hours' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
       await reportIncident({
         type: 'missing_checkin',
         description: `El empleado intentó registrar ${action} sin tener una sesión abierta.`,

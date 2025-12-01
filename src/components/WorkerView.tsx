@@ -28,6 +28,8 @@ interface ActiveWorkSession {
   clock_in_time: string;
   clock_out_time: string | null;
   is_active: boolean;
+  review_status?: string | null;
+  status?: string | null;
 }
 
 type ClockAction = "in" | "out" | "break_start" | "break_end";
@@ -61,6 +63,7 @@ const WorkerView = () => {
     location: { latitude: number; longitude: number };
   } | null>(null);
   const [outsideNote, setOutsideNote] = useState("");
+  const [maxShiftHours, setMaxShiftHours] = useState<number | null>(null);
 
   // Update clock every second
   useEffect(() => {
@@ -96,7 +99,7 @@ const WorkerView = () => {
     if (!user?.id || !companyId) return;
     const { data: session } = await supabase
       .from("work_sessions")
-      .select("id, clock_in_time, clock_out_time, is_active")
+      .select("id, clock_in_time, clock_out_time, is_active, review_status, status")
       .eq("user_id", user.id)
       .eq("company_id", companyId)
       .eq("is_active", true)
@@ -142,13 +145,19 @@ const WorkerView = () => {
       if (!companyId) return;
       const { data, error } = await supabase
         .from("companies")
-        .select("hq_lat, hq_lng")
+        .select("hq_lat, hq_lng, max_shift_hours")
         .eq("id", companyId)
         .maybeSingle();
 
       if (error) {
         console.error("Error loading company location", error);
         return;
+      }
+
+      if (typeof data?.max_shift_hours === "number" && !Number.isNaN(data.max_shift_hours)) {
+        setMaxShiftHours(Number(data.max_shift_hours));
+      } else {
+        setMaxShiftHours(null);
       }
 
       if (data?.hq_lat !== null && data?.hq_lng !== null) {
@@ -362,7 +371,8 @@ const WorkerView = () => {
           ? error
           : "Error al registrar fichaje";
       const friendlyMessage = normalizeErrorMessage(rawMessage);
-      toast.error(friendlyMessage, {
+      console.error("Clock raw message:", rawMessage);
+    toast.error(friendlyMessage, {
         action: {
           label: "Reintentar",
           onClick: () => callClockAPI(action),
@@ -451,6 +461,12 @@ const WorkerView = () => {
   };
 
   const normalizeErrorMessage = (raw: string) => {
+    if (raw.toLowerCase().includes("shift_exceeded_max_hours")) {
+      return "Tu fichada superó el límite de horas configurado. El responsable debe revisarla. Solo puedes iniciar una nueva fichada.";
+    }
+    if (raw.toLowerCase().includes("exceeded_limit")) {
+      return "Tu fichada anterior está pendiente de revisión. Solo puedes iniciar una nueva entrada.";
+    }
     if (raw.toLowerCase().includes("sesión activa")) {
       return "Ya tienes una sesión activa. Finalízala antes de volver a fichar.";
     }
@@ -463,9 +479,28 @@ const WorkerView = () => {
     return raw || "No pudimos registrar el fichaje. Intenta nuevamente.";
   };
 
+  const maxLimitExceeded =
+    Boolean(maxShiftHours) &&
+    Boolean(activeSession?.clock_in_time) &&
+    (Date.now() - new Date(activeSession!.clock_in_time).getTime()) / (1000 * 60 * 60) >
+      Number(maxShiftHours);
+  const reviewBlocked =
+    activeSession?.review_status === "exceeded_limit" || activeSession?.review_status === "pending_review";
+  // Solo bloqueamos el cierre; permitimos nuevas entradas y pausas
+  const blockClockOut = reviewBlocked || maxLimitExceeded;
+  const forceNewEntry = blockClockOut && status === "in";
+
   const isActionDisabled = loading || isOffline;
 
   const attemptAction = async (action: ClockAction) => {
+    if (blockClockOut && action === "out") {
+      toast.error("No puedes cerrar esta fichada", {
+        description:
+          "La fichada superó el límite de horas y debe ser revisada por un responsable. Solo puedes iniciar una nueva fichada.",
+      });
+      return;
+    }
+
     let loc = location;
     if (!loc?.latitude || !loc?.longitude) {
       const fresh = await getFreshLocation();
@@ -568,6 +603,21 @@ const WorkerView = () => {
               >
                 Reintentar
               </Button>
+            </div>
+          </Card>
+        )}
+
+        {blockClockOut && (
+          <Card className="border-destructive bg-destructive/10 text-destructive p-4">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-5 h-5" />
+              <div>
+                <p className="font-semibold">Fichada pendiente de revisión</p>
+                <p className="text-sm">
+                  La fichada anterior superó el límite de horas configurado. El responsable debe revisarla.
+                  Solo puedes iniciar una nueva fichada.
+                </p>
+              </div>
             </div>
           </Card>
         )}
@@ -721,7 +771,7 @@ const WorkerView = () => {
 
             {/* Action Buttons */}
             <div className="grid grid-cols-1 gap-4 pt-4">
-              {status === "out" && (
+              {(status === "out" || forceNewEntry) && (
                 <motion.div
                   initial={{ scale: 0.8, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
@@ -743,7 +793,7 @@ const WorkerView = () => {
                 </motion.div>
               )}
 
-              {status === "in" && (
+              {status === "in" && !forceNewEntry && (
                 <motion.div
                   initial={{ scale: 0.8, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
@@ -765,7 +815,7 @@ const WorkerView = () => {
                   </Button>
                   <Button
                     onClick={handleClockOut}
-                    disabled={isActionDisabled}
+                    disabled={isActionDisabled || blockClockOut}
                     size="lg"
                     variant="destructive"
                     className="w-full h-16 text-lg rounded-2xl shadow-md hover:shadow-lg smooth-transition"
@@ -805,7 +855,7 @@ const WorkerView = () => {
                   </Button>
                   <Button
                     onClick={handleClockOut}
-                    disabled={isActionDisabled}
+                    disabled={isActionDisabled || blockClockOut}
                     size="lg"
                     variant="outline"
                     className="w-full h-16 text-lg rounded-2xl shadow-md hover:shadow-lg smooth-transition"

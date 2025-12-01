@@ -31,6 +31,7 @@ import {
   MapPin,
   CalendarClock,
   ListChecks,
+  AlertCircle,
 } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -84,10 +85,15 @@ interface ClockInLocation {
 }
 
 interface SessionLike {
+  id?: string;
   user_id: string;
   clock_in_time: string;
   clock_out_time: string | null;
   total_pause_duration?: number;
+  is_corrected?: boolean;
+  corrected_by?: string | null;
+  correction_reason?: string | null;
+  review_status?: string | null;
   profiles?: {
     id?: string;
     full_name: string | null;
@@ -836,6 +842,8 @@ const Reports = () => {
   const reportRef = useRef<HTMLDivElement | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
+  const [adjusting, setAdjusting] = useState<Record<string, boolean>>({});
+  const [adjustValues, setAdjustValues] = useState<Record<string, { clock_out_time: string; reason: string }>>({});
   const [scheduleReminderDismissed, setScheduleReminderDismissed] = useState(() => {
     if (typeof window === "undefined") return false;
     try {
@@ -1001,6 +1009,64 @@ const Reports = () => {
       // ignore storage issues
     }
   };
+
+  const pendingReviewSessions = sessionsRaw.filter(
+    (s) => s.review_status === "exceeded_limit" || s.review_status === "pending_review"
+  );
+  const pendingReviewCount = pendingReviewSessions.length;
+
+  const toDatetimeLocal = (iso?: string | null) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(
+      d.getMinutes()
+    )}`;
+  };
+
+  const setAdjustValue = (id: string, field: "clock_out_time" | "reason", value: string) => {
+    setAdjustValues((prev) => ({
+      ...prev,
+      [id]: { clock_out_time: prev[id]?.clock_out_time ?? "", reason: prev[id]?.reason ?? "", [field]: value },
+    }));
+  };
+
+  const handleAdjustSession = async (session: SessionLike) => {
+    if (!session.id) {
+      toast.error("No se puede ajustar: falta el identificador de la sesión");
+      return;
+    }
+    const values = adjustValues[session.id] || {
+      clock_out_time: session.clock_out_time ? toDatetimeLocal(session.clock_out_time) : "",
+      reason: "",
+    };
+    if (!values.clock_out_time) {
+      toast.error("Indica la hora de salida corregida");
+      return;
+    }
+    setAdjusting((prev) => ({ ...prev, [session.id!]: true }));
+    try {
+      const { error } = await supabase.functions.invoke("adjust-work-session", {
+        body: {
+          session_id: session.id,
+          clock_out_time: new Date(values.clock_out_time).toISOString(),
+          correction_reason: values.reason || undefined,
+        },
+      });
+      if (error) throw error;
+      toast.success("Fichada corregida");
+      await fetchReportData();
+    } catch (err) {
+      console.error("Error ajustando sesión", err);
+      const message =
+        err && typeof err === "object" && "message" in (err as any) ? String((err as any).message) : "Error al corregir";
+      toast.error(message);
+    } finally {
+      setAdjusting((prev) => ({ ...prev, [session.id!]: false }));
+    }
+  };
+
   const updatePdfSectionSelection = (sectionId: string, checked: boolean) => {
     setSelectedPdfSections((prev) => {
       if (!checked) {
@@ -1219,11 +1285,16 @@ const Reports = () => {
       let query = supabase
         .from("work_sessions")
         .select(`
+          id,
           user_id,
           clock_in_time,
           clock_out_time,
           total_work_duration,
           total_pause_duration,
+          is_corrected,
+          corrected_by,
+          correction_reason,
+          review_status,
           profiles!inner(id, full_name, email, center_id)
         `)
         .eq("company_id", companyId)
@@ -1507,7 +1578,12 @@ const Reports = () => {
 
   const exportMonthlyCSV = () => {
     const center = centers.find((c) => c.id === selectedCenter);
-    const headers = ["Fecha", "Empleado", "Email", "Entrada", "Salida", "Horas"];
+    const headers = ["Fecha", "Empleado", "Email", "Entrada", "Salida", "Horas", "Modificada", "Revisada_por", "Comentario"];
+    const reviewerLabel = (userId?: string | null) => {
+      if (!userId) return "";
+      const reviewer = employees.find((emp) => emp.id === userId);
+      return reviewer?.full_name || reviewer?.email || "";
+    };
     const rows = sessionsRaw.map((s: any) => {
       const start = s.clock_in_time ? new Date(s.clock_in_time) : null;
       const end = s.clock_out_time ? new Date(s.clock_out_time) : null;
@@ -1524,6 +1600,9 @@ const Reports = () => {
         start ? start.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "",
         end ? end.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "",
         hours,
+        s.is_corrected ? "Sí" : "No",
+        reviewerLabel(s.corrected_by),
+        s.correction_reason || "",
       ];
     });
     const label = center?.name ? center.name.replace(/\s+/g, "_") : "centro";
@@ -1671,6 +1750,111 @@ const Reports = () => {
               </div>
             </AlertDescription>
           </Alert>
+        )}
+
+        {pendingReviewCount > 0 && (
+          <Card className="border-destructive bg-destructive/5">
+            <div className="p-4 flex flex-col gap-2">
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertCircle className="w-5 h-5" />
+                <div>
+                  <p className="font-semibold">Fichadas pendientes de revisión</p>
+                  <p className="text-sm">
+                    {pendingReviewCount} fichada(s) superaron el límite de horas configurado. Ajusta la hora de
+                    salida para normalizarlas.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                {pendingReviewSessions.slice(0, 3).map((s) => (
+                  <span key={`${s.user_id}-${s.clock_in_time}`} className="px-2 py-1 rounded-full bg-destructive/10 text-destructive">
+                    {s.profiles?.full_name || s.profiles?.email || "Empleado"} · {new Date(s.clock_in_time).toLocaleDateString("es-ES")}
+                  </span>
+                ))}
+                {pendingReviewCount > 3 && <span>y {pendingReviewCount - 3} más…</span>}
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {pendingReviewCount > 0 && (
+          <Card className="glass-card p-6 space-y-4">
+            <div className="flex items-center gap-2">
+              <Timer className="w-5 h-5 text-primary" />
+              <div>
+                <h2 className="text-lg font-semibold">Corregir fichadas pendientes</h2>
+                <p className="text-sm text-muted-foreground">
+                  Ajusta la hora de salida y opcionalmente añade un motivo. Al guardar, la ficha queda normalizada.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              {pendingReviewSessions.map((s) => {
+                const defaultOut = toDatetimeLocal(s.clock_out_time || new Date().toISOString());
+                const currentOut = adjustValues[s.id || ""]?.clock_out_time ?? defaultOut;
+                const currentReason = adjustValues[s.id || ""]?.reason ?? "";
+                const startLabel = new Date(s.clock_in_time).toLocaleString("es-ES", {
+                  day: "2-digit",
+                  month: "2-digit",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                });
+                return (
+                  <div
+                    key={s.id || `${s.user_id}-${s.clock_in_time}`}
+                    className="border rounded-lg p-3 bg-muted/30 flex flex-col gap-2 md:flex-row md:items-end md:justify-between"
+                  >
+                    <div className="space-y-1">
+                      <div className="font-semibold">
+                        {s.profiles?.full_name || s.profiles?.email || "Empleado"}
+                      </div>
+                      <div className="text-sm text-muted-foreground">
+                        Entrada: {startLabel}
+                      </div>
+                      <div className="text-xs uppercase tracking-wide text-destructive">
+                        {s.review_status === "exceeded_limit" ? "Superó límite" : "Pendiente revisión"}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 w-full md:w-auto md:flex-1">
+                      <div className="space-y-1">
+                        <Label htmlFor={`out-${s.id}`}>Salida corregida</Label>
+                        <Input
+                          id={`out-${s.id}`}
+                          type="datetime-local"
+                          value={currentOut}
+                          onChange={(e) => setAdjustValue(s.id || "", "clock_out_time", e.target.value)}
+                          disabled={!s.id || adjusting[s.id || ""]}
+                        />
+                      </div>
+                      <div className="space-y-1 md:col-span-2">
+                        <Label htmlFor={`reason-${s.id}`}>Motivo</Label>
+                        <Input
+                          id={`reason-${s.id}`}
+                          placeholder="Ej. Olvidó fichar al salir"
+                          value={currentReason}
+                          onChange={(e) => setAdjustValue(s.id || "", "reason", e.target.value)}
+                          disabled={!s.id || adjusting[s.id || ""]}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => s.id && handleAdjustSession(s)}
+                        disabled={!s.id || adjusting[s.id || ""]}
+                      >
+                        {adjusting[s.id || ""] ? (
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        ) : (
+                          <Save className="w-4 h-4 mr-2" />
+                        )}
+                        Guardar
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
         )}
 
         {/* Filters */}

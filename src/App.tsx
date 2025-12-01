@@ -20,6 +20,7 @@ const CalendarPage = lazy(() => import("./pages/Calendar"));
 const ManagerCalendarPage = lazy(() => import("./pages/ManagerCalendar"));
 const LocationReportPage = lazy(() => import("./pages/LocationReport"));
 const CompanySettingsPage = lazy(() => import("./pages/CompanySettings"));
+const ReviewSessionsPage = lazy(() => import("./pages/ReviewSessions"));
 const CorrectionRequestsPage = lazy(() => import("./pages/CorrectionRequests"));
 const DevicesPage = lazy(() => import("./pages/Devices"));
 const KioskPage = lazy(() => import("./pages/Kiosk"));
@@ -198,6 +199,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <CorrectionRequestsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/review-sessions"
+              element={
+                <ProtectedRoute allowedRoles={["owner", "admin", "manager"]}>
+                  <ReviewSessionsPage />
                 </ProtectedRoute>
               }
             />

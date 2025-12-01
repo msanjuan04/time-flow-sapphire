@@ -11,6 +11,7 @@ import OwnerQuickNav from "@/components/OwnerQuickNav";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import PendingReviewAlert from "@/components/PendingReviewAlert";
 
 interface DailyStats {
   date: string;
@@ -77,14 +78,34 @@ const AdminView = () => {
       .from("companies")
       .select("status")
       .eq("id", companyId)
-      .single();
+      .maybeSingle();
 
-    if (statusError) throw statusError;
+    if (statusError) {
+      console.error("Company status fetch error", statusError);
+      return;
+    }
 
     if (data) {
       setCompanyStatus(data.status || "active");
+    } else {
+      setCompanyStatus("active");
     }
   }, [companyId]);
+
+  const parsePauseMs = (value: unknown) => {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === "number") return value;
+    if (typeof value === "string") {
+      const num = Number(value);
+      if (Number.isFinite(num)) return num;
+      const parts = value.split(":").map((v) => Number(v));
+      if (parts.length >= 2 && parts.every((n) => Number.isFinite(n))) {
+        const [h = 0, m = 0, s = 0] = parts;
+        return ((h * 3600 + m * 60 + s) * 1000);
+      }
+    }
+    return 0;
+  };
 
   const calculateTotalHours = (sessions: WorkSessionRecord[]) => {
     return sessions.reduce((total, session) => {
@@ -92,7 +113,7 @@ const AdminView = () => {
 
       const clockIn = new Date(session.clock_in_time).getTime();
       const clockOut = session.clock_out_time ? new Date(session.clock_out_time).getTime() : Date.now();
-      const pauseDuration = Number(session.total_pause_duration ?? 0);
+      const pauseDuration = parsePauseMs(session.total_pause_duration);
       const duration = Math.max(0, clockOut - clockIn - pauseDuration);
 
       return total + duration / (1000 * 60 * 60);
@@ -497,6 +518,7 @@ const AdminView = () => {
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 px-3 sm:px-4 py-4">
       <div className="max-w-7xl mx-auto space-y-5 sm:space-y-6 pt-6 sm:pt-8 animate-fade-in">
         <OwnerQuickNav />
+        <PendingReviewAlert />
         {error && (
           <Card className="border-destructive bg-destructive/10 text-destructive-foreground p-4 flex flex-col gap-2">
             <div className="flex items-center gap-2">

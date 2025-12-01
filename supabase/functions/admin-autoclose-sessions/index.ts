@@ -15,15 +15,11 @@ serve(async (req) => {
     const { supabase, user } = await requireSuperadmin(req);
     const { ip, user_agent } = extractRequestMetadata(req);
 
-    // Get all open work sessions older than 24 hours
-    const twentyFourHoursAgo = new Date();
-    twentyFourHoursAgo.setHours(twentyFourHoursAgo.getHours() - 24);
-
+    // Get all open work sessions to evaluate against the company limit (or 24h fallback)
     const { data: openSessions, error: sessionsError } = await supabase
       .from("work_sessions")
-      .select("id, user_id, company_id, clock_in_time")
-      .eq("status", "open")
-      .lt("clock_in_time", twentyFourHoursAgo.toISOString());
+      .select("id, user_id, company_id, clock_in_time, companies!inner(max_shift_hours)")
+      .eq("status", "open");
 
     if (sessionsError) {
       console.error("Error fetching open sessions:", sessionsError);
@@ -38,21 +34,38 @@ serve(async (req) => {
       });
     }
 
-    // Close each session
-    const now = new Date().toISOString();
-    const sessionIds = openSessions.map((s) => s.id);
+    const now = new Date();
+    let closedCount = 0;
 
-    const { error: updateError } = await supabase
-      .from("work_sessions")
-      .update({
-        clock_out_time: now,
-        status: "closed",
-      })
-      .in("id", sessionIds);
+    for (const session of openSessions) {
+      const limitHours =
+        typeof (session as any).companies?.max_shift_hours === "number" &&
+        !Number.isNaN((session as any).companies?.max_shift_hours)
+          ? Number((session as any).companies.max_shift_hours)
+          : 24; // fallback to 24h if no limit configured
 
-    if (updateError) {
-      console.error("Error closing sessions:", updateError);
-      return createErrorResponse("Failed to close sessions", 500);
+      const allowedMs = limitHours * 60 * 60 * 1000;
+      const startedAt = new Date(session.clock_in_time);
+      const elapsedMs = now.getTime() - startedAt.getTime();
+
+      if (elapsedMs <= allowedMs) continue;
+
+      const cappedOut = new Date(startedAt.getTime() + allowedMs).toISOString();
+      const { error: updateError } = await supabase
+        .from("work_sessions")
+        .update({
+          clock_out_time: cappedOut,
+          status: "auto_closed",
+          is_active: false,
+          review_status: "exceeded_limit",
+        })
+        .eq("id", session.id);
+
+      if (updateError) {
+        console.error(`Error closing session ${session.id}:`, updateError);
+        continue;
+      }
+      closedCount += 1;
     }
 
     // Write audit log
@@ -60,19 +73,18 @@ serve(async (req) => {
       actor_user_id: user.id,
       action: "admin.jobs.autoclose_sessions",
       entity_type: "work_session",
-      diff: { closed_count: sessionIds.length },
+      diff: { closed_count: closedCount },
       ip,
       user_agent,
-      reason: `Manually triggered auto-close for ${sessionIds.length} sessions`,
+      reason: `Manually triggered auto-close for ${closedCount} sessions`,
     });
 
-    console.log(`Superadmin ${user.id} closed ${sessionIds.length} work sessions`);
+    console.log(`Superadmin ${user.id} closed ${closedCount} work sessions`);
 
     return createJsonResponse({
       success: true,
-      message: `Closed ${sessionIds.length} work sessions`,
-      closed_count: sessionIds.length,
-      session_ids: sessionIds,
+      message: `Closed ${closedCount} work sessions`,
+      closed_count: closedCount,
     });
   } catch (error) {
     console.error("Admin autoclose sessions error:", error);

@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Loader2, MapPin, Save, Shield } from "lucide-react";
+import { Loader2, MapPin, Save, Shield, Timer } from "lucide-react";
 import { GEOFENCE_RADIUS_METERS } from "@/config/geofence";
 import { BackButton } from "@/components/BackButton";
 import OwnerQuickNav from "@/components/OwnerQuickNav";
@@ -44,13 +44,14 @@ const CompanySettings = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
   const [locating, setLocating] = useState(false);
+  const [maxShiftHours, setMaxShiftHours] = useState<string>("");
 
   useEffect(() => {
     const fetchCompany = async () => {
       if (!companyId) return;
       const { data, error } = await supabase
         .from("companies")
-        .select("name, hq_lat, hq_lng")
+        .select("name, hq_lat, hq_lng, max_shift_hours")
         .eq("id", companyId)
         .maybeSingle();
 
@@ -64,6 +65,11 @@ const CompanySettings = () => {
         setCompanyName(data.name || "Empresa");
         setHqLat(data.hq_lat ?? null);
         setHqLng(data.hq_lng ?? null);
+        setMaxShiftHours(
+          typeof data.max_shift_hours === "number" && !Number.isNaN(data.max_shift_hours)
+            ? String(Number(data.max_shift_hours))
+            : ""
+        );
       }
     };
 
@@ -191,23 +197,37 @@ const CompanySettings = () => {
       return;
     }
 
-    if (hqLat === null || hqLng === null) {
-      toast.error("Selecciona una ubicación en el mapa");
-      return;
-    }
-
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from("companies")
-        .update({ hq_lat: hqLat, hq_lng: hqLng })
-        .eq("id", companyId);
+      const payload: Record<string, any> = {};
+
+      // Solo actualiza la geovalla si el usuario la ha definido; permite guardar aunque no tenga ubicación
+      if (hqLat !== null && hqLng !== null) {
+        payload.hq_lat = hqLat;
+        payload.hq_lng = hqLng;
+      }
+
+      const normalized = maxShiftHours.replace(",", ".").trim();
+
+      if (normalized === "") {
+        payload.max_shift_hours = null;
+      } else {
+        const parsed = Number(normalized);
+        if (Number.isNaN(parsed) || parsed <= 0) {
+          toast.error("El límite de horas debe ser un número mayor que 0 (usa punto o coma para decimales)");
+          setSaving(false);
+          return;
+        }
+        payload.max_shift_hours = parsed;
+      }
+
+      const { error } = await supabase.from("companies").update(payload).eq("id", companyId);
 
       if (error) throw error;
-      toast.success("Ubicación guardada");
+      toast.success("Configuración guardada");
     } catch (err) {
       console.error(err);
-      toast.error("No pudimos guardar la ubicación");
+      toast.error("No pudimos guardar la configuración");
     } finally {
       setSaving(false);
     }
@@ -301,12 +321,50 @@ const CompanySettings = () => {
           </div>
 
           <div className="flex justify-end">
-            <Button onClick={handleSave} disabled={!canEdit || saving || hqLat === null || hqLng === null}>
+            <Button onClick={handleSave} disabled={!canEdit || saving}>
               {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-              Guardar ubicación
+              Guardar configuración
             </Button>
           </div>
           {!canEdit && <p className="text-xs text-muted-foreground">Solo los owners/admin pueden editar la ubicación.</p>}
+        </Card>
+
+        <Card className="glass-card p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center shadow-sm">
+              <Timer className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold">Límite máximo por fichada</h2>
+              <p className="text-sm text-muted-foreground">
+                Si se supera, la fichada se marca para revisión y el trabajador no puede cerrarla. Deja en blanco para desactivar.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div className="space-y-2">
+              <Label htmlFor="maxShiftHours">Horas máximas</Label>
+              <Input
+                id="maxShiftHours"
+                type="number"
+                min="0"
+                step="0.5"
+                value={maxShiftHours}
+                onChange={(e) => setMaxShiftHours(e.target.value)}
+                placeholder="Ej. 13"
+                disabled={!canEdit}
+              />
+            </div>
+            <p className="text-sm text-muted-foreground md:col-span-2">
+              Campo opcional. Si lo dejas vacío, el sistema no aplica bloqueo por límite de horas.
+            </p>
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={handleSave} disabled={!canEdit || saving}>
+              {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+              Guardar límite
+            </Button>
+          </div>
         </Card>
 
       </div>
