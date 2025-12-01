@@ -122,7 +122,7 @@ Deno.serve(async (req) => {
         total_work_duration: totalWorkDuration,
         is_active: false,
         status: "closed",
-        review_status: "normal",
+        review_status: "resolved",
         is_corrected: true,
         corrected_by: auth.user.id,
         corrected_at: nowIso,
