@@ -32,6 +32,9 @@ import {
   CalendarClock,
   ListChecks,
   AlertCircle,
+  Loader2,
+  Save,
+  Timer,
 } from "lucide-react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -41,10 +44,12 @@ import { useMembership } from "@/hooks/useMembership";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { exportCSV } from "@/lib/exports";
 import html2pdf from "html2pdf.js";
+import OwnerIndividualReports from "@/components/OwnerIndividualReports";
+import { Checkbox } from "@/components/ui/checkbox";
 
 interface EmployeeStats {
   user_id: string;
@@ -224,13 +229,7 @@ const WEEKDAY_FILTERS = [
   { value: "6", label: "Sábado" },
   { value: "0", label: "Domingo" },
 ];
-const PDF_SECTION_OPTIONS = [
-  { id: "context", label: "Resumen del período" },
-  { id: "map", label: "Mapa de fichajes" },
-  { id: "summary", label: "Tarjetas resumen" },
-  { id: "charts", label: "Gráficas comparativas" },
-  { id: "table", label: "Detalle por empleado" },
-];
+const PDF_SECTION_OPTIONS: never[] = [];
 const getEventColor = (type: string) => {
   switch (type) {
     case "clock_in":
@@ -830,7 +829,7 @@ const buildEmployeesReportHtml = (reportData: EmployeesReportData) => {
 };
 const Reports = () => {
   const { user } = useAuth();
-  const { companyId, membership, loading: membershipLoading } = useMembership();
+  const { companyId, membership, loading: membershipLoading, role } = useMembership();
   const navigate = useNavigate();
   
   const [loading, setLoading] = useState(false);
@@ -839,6 +838,7 @@ const Reports = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [sessionsRaw, setSessionsRaw] = useState<SessionLike[]>([]);
   const [geoAddressCache, setGeoAddressCache] = useState<Record<string, string>>({});
+  const GEO_LOOKUP_ENABLED = false;
   const reportRef = useRef<HTMLDivElement | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewHtml, setPreviewHtml] = useState("");
@@ -853,23 +853,32 @@ const Reports = () => {
     }
   });
   const showScheduleReminder = !scheduleReminderDismissed && !loading && employeeStats.length === 0;
-  const [selectedPdfSections, setSelectedPdfSections] = useState<string[]>(() =>
-    PDF_SECTION_OPTIONS.map((section) => section.id)
-  );
-  
-  // Filters
+  const [selectedPdfSections, setSelectedPdfSections] = useState<string[]>([]);
+  // Filtros de fechas: por defecto mes actual completo
   const [startDate, setStartDate] = useState(() => {
-    const date = new Date();
-    date.setDate(date.getDate() - 30);
-    return date.toISOString().split('T')[0];
+    const now = new Date();
+    const first = new Date(now.getFullYear(), now.getMonth(), 1);
+    return first.toISOString().slice(0, 10);
   });
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [endDate, setEndDate] = useState(() => {
+    const now = new Date();
+    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return last.toISOString().slice(0, 10);
+  });
+  const [monthlyOpen, setMonthlyOpen] = useState(false);
+  const [monthlyMonth, setMonthlyMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  });
+  const [monthlyCenter, setMonthlyCenter] = useState<string>("all");
   const [selectedCenter, setSelectedCenter] = useState<string>("all");
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
+  const [onlyPendingReview, setOnlyPendingReview] = useState<boolean>(false);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const leafletMapRef = useRef<L.Map | null>(null);
   const leafletMarkersRef = useRef<L.Marker[]>([]);
   const pendingGeoLookups = useRef<Set<string>>(new Set());
+  const geoLookupWarned = useRef(false);
   const [mapEvents, setMapEvents] = useState<ClockInLocation[]>([]);
   const [mapLoading, setMapLoading] = useState(false);
   const [selectedWeekday, setSelectedWeekday] = useState<string>("all");
@@ -930,6 +939,7 @@ const Reports = () => {
   );
 
   useEffect(() => {
+    if (!GEO_LOOKUP_ENABLED) return;
     if (typeof window === "undefined") return;
 
     const uniqueKeys = Array.from(
@@ -971,7 +981,7 @@ const Reports = () => {
           },
         });
         if (!response.ok) {
-          throw new Error("Reverse geocoding failed");
+          throw new Error(`Reverse geocoding failed ${response.status}`);
         }
         const data = await response.json();
         if (cancelled) return;
@@ -983,10 +993,14 @@ const Reports = () => {
         }));
       } catch (error) {
         if (cancelled) return;
+        const fallback = `Coordenadas ${formatCoordinate(coords.lat, coords.lng)}`;
         setGeoAddressCache((prev) => ({
           ...prev,
-          [key]: `Coordenadas ${formatCoordinate(coords.lat, coords.lng)}`,
+          [key]: fallback,
         }));
+        if (!geoLookupWarned.current) {
+          geoLookupWarned.current = true;
+        }
       } finally {
         pendingGeoLookups.current.delete(key);
       }
@@ -1171,7 +1185,7 @@ const Reports = () => {
     if (companyId) {
       fetchReportData();
     }
-  }, [companyId, startDate, endDate, selectedCenter, selectedEmployee]);
+  }, [companyId, startDate, endDate, selectedCenter, selectedEmployee, onlyPendingReview]);
 
   useEffect(() => {
     if (companyId) {
@@ -1295,6 +1309,7 @@ const Reports = () => {
           corrected_by,
           correction_reason,
           review_status,
+          status,
           profiles!inner(id, full_name, email, center_id)
         `)
         .eq("company_id", companyId)
@@ -1307,6 +1322,12 @@ const Reports = () => {
 
       if (selectedEmployee !== "all") {
         query = query.eq("user_id", selectedEmployee);
+      }
+
+      if (onlyPendingReview) {
+        query = query.or(
+          "review_status.eq.exceeded_limit,review_status.eq.pending_review,review_status.is.null,status.eq.auto_closed"
+        );
       }
 
       const { data: sessions } = await query;
@@ -1336,8 +1357,19 @@ const Reports = () => {
 
       let sessionsData: SessionLike[] = (sessions as SessionLike[]) || [];
 
-      if ((!sessionsData || sessionsData.length === 0) && events && events.length > 0) {
+      // Si pedimos solo pendientes, no construimos sesiones desde eventos (no tienen review_status)
+      if ((!sessionsData || sessionsData.length === 0) && events && events.length > 0 && !onlyPendingReview) {
         sessionsData = buildSessionsFromEvents(events as ClockInLocation[]);
+      }
+
+      if (onlyPendingReview) {
+        const pendingStatuses = ["pending_review", "exceeded_limit"];
+        sessionsData = sessionsData.filter(
+          (s: any) =>
+            pendingStatuses.includes(s.review_status ?? "") ||
+            s.status === "auto_closed" ||
+            (!s.review_status && s.status !== "closed")
+        );
       }
 
       setSessionsRaw(sessionsData);
@@ -1503,16 +1535,11 @@ const Reports = () => {
       },
       clockEvents: filteredMapEvents,
       geoAddressMap: geoAddressCache,
-      selectedSections: selectedPdfSections,
+      selectedSections: [],
     });
   };
 
   const handleDownloadPDF = async () => {
-    if (selectedPdfSections.length === 0) {
-      toast.error("Selecciona al menos una sección antes de descargar el PDF");
-      return;
-    }
-
     const reportHtml = getReportHtml();
     if (!reportHtml) {
       toast.error("No hay datos disponibles para generar el informe");
@@ -1538,10 +1565,6 @@ const Reports = () => {
   };
 
   const handlePreviewPDF = () => {
-    if (selectedPdfSections.length === 0) {
-      toast.error("Selecciona al menos una sección para la vista previa");
-      return;
-    }
     const reportHtml = getReportHtml();
     if (!reportHtml) {
       toast.error("No hay datos disponibles para la vista previa");
@@ -1562,29 +1585,36 @@ const Reports = () => {
     }
   };
 
-  // Paquete legal mensual (requiere centro seleccionado y mes completo)
-  const isMonthlyRange = () => {
-    const s = new Date(startDate);
-    const e = new Date(endDate);
-    if (isNaN(s.getTime()) || isNaN(e.getTime())) return false;
-    const first = new Date(s.getFullYear(), s.getMonth(), 1);
-    const last = new Date(s.getFullYear(), s.getMonth() + 1, 0);
-    const sd = s.toISOString().slice(0, 10);
-    const ed = e.toISOString().slice(0, 10);
-    const fd = first.toISOString().slice(0, 10);
-    const ld = last.toISOString().slice(0, 10);
-    return sd === fd && ed === ld && s.getMonth() === e.getMonth() && s.getFullYear() === e.getFullYear();
+  // Paquete legal mensual (se ajusta automáticamente a mes completo)
+  const snapToMonth = (dateStr: string) => {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return null;
+    const first = new Date(d.getFullYear(), d.getMonth(), 1);
+    const last = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+    return {
+      first: first.toISOString().slice(0, 10),
+      last: last.toISOString().slice(0, 10),
+      ym: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+    };
   };
 
-  const exportMonthlyCSV = () => {
-    const center = centers.find((c) => c.id === selectedCenter);
+  const snapToMonthValue = (monthValue: string) => {
+    if (!monthValue || !/^\d{4}-\d{2}$/.test(monthValue)) return null;
+    const [year, month] = monthValue.split("-").map(Number);
+    const d = new Date(year, month - 1, 1);
+    return snapToMonth(d.toISOString());
+  };
+
+  const exportMonthlyCSV = (monthInfo: { ym: string; first: string; last: string }, centerId: string) => {
+    const center = centers.find((c) => c.id === centerId);
     const headers = ["Fecha", "Empleado", "Email", "Entrada", "Salida", "Horas", "Modificada", "Revisada_por", "Comentario"];
     const reviewerLabel = (userId?: string | null) => {
       if (!userId) return "";
       const reviewer = employees.find((emp) => emp.id === userId);
       return reviewer?.full_name || reviewer?.email || "";
     };
-    const rows = sessionsRaw.map((s: any) => {
+    const filteredSessions = sessionsRaw.filter((s: any) => s.profiles?.center_id === centerId);
+    const rows = filteredSessions.map((s: any) => {
       const start = s.clock_in_time ? new Date(s.clock_in_time) : null;
       const end = s.clock_out_time ? new Date(s.clock_out_time) : null;
       const pauseMs = Number(s.total_pause_duration ?? 0);
@@ -1606,21 +1636,26 @@ const Reports = () => {
       ];
     });
     const label = center?.name ? center.name.replace(/\s+/g, "_") : "centro";
-    const ym = startDate.slice(0, 7);
-    exportCSV(`paquete_${label}_${ym}`, headers, rows);
+    exportCSV(`paquete_${label}_${monthInfo.ym}`, headers, rows);
   };
 
   const exportMonthlyPackage = () => {
-    if (selectedCenter === "all") {
+    if (!monthlyCenter || monthlyCenter === "all") {
       toast.error("Selecciona un centro para generar el paquete mensual");
       return;
     }
-    if (!isMonthlyRange()) {
-      toast.error("Ajusta el intervalo al mes completo (1º al último día)");
+    const snap = snapToMonthValue(monthlyMonth);
+    if (!snap) {
+      toast.error("Selecciona un mes válido");
       return;
     }
-    exportMonthlyCSV();
+    // Ajusta los filtros al mes elegido
+    setStartDate(snap.first);
+    setEndDate(snap.last);
+    setSelectedCenter(monthlyCenter);
+    exportMonthlyCSV(snap, monthlyCenter);
     toast.success("Paquete mensual generado (CSV)");
+    setMonthlyOpen(false);
   };
 
   const companyStats = employeeStats.filter((stat) => stat.company_id === companyId);
@@ -1652,7 +1687,23 @@ const Reports = () => {
     return parsed.toLocaleDateString("es-ES");
   }, []);
 
+  // Prefija selección mensual cuando se abre el modal
+  const openMonthlyModal = () => {
+    setMonthlyMonth(startDate.slice(0, 7));
+    setMonthlyCenter(selectedCenter !== "all" ? selectedCenter : centers[0]?.id || "");
+    setMonthlyOpen(true);
+  };
+
+  useEffect(() => {
+    if (selectedCenter !== "all") {
+      setMonthlyCenter(selectedCenter);
+    } else if (centers[0]?.id) {
+      setMonthlyCenter(centers[0].id);
+    }
+  }, [selectedCenter, centers]);
+
   return (
+    <>
     <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
       <div className="max-w-7xl mx-auto pt-8">
         <div className="space-y-6">
@@ -1682,38 +1733,10 @@ const Reports = () => {
             </div>
           </div>
           <div className="flex flex-wrap gap-2 w-full md:w-auto justify-start md:justify-end">
-            <Button variant="outline" onClick={handlePreviewPDF} className="hover-scale w-full sm:w-auto">
-              <Download className="w-4 h-4 mr-2" /> Descargar PDF
-            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="outline" className="hover-scale w-full sm:w-auto">
-                  <ListChecks className="w-4 h-4 mr-2" /> Secciones PDF
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuLabel>Incluir en el PDF</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                {PDF_SECTION_OPTIONS.map((section) => (
-                  <DropdownMenuCheckboxItem
-                    key={section.id}
-                    checked={selectedPdfSections.includes(section.id)}
-                    onCheckedChange={(value) =>
-                      updatePdfSectionSelection(
-                        section.id,
-                        value === true || value === "indeterminate"
-                      )
-                    }
-                  >
-                    {section.label}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="hover-scale w-full sm:w-auto">
-                  <Download className="w-4 h-4 mr-2" /> Exportar
+                  <Download className="w-4 h-4 mr-2" /> Exportar CSV
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -1721,7 +1744,7 @@ const Reports = () => {
                   <Download className="w-4 h-4 mr-2" /> CSV
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={exportMonthlyPackage}>
+                <DropdownMenuItem onClick={openMonthlyModal}>
                   <FileText className="w-4 h-4 mr-2" /> Paquete legal mensual (CSV)
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -1857,6 +1880,10 @@ const Reports = () => {
           </Card>
         )}
 
+        {role === "owner" && companyId && (
+          <OwnerIndividualReports companyId={companyId} />
+        )}
+
         {/* Filters */}
         <Card className="glass-card p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
@@ -1915,6 +1942,18 @@ const Reports = () => {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-4">
+            <div className="flex items-center gap-2">
+              <Checkbox
+                id="pendingReviewOnly"
+                checked={onlyPendingReview}
+                onCheckedChange={(v) => setOnlyPendingReview(v === true)}
+              />
+              <Label htmlFor="pendingReviewOnly" className="text-sm font-normal">
+                Solo fichadas pendientes de revisar
+              </Label>
             </div>
           </div>
         </Card>
@@ -2224,26 +2263,68 @@ const Reports = () => {
         </Card>
       </div>
     </div>
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="w-full max-w-5xl lg:max-w-[90vw] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Vista previa del informe</DialogTitle>
-            <DialogDescription>Revisa el contenido antes de descargar el PDF.</DialogDescription>
-          </DialogHeader>
-          <div
-            className="border rounded-md p-4 bg-background/70 space-y-4"
-            dangerouslySetInnerHTML={{ __html: previewHtml }}
-          />
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setPreviewOpen(false)}>
-              Cancelar
-            </Button>
-            <Button onClick={handleDownloadPDF}>Descargar PDF</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
-  </div>
+    </div>
+    <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+      <DialogContent className="w-full max-w-5xl lg:max-w-[90vw] max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Vista previa del informe</DialogTitle>
+          <DialogDescription>Revisa el contenido antes de descargar el PDF.</DialogDescription>
+        </DialogHeader>
+        <div
+          className="border rounded-md p-4 bg-background/70 space-y-4"
+          dangerouslySetInnerHTML={{ __html: previewHtml }}
+        />
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setPreviewOpen(false)}>
+            Cancelar
+          </Button>
+          <Button onClick={handleDownloadPDF}>Descargar PDF</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    <Dialog open={monthlyOpen} onOpenChange={setMonthlyOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Paquete legal mensual (CSV)</DialogTitle>
+          <DialogDescription>
+            Selecciona el mes completo y el centro. Ajustaremos el rango al mes elegido antes de exportar.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          <div className="space-y-2">
+            <Label>Mes</Label>
+            <Input
+              type="month"
+              value={monthlyMonth}
+              onChange={(e) => setMonthlyMonth(e.target.value)}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Centro</Label>
+            <Select value={monthlyCenter} onValueChange={(val) => setMonthlyCenter(val)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecciona centro" />
+              </SelectTrigger>
+              <SelectContent>
+                {centers.map((center) => (
+                  <SelectItem key={center.id} value={center.id}>
+                    {center.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => setMonthlyOpen(false)}>
+            Cancelar
+          </Button>
+          <Button onClick={exportMonthlyPackage}>Exportar CSV</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 };
 
