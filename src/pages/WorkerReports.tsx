@@ -116,21 +116,40 @@ const WorkerReports = () => {
         endDate.setHours(23, 59, 59, 999);
       }
 
-      const { data: sessionsData } = await supabase
-        .from("work_sessions")
-        .select("clock_in_time, clock_out_time, total_work_duration")
+      const { data: eventsData } = await supabase
+        .from("time_events")
+        .select("event_time, event_type")
         .eq("user_id", user?.id)
         .eq("company_id", companyId)
-        .gte("clock_in_time", startDate.toISOString())
-        .lte("clock_in_time", endDate.toISOString())
-        .order("clock_in_time", { ascending: false });
+        .gte("event_time", startDate.toISOString())
+        .lte("event_time", endDate.toISOString())
+        .order("event_time", { ascending: true });
 
-      const sessionsList = sessionsData || [];
-      setSessions(sessionsList);
+      const events = eventsData || [];
+      const computedSessions: { clock_in_time: string; clock_out_time: string | null }[] = [];
+      let current: { clock_in_time: string; clock_out_time: string | null } | null = null;
+      events.forEach((ev) => {
+        if (ev.event_type === "clock_in") {
+          if (current) {
+            computedSessions.push(current);
+          }
+          current = { clock_in_time: ev.event_time, clock_out_time: null };
+        }
+        if (ev.event_type === "clock_out" && current) {
+          current.clock_out_time = ev.event_time;
+          computedSessions.push(current);
+          current = null;
+        }
+      });
+      if (current) {
+        computedSessions.push(current);
+      }
 
-      // Calculate total hours
+      setSessions(computedSessions);
+
+      // Calculate total hours desde eventos
       let total = 0;
-      sessionsData?.forEach((session) => {
+      computedSessions.forEach((session) => {
         if (session.clock_in_time) {
           const start = new Date(session.clock_in_time).getTime();
           const end = session.clock_out_time ? new Date(session.clock_out_time).getTime() : Date.now();
@@ -144,12 +163,13 @@ const WorkerReports = () => {
       // Fetch expected hours from scheduled_hours for the same range
       const startDateISO = startDate.toISOString().slice(0, 10);
       const endDateISO = endDate.toISOString().slice(0, 10);
+      const todayISO = new Date().toISOString().slice(0, 10);
       const { data: scheduledRows, error: scheduledError } = await supabase
         .from("scheduled_hours")
-        .select("expected_hours, date")
+        .select("expected_hours, date, start_time, end_time")
         .eq("user_id", user?.id)
         .gte("date", startDateISO)
-        .lte("date", endDateISO);
+        .lte("date", todayISO);
 
       if (scheduledError) {
         console.error("Error fetching scheduled hours:", scheduledError);
@@ -197,7 +217,27 @@ const WorkerReports = () => {
         console.error("Unexpected error loading schedule history:", historyException);
       }
 
-      if (historyRows.length > 0) {
+      // Prioridad: si hay filas en scheduled_hours dentro del rango, usa la más reciente
+      let latestScheduledRow: { expected_hours: number; start_time: string | null; end_time: string | null; date: string } | null =
+        null;
+      if (scheduledRows && scheduledRows.length > 0) {
+        const sorted = [...scheduledRows].sort((a, b) => (a.date < b.date ? 1 : -1));
+        const row = sorted[0];
+        latestScheduledRow = {
+          expected_hours: Number(row.expected_hours ?? 0),
+          start_time: row.start_time ?? null,
+          end_time: row.end_time ?? null,
+          date: row.date,
+        };
+        latestScheduleSummary = {
+          hours: latestScheduledRow.expected_hours,
+          reason: `Horario diario (${latestScheduledRow.date})`,
+          changedAt: latestScheduledRow.date,
+          startTime: latestScheduledRow.start_time,
+          endTime: latestScheduledRow.end_time,
+        };
+        setCurrentSchedule(latestScheduleSummary);
+      } else if (historyRows.length > 0) {
         const latest = historyRows[0];
         latestScheduleSummary = {
           hours: hoursFromHistory(latest),
@@ -246,6 +286,7 @@ const WorkerReports = () => {
       setApprovedAdjustments(adjustments);
 
       if (period === "week") {
+        const sessionsList = computedSessions as WorkSession[];
         const buckets: Array<{ date: Date; sessions: WorkSession[] }> = [];
         for (let i = 0; i < 7; i++) {
           const day = new Date(startDate);
