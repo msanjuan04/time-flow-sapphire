@@ -229,6 +229,12 @@ const WEEKDAY_FILTERS = [
   { value: "6", label: "Sábado" },
   { value: "0", label: "Domingo" },
 ];
+const EVENT_LABELS: Record<string, string> = {
+  clock_in: "Entrada",
+  clock_out: "Salida",
+  pause_start: "Pausa",
+  pause_end: "Fin de pausa",
+};
 const PDF_SECTION_OPTIONS: never[] = [];
 const getEventColor = (type: string) => {
   switch (type) {
@@ -1605,41 +1611,55 @@ const Reports = () => {
     return snapToMonth(d.toISOString());
   };
 
-  const exportMonthlyCSV = (monthInfo: { ym: string; first: string; last: string }, centerId: string) => {
+  const exportMonthlyCSV = async (monthInfo: { ym: string; first: string; last: string }, centerId: string) => {
     const center = centers.find((c) => c.id === centerId);
-    const headers = ["Fecha", "Empleado", "Email", "Entrada", "Salida", "Horas", "Modificada", "Revisada_por", "Comentario"];
-    const reviewerLabel = (userId?: string | null) => {
-      if (!userId) return "";
-      const reviewer = employees.find((emp) => emp.id === userId);
-      return reviewer?.full_name || reviewer?.email || "";
-    };
-    const filteredSessions = sessionsRaw.filter((s: any) => s.profiles?.center_id === centerId);
-    const rows = filteredSessions.map((s: any) => {
-      const start = s.clock_in_time ? new Date(s.clock_in_time) : null;
-      const end = s.clock_out_time ? new Date(s.clock_out_time) : null;
-      const pauseMs = Number(s.total_pause_duration ?? 0);
-      const durationMs =
-        start && (end || true)
-          ? (end ? end.getTime() : Date.now()) - start.getTime() - (isNaN(pauseMs) ? 0 : pauseMs)
-          : 0;
-      const hours = start ? (Math.max(0, durationMs) / (1000 * 60 * 60)).toFixed(2) : "";
-      return [
-        start ? start.toISOString().slice(0, 10) : end ? end.toISOString().slice(0, 10) : "",
-        s.profiles?.full_name || s.profiles?.email || "",
-        s.profiles?.email || "",
-        start ? start.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "",
-        end ? end.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }) : "",
-        hours,
-        s.is_corrected ? "Sí" : "No",
-        reviewerLabel(s.corrected_by),
-        s.correction_reason || "",
-      ];
-    });
     const label = center?.name ? center.name.replace(/\s+/g, "_") : "centro";
+    const headers = ["Fecha", "Hora", "Turno", "Empleado", "Email", "Tipo", "Notas", "En zona"];
+    const { data, error } = await supabase
+      .from("time_events")
+      .select("id, event_time, event_type, notes, is_within_geofence, user_id, profiles!inner(full_name,email,center_id)")
+      .eq("company_id", companyId)
+      .eq("profiles.center_id", centerId)
+      .gte("event_time", `${monthInfo.first}T00:00:00`)
+      .lte("event_time", `${monthInfo.last}T23:59:59`)
+      .order("user_id", { ascending: true })
+      .order("event_time", { ascending: true });
+    if (error) {
+      toast.error("No pudimos generar el paquete mensual");
+      console.error(error);
+      return false;
+    }
+    const rows: string[][] = [];
+    if (data) {
+      // Calcula número de turno por día/empleado contando clock_in
+      const sessionIndex = new Map<string, number>();
+      data.forEach((ev) => {
+        const dateKey = ev.event_time.slice(0, 10);
+        const key = `${ev.user_id}-${dateKey}`;
+        if (ev.event_type === "clock_in") {
+          const next = (sessionIndex.get(key) || 0) + 1;
+          sessionIndex.set(key, next);
+        } else if (!sessionIndex.has(key)) {
+          sessionIndex.set(key, 1);
+        }
+        const turno = sessionIndex.get(key) || 1;
+        rows.push([
+          dateKey,
+          new Date(ev.event_time).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }),
+          `Turno ${turno}`,
+          (ev as any).profiles?.full_name || (ev as any).profiles?.email || "",
+          (ev as any).profiles?.email || "",
+          EVENT_LABELS[ev.event_type] || ev.event_type,
+          ev.notes || "",
+          ev.is_within_geofence === null ? "N/D" : ev.is_within_geofence ? "Sí" : "No",
+        ]);
+      });
+    }
     exportCSV(`paquete_${label}_${monthInfo.ym}`, headers, rows);
+    return true;
   };
 
-  const exportMonthlyPackage = () => {
+  const exportMonthlyPackage = async () => {
     if (!monthlyCenter || monthlyCenter === "all") {
       toast.error("Selecciona un centro para generar el paquete mensual");
       return;
@@ -1653,9 +1673,11 @@ const Reports = () => {
     setStartDate(snap.first);
     setEndDate(snap.last);
     setSelectedCenter(monthlyCenter);
-    exportMonthlyCSV(snap, monthlyCenter);
-    toast.success("Paquete mensual generado (CSV)");
-    setMonthlyOpen(false);
+    const ok = await exportMonthlyCSV(snap, monthlyCenter);
+    if (ok) {
+      toast.success("Paquete mensual generado (CSV)");
+      setMonthlyOpen(false);
+    }
   };
 
   const companyStats = employeeStats.filter((stat) => stat.company_id === companyId);

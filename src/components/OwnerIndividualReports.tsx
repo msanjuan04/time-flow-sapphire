@@ -46,7 +46,9 @@ import html2pdf from "html2pdf.js";
 import { useAuth } from "@/contexts/AuthContext";
 
 type EventType = Database["public"]["Enums"]["event_type"];
-type TimeEventRow = Database["public"]["Tables"]["time_events"]["Row"];
+type TimeEventRow = Database["public"]["Tables"]["time_events"]["Row"] & {
+  original_event_time?: string | null;
+};
 
 interface WorkerOption {
   id: string;
@@ -75,6 +77,15 @@ const formatTime = (value: string) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "-";
   return parsed.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+};
+
+const formatTimeWithOriginal = (event: TimeEventRow) => {
+  const current = formatTime(event.event_time);
+  const original = event.original_event_time ? formatTime(event.original_event_time) : null;
+  if (original && original !== current) {
+    return `${current} (orig ${original})`;
+  }
+  return current;
 };
 
 const toDatetimeLocal = (value: string) => {
@@ -364,7 +375,7 @@ const OwnerIndividualReports = ({ companyId }: OwnerIndividualReportsProps) => {
     try {
       let eventsQuery = supabase
         .from("time_events")
-        .select("id, event_time, event_type, notes, source, created_at, company_id, user_id, is_within_geofence")
+        .select("id, event_time, original_event_time, event_type, notes, source, created_at, company_id, user_id, is_within_geofence")
         .eq("company_id", companyId)
         .eq("user_id", selectedWorker.id)
         .gte("event_time", `${startDate}T00:00:00`)
@@ -517,7 +528,7 @@ const OwnerIndividualReports = ({ companyId }: OwnerIndividualReportsProps) => {
           .eq("id", editingEvent.id)
           .eq("company_id", companyId)
           .eq("user_id", selectedWorker.id)
-          .select("id, event_time, event_type, notes, is_within_geofence")
+          .select("id, event_time, original_event_time, event_type, notes, is_within_geofence")
           .maybeSingle();
         if (error) throw error;
         if (!data) throw new Error("No se actualizó ningún registro");
@@ -561,6 +572,10 @@ const OwnerIndividualReports = ({ companyId }: OwnerIndividualReportsProps) => {
       }
       setFormOpen(false);
       resetForm();
+      // Si estábamos filtrando por pendientes, quitamos el filtro para que el registro salga de esa lista
+      if (pendingReviewOnly) {
+        setPendingReviewOnly(false);
+      }
       fetchEvents();
     } catch (error) {
       console.error("Error guardando fichaje", error);
@@ -620,7 +635,7 @@ const OwnerIndividualReports = ({ companyId }: OwnerIndividualReportsProps) => {
       .flatMap((group) =>
         group.sessions.map((session) => {
           const sequence = session.events
-            .map((ev) => `${EVENT_LABELS[ev.event_type]} ${formatTime(ev.event_time)}`)
+            .map((ev) => `${EVENT_LABELS[ev.event_type]} ${formatTimeWithOriginal(ev)}`)
             .join(" · ");
           const zoneSummary = session.events
             .map((ev) => `${EVENT_LABELS[ev.event_type]} ${formatTime(ev.event_time)}: ${zoneLabel(ev)}`)
@@ -731,7 +746,7 @@ const OwnerIndividualReports = ({ companyId }: OwnerIndividualReportsProps) => {
       group.sessions.map((session) => [
         formatDate(group.dateKey),
         session.events
-          .map((ev) => `${EVENT_LABELS[ev.event_type]} ${formatTime(ev.event_time)}`)
+          .map((ev) => `${EVENT_LABELS[ev.event_type]} ${formatTimeWithOriginal(ev)}`)
           .join(" · "),
         session.workedMs > 0 ? formatDuration(session.workedMs) : "",
         session.events[0]?.source || "",
@@ -998,7 +1013,7 @@ const OwnerIndividualReports = ({ companyId }: OwnerIndividualReportsProps) => {
                                   <Badge variant="outline" className="capitalize">
                                     {EVENT_LABELS[event.event_type]}
                                   </Badge>
-                                  <span className="font-medium">{formatTime(event.event_time)}</span>
+                                  <span className="font-medium">{formatTimeWithOriginal(event)}</span>
                                   {canEdit && (
                                     <div className="flex gap-1">
                                       <Button
