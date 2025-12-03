@@ -71,6 +71,7 @@ const AdminView = () => {
   const [ownerClockStart, setOwnerClockStart] = useState<string | null>(null);
   const [ownerClockElapsed, setOwnerClockElapsed] = useState<number>(0);
   const [ownerClockPending, setOwnerClockPending] = useState(false);
+  const [companyLogo, setCompanyLogo] = useState<string | null>(membership?.company?.logo_url ?? null);
 
   const fetchCompanyStatus = useCallback(async () => {
     if (!companyId) return;
@@ -372,6 +373,22 @@ const AdminView = () => {
     fetchAllData();
   }, [companyId, fetchAllData]);
 
+  // Fallback para logo si no vino en el membership
+  useEffect(() => {
+    if (membership?.company?.logo_url) {
+      setCompanyLogo(membership.company.logo_url);
+      return;
+    }
+    const fetchLogo = async () => {
+      if (!companyId) return;
+      const { data, error } = await supabase.from("companies").select("logo_url").eq("id", companyId).maybeSingle();
+      if (!error && data?.logo_url) {
+        setCompanyLogo(data.logo_url);
+      }
+    };
+    fetchLogo();
+  }, [companyId, membership?.company?.logo_url]);
+
   useEffect(() => {
     if (!companyId) return;
     const interval = setInterval(() => {
@@ -637,10 +654,21 @@ const AdminView = () => {
               <BarChart3 className="w-6 h-6 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold">Dashboard</h1>
-              <p className="text-sm text-muted-foreground">
-                {membership?.company?.name ?? "Empresa sin nombre"}
-              </p>
+              <div className="flex items-center gap-2">
+                {companyLogo ? (
+                  <img
+                    src={companyLogo}
+                    alt={`Logo ${membership?.company?.name ?? ""}`}
+                    className="h-11 w-11 rounded object-contain border border-border/50 bg-white"
+                  />
+                ) : null}
+                <div>
+                  <h1 className="text-2xl font-bold">Dashboard</h1>
+                  <p className="text-sm text-muted-foreground">
+                    {membership?.company?.name ?? "Empresa sin nombre"}
+                  </p>
+                </div>
+              </div>
               <p className="text-xs text-muted-foreground flex items-center gap-2 mt-1">
                 {refreshing && <Loader2 className="w-3 h-3 animate-spin" />}
                 {lastUpdatedLabel

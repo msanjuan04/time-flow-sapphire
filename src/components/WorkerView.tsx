@@ -43,6 +43,8 @@ const WorkerView = () => {
   const membership = hookMembership ?? (fallbackMembership ?? null);
   const companyId = hookCompanyId ?? membership?.company_id ?? authCompany?.id ?? null;
   const companyName = membership?.company?.name ?? authCompany?.name ?? "GTiQ";
+  const companyLogo = membership?.company?.logo_url ?? authCompany?.logo_url ?? null;
+  const [logoUrl, setLogoUrl] = useState<string | null>(companyLogo ?? null);
   const navigate = useNavigate();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [status, setStatus] = useState<WorkerStatus>("out");
@@ -127,6 +129,22 @@ const WorkerView = () => {
       setActiveSession(null);
     }
   }, [companyId, user?.id]);
+
+  // Fallback para logo si no vino en el membership
+  useEffect(() => {
+    if (companyLogo) {
+      setLogoUrl(companyLogo);
+      return;
+    }
+    const fetchLogo = async () => {
+      if (!companyId) return;
+      const { data, error } = await supabase.from("companies").select("logo_url").eq("id", companyId).maybeSingle();
+      if (!error && data?.logo_url) {
+        setLogoUrl(data.logo_url);
+      }
+    };
+    fetchLogo();
+  }, [companyId, companyLogo]);
 
   const toNumberOrNull = (value: any) => {
     const n = Number(value);
@@ -633,9 +651,18 @@ const WorkerView = () => {
               <User className="w-6 h-6 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-xl font-bold">
-                {companyName}
-              </h1>
+              <div className="flex items-center gap-2">
+                {logoUrl ? (
+                  <img
+                    src={logoUrl}
+                    alt={`Logo ${companyName}`}
+                    className="h-10 w-10 rounded object-contain border border-border/50 bg-white"
+                  />
+                ) : null}
+                <h1 className="text-xl font-bold">
+                  {companyName}
+                </h1>
+              </div>
               <p className="text-sm text-muted-foreground">Control de fichaje</p>
             </div>
           </div>

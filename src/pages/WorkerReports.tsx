@@ -521,7 +521,16 @@ const WorkerReports = () => {
             </div>
             <div>
               <h1 className="text-2xl font-bold">Mis Informes</h1>
-              <p className="text-sm text-muted-foreground">Control de horas trabajadas</p>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                {membership?.company?.logo_url ? (
+                  <img
+                    src={membership.company.logo_url}
+                    alt={`Logo ${membership.company.name ?? ""}`}
+                    className="h-10 w-10 rounded object-contain border border-border/50 bg-white"
+                  />
+                ) : null}
+                <span>{membership?.company?.name ?? "Control de horas trabajadas"}</span>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">

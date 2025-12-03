@@ -18,6 +18,9 @@ interface AuthTokens {
 interface MembershipCompany {
   id: string;
   name?: string | null;
+  status?: string | null;
+  plan?: string | null;
+  logo_url?: string | null;
 }
 
 export type Role = "owner" | "admin" | "manager" | "worker";
@@ -34,6 +37,7 @@ interface Company {
   name: string | null;
   status: string | null;
   plan: string | null;
+  logo_url?: string | null;
 }
 
 interface AuthContextType {
@@ -226,7 +230,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         id: m.id,
         company_id: m.company_id,
         role: m.role as Role,
-        company: m.company ?? null,
+        company: m.company
+          ? {
+              id: m.company.id,
+              name: (m.company as any).name ?? null,
+              status: (m.company as any).status ?? null,
+              plan: (m.company as any).plan ?? null,
+              logo_url: (m.company as any).logo_url ?? null,
+            }
+          : null,
       }));
 
       const companyData: Company | null = payload.company
@@ -235,6 +247,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             name: payload.company.name ?? null,
             status: payload.company.status ?? null,
             plan: payload.company.plan ?? null,
+            logo_url: payload.company.logo_url ?? null,
           }
         : null;
 

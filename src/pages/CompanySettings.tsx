@@ -45,15 +45,29 @@ const CompanySettings = () => {
   const [searching, setSearching] = useState(false);
   const [locating, setLocating] = useState(false);
   const [maxShiftHours, setMaxShiftHours] = useState<string>("");
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const fetchCompany = async () => {
       if (!companyId) return;
-      const { data, error } = await supabase
-        .from("companies")
-        .select("name, hq_lat, hq_lng, max_shift_hours")
-        .eq("id", companyId)
-        .maybeSingle();
+      const load = async (withLogo: boolean) =>
+        supabase
+          .from("companies")
+          .select(
+            withLogo ? "name, hq_lat, hq_lng, max_shift_hours, logo_url" : "name, hq_lat, hq_lng, max_shift_hours"
+          )
+          .eq("id", companyId)
+          .maybeSingle();
+
+      let { data, error } = await load(true);
+
+      // Si la columna logo_url aún no existe en la BD, reintenta sin ella para no romper la vista.
+      if (error && (error.code === "42703" || `${error.message}`.toLowerCase().includes("logo_url"))) {
+        console.warn("logo_url column missing, retrying without it. Add it in Supabase.");
+        ({ data, error } = await load(false));
+      }
 
       if (error) {
         console.error("Error loading company data", error);
@@ -70,6 +84,9 @@ const CompanySettings = () => {
             ? String(Number(data.max_shift_hours))
             : ""
         );
+        // Si la columna no existe, data no trae logo_url; mantenemos lo que haya.
+        // @ts-expect-error: logo_url puede no venir si la columna no existe aún
+        setLogoUrl(data.logo_url ?? null);
       }
     };
 
@@ -153,6 +170,55 @@ const CompanySettings = () => {
       },
       { enableHighAccuracy: true, timeout: 8000 }
     );
+  };
+
+  const handleLogoUpload = async (file: File) => {
+    if (!companyId) {
+      toast.error("No se encontró la empresa activa");
+      return;
+    }
+    setUploadingLogo(true);
+    try {
+      if (!["image/png", "image/jpeg", "image/jpg", "image/webp"].includes(file.type)) {
+        toast.error("Solo se admiten imágenes PNG/JPG/WebP");
+        setUploadingLogo(false);
+        return;
+      }
+      const ext = file.name.split(".").pop() || "png";
+      const path = `${companyId}/${crypto.randomUUID()}.${ext}`;
+      const { error: uploadError } = await supabase.storage.from("company-logos").upload(path, file, {
+        upsert: true,
+        cacheControl: "3600",
+      });
+      if (uploadError) throw uploadError;
+      const { data: publicData } = supabase.storage.from("company-logos").getPublicUrl(path);
+      const publicUrl = publicData.publicUrl;
+      const { error: updateError } = await supabase
+        .from("companies")
+        .update({ logo_url: publicUrl })
+        .eq("id", companyId);
+      if (updateError) throw updateError;
+      setLogoUrl(publicUrl);
+      toast.success("Logo actualizado");
+    } catch (error) {
+      console.error("Logo upload error", error);
+      toast.error("No pudimos subir el logo");
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    if (!companyId) return;
+    try {
+      const { error } = await supabase.from("companies").update({ logo_url: null }).eq("id", companyId);
+      if (error) throw error;
+      setLogoUrl(null);
+      toast.success("Logo eliminado");
+    } catch (error) {
+      console.error("Remove logo error", error);
+      toast.error("No pudimos eliminar el logo");
+    }
   };
 
   const handleSearch = async () => {
@@ -250,6 +316,54 @@ const CompanySettings = () => {
         </div>
 
         <OwnerQuickNav />
+
+        <Card className="glass-card p-6">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
+                {logoUrl ? (
+                  <img src={logoUrl} alt="Logo" className="w-11 h-11 object-contain rounded" />
+                ) : (
+                  <Shield className="w-6 h-6 text-primary" />
+                )}
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold">Logo de la empresa</h2>
+                <p className="text-sm text-muted-foreground">Sube o cambia el logo para owners y workers.</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              {logoUrl && (
+                <Button variant="outline" onClick={handleRemoveLogo} disabled={!canEdit || uploadingLogo}>
+                  Quitar logo
+                </Button>
+              )}
+              <Input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={!canEdit || uploadingLogo}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    handleLogoUpload(file);
+                  } else {
+                    toast.error("No se seleccionó ningún archivo");
+                  }
+                }}
+              />
+              <Button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!canEdit || uploadingLogo}
+              >
+                {uploadingLogo ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                {logoUrl ? "Cambiar logo" : "Subir logo"}
+              </Button>
+            </div>
+          </div>
+        </Card>
 
         <Card className="glass-card p-6 space-y-4">
           <div className="flex flex-col gap-2">

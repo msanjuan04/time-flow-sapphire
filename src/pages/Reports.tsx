@@ -1749,9 +1749,16 @@ const Reports = () => {
             </div>
             <div>
               <h1 className="text-2xl font-bold">Reportes y Métricas</h1>
-              <p className="text-sm text-muted-foreground">
-                {membership?.company.name}
-              </p>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                {membership?.company?.logo_url ? (
+                  <img
+                    src={membership.company.logo_url}
+                    alt={`Logo ${membership.company.name ?? ""}`}
+                    className="h-10 w-10 rounded object-contain border border-border/50 bg-white"
+                  />
+                ) : null}
+                <span>{membership?.company?.name}</span>
+              </div>
             </div>
           </div>
           <div className="flex flex-wrap gap-2 w-full md:w-auto justify-start md:justify-end">

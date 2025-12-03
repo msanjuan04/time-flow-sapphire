@@ -13,6 +13,7 @@ interface Membership {
     name: string;
     status?: string | null;
     plan?: string | null;
+    logo_url?: string | null;
   } | null;
 }
 
@@ -44,7 +45,7 @@ export const useMembership = () => {
         id,
         role,
         company_id,
-        company:companies(id, name, status, plan)
+        company:companies(id, name, status, plan, logo_url)
       `)
       .eq("user_id", userId);
 
@@ -73,7 +74,10 @@ export const useMembership = () => {
 
       const cachedList = (cachedMemberships as Membership[]) || [];
       const hasCachedMemberships = cachedList.length > 0;
-      const cachedHasCompanyInfo = cachedList.every((m) => !!m.company);
+      // Si la compañía viene sin logo_url u otras props, forzamos refetch
+      const cachedHasCompanyInfo = cachedList.every(
+        (m) => !!m.company && Object.prototype.hasOwnProperty.call(m.company, "logo_url")
+      );
 
       // First, try to use the memberships we already have in AuthContext
       if (hasCachedMemberships) {
@@ -126,6 +130,34 @@ export const useMembership = () => {
 
     resolveMemberships();
   }, [user, cachedMemberships]);
+
+  // Rellena logo_url/otros campos si faltan en el membership activo
+  useEffect(() => {
+    const hydrateCompanyInfo = async () => {
+      const active = activeMembership;
+      if (!active || active.company?.logo_url) return;
+      try {
+        const { data, error } = await supabase
+          .from("companies")
+          .select("id, name, status, plan, logo_url")
+          .eq("id", active.company_id)
+          .maybeSingle();
+        if (error || !data) return;
+        const updated = memberships.map((m) =>
+          m.company_id === active.company_id
+            ? { ...m, company: { ...(m.company ?? {}), ...data } }
+            : m
+        );
+        setMemberships(updated);
+        const refreshedActive = updated.find((m) => m.company_id === active.company_id) ?? null;
+        setActiveMembership(refreshedActive);
+      } catch (err) {
+        console.error("hydrateCompanyInfo error", err);
+      }
+    };
+    hydrateCompanyInfo();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMembership?.company_id, activeMembership?.company?.logo_url]);
 
   const switchCompany = (companyId: string) => {
     const newMembership = memberships.find(m => m.company_id === companyId);
