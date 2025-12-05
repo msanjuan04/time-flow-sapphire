@@ -77,7 +77,9 @@ const Devices = () => {
   const [showNewDevice, setShowNewDevice] = useState(false);
   const [showQRDialog, setShowQRDialog] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState<Device | null>(null);
-  // Modo kiosko único (auth clásico)
+  const [kioskMode, setKioskMode] = useState<"auth" | "free">("auth");
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>("");
 
   // Form state
   const [deviceName, setDeviceName] = useState("");

@@ -45,7 +45,7 @@ export const useMembership = () => {
         id,
         role,
         company_id,
-        company:companies(id, name, status, plan, logo_url)
+        company:companies(id, name, status, plan, logo_url, keep_sessions_open)
       `)
       .eq("user_id", userId);
 

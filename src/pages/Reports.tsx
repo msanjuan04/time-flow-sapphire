@@ -1614,7 +1614,7 @@ const Reports = () => {
   const exportMonthlyCSV = async (monthInfo: { ym: string; first: string; last: string }, centerId: string) => {
     const center = centers.find((c) => c.id === centerId);
     const label = center?.name ? center.name.replace(/\s+/g, "_") : "centro";
-    const headers = ["Fecha", "Hora", "Turno", "Empleado", "Email", "Tipo", "Notas", "En zona"];
+    const headers = ["Fecha", "Hora", "Turno", "Empleado", "Email", "Tipo", "Notas", "En zona", "Centro"];
     const { data, error } = await supabase
       .from("time_events")
       .select("id, event_time, event_type, notes, is_within_geofence, user_id, profiles!inner(full_name,email,center_id)")
@@ -1633,6 +1633,8 @@ const Reports = () => {
     if (data) {
       // Calcula número de turno por día/empleado contando clock_in
       const sessionIndex = new Map<string, number>();
+      // Mantén último estado de geozona por usuario para rellenar eventos sin dato
+      const lastGeoByUser = new Map<string, boolean | null>();
       data.forEach((ev) => {
         const dateKey = ev.event_time.slice(0, 10);
         const key = `${ev.user_id}-${dateKey}`;
@@ -1643,6 +1645,12 @@ const Reports = () => {
           sessionIndex.set(key, 1);
         }
         const turno = sessionIndex.get(key) || 1;
+        const currentGeo =
+          ev.is_within_geofence === null || typeof ev.is_within_geofence === "undefined"
+            ? lastGeoByUser.get(ev.user_id) ?? null
+            : ev.is_within_geofence;
+        lastGeoByUser.set(ev.user_id, currentGeo);
+        const geoLabel = currentGeo === null ? "Sin dato" : currentGeo ? "Dentro" : "Fuera";
         rows.push([
           dateKey,
           new Date(ev.event_time).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }),
@@ -1650,8 +1658,9 @@ const Reports = () => {
           (ev as any).profiles?.full_name || (ev as any).profiles?.email || "",
           (ev as any).profiles?.email || "",
           EVENT_LABELS[ev.event_type] || ev.event_type,
-          ev.notes || "",
-          ev.is_within_geofence === null ? "N/D" : ev.is_within_geofence ? "Sí" : "No",
+          ev.notes || "—",
+          geoLabel,
+          center?.name || "",
         ]);
       });
     }

@@ -6,6 +6,15 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toast } from "sonner";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -45,9 +54,13 @@ const CompanySettings = () => {
   const [searching, setSearching] = useState(false);
   const [locating, setLocating] = useState(false);
   const [maxShiftHours, setMaxShiftHours] = useState<string>("");
+  const [keepSessionsOpen, setKeepSessionsOpen] = useState<boolean>(false);
+  const [keepSessionsDays, setKeepSessionsDays] = useState<number>(5);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [showKeepSessionsModal, setShowKeepSessionsModal] = useState(false);
+  const pendingKeepSessionsValue = useRef<boolean>(false);
 
   useEffect(() => {
     const fetchCompany = async () => {
@@ -56,7 +69,9 @@ const CompanySettings = () => {
         supabase
           .from("companies")
           .select(
-            withLogo ? "name, hq_lat, hq_lng, max_shift_hours, logo_url" : "name, hq_lat, hq_lng, max_shift_hours"
+            withLogo
+              ? "name, hq_lat, hq_lng, max_shift_hours, logo_url, keep_sessions_open, keep_sessions_days"
+              : "name, hq_lat, hq_lng, max_shift_hours"
           )
           .eq("id", companyId)
           .maybeSingle();
@@ -64,8 +79,13 @@ const CompanySettings = () => {
       let { data, error } = await load(true);
 
       // Si la columna logo_url aún no existe en la BD, reintenta sin ella para no romper la vista.
-      if (error && (error.code === "42703" || `${error.message}`.toLowerCase().includes("logo_url"))) {
-        console.warn("logo_url column missing, retrying without it. Add it in Supabase.");
+      if (
+        error &&
+        (error.code === "42703" ||
+          `${error.message}`.toLowerCase().includes("logo_url") ||
+          `${error.message}`.toLowerCase().includes("keep_sessions_open"))
+      ) {
+        console.warn("Alguna columna falta (logo_url/keep_sessions_open), reintentando sin ella. Añádela en Supabase.");
         ({ data, error } = await load(false));
       }
 
@@ -84,6 +104,12 @@ const CompanySettings = () => {
             ? String(Number(data.max_shift_hours))
             : ""
         );
+        if (typeof data.keep_sessions_open === "boolean") {
+          setKeepSessionsOpen(Boolean(data.keep_sessions_open));
+        }
+        if (typeof data.keep_sessions_days === "number" && !Number.isNaN(data.keep_sessions_days)) {
+          setKeepSessionsDays(data.keep_sessions_days);
+        }
         // Si la columna no existe, data no trae logo_url; mantenemos lo que haya.
         // @ts-expect-error: logo_url puede no venir si la columna no existe aún
         setLogoUrl(data.logo_url ?? null);
@@ -299,11 +325,44 @@ const CompanySettings = () => {
     }
   };
 
+  const updateKeepSessions = async (value: boolean) => {
+    if (!companyId) return;
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from("companies")
+        .update({ keep_sessions_open: value, keep_sessions_days: keepSessionsDays })
+        .eq("id", companyId);
+      if (error) throw error;
+      setKeepSessionsOpen(value);
+      toast.success(
+        value
+          ? "Sesiones mantenidas activadas (máximo 5 días)."
+          : "Sesiones mantenidas desactivadas."
+      );
+    } catch (error) {
+      console.error("Error actualizando sesiones mantenidas", error);
+      toast.error("No pudimos actualizar esta opción");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleKeepSessionsToggle = (checked: boolean) => {
+    if (checked) {
+      pendingKeepSessionsValue.current = true;
+      setShowKeepSessionsModal(true);
+    } else {
+      updateKeepSessions(false);
+    }
+  };
+
   const canEdit = role === "owner" || role === "admin";
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
-      <div className="max-w-5xl mx-auto space-y-6 pt-8">
+    <>
+      <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
+        <div className="max-w-5xl mx-auto space-y-6 pt-8">
         <div className="flex items-center gap-3">
           <BackButton />
           <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
@@ -446,6 +505,32 @@ const CompanySettings = () => {
         <Card className="glass-card p-6 space-y-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center shadow-sm">
+              <Shield className="w-5 h-5" />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-lg font-semibold">Mantener sesión de trabajadores hasta 5 días</h2>
+                  <p className="text-sm text-muted-foreground">
+                    Permite que sus sesiones sigan iniciadas un máximo de 5 días desde el último login.
+                  </p>
+                </div>
+                <Switch
+                  checked={keepSessionsOpen}
+                  onCheckedChange={handleKeepSessionsToggle}
+                  disabled={!canEdit || saving}
+                />
+              </div>
+              {!canEdit && (
+                <p className="text-xs text-muted-foreground mt-2">Solo los owners/admin pueden modificar esta opción.</p>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        <Card className="glass-card p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center shadow-sm">
               <Timer className="w-5 h-5" />
             </div>
             <div>
@@ -483,6 +568,55 @@ const CompanySettings = () => {
 
       </div>
     </div>
+      <Dialog
+        open={showKeepSessionsModal}
+        onOpenChange={(open) => {
+          setShowKeepSessionsModal(open);
+          if (!open) pendingKeepSessionsValue.current = false;
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>⚠️ Activar sesiones mantenidas</DialogTitle>
+            <DialogDescription className="space-y-2">
+              <p>
+                Si activas esta opción, los trabajadores de tu empresa podrán mantener su sesión iniciada hasta 5 días seguidos sin volver a introducir su código.
+              </p>
+              <ul className="list-disc pl-4 text-sm space-y-1">
+                <li>En dispositivos compartidos puede haber confusiones y fichar con la sesión de otra persona.</li>
+                <li>Si se pierde un móvil o alguien deja la empresa, cierra sus sesiones desde el panel.</li>
+                <li>Opción pensada para móviles personales, no para tablets compartidas tipo kiosko.</li>
+              </ul>
+              <p className="text-sm">
+                Al continuar, aceptas que eres responsable del uso de esta opción en tu empresa.
+              </p>
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowKeepSessionsModal(false);
+                pendingKeepSessionsValue.current = false;
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => {
+                setShowKeepSessionsModal(false);
+                if (pendingKeepSessionsValue.current) {
+                  updateKeepSessions(true);
+                  pendingKeepSessionsValue.current = false;
+                }
+              }}
+            >
+              Entiendo y quiero activarlo
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 };
 

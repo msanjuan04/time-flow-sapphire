@@ -22,12 +22,15 @@ interface Worker {
   id: string;
   full_name: string | null;
   email: string | null;
+  company_id: string;
+  is_active?: boolean;
 }
 
 interface Schedule {
   worker_id: string;
   start_time: string;
   end_time: string;
+  company_id?: string | null;
 }
 
 function addMinutes(date: Date, minutes: number) {
@@ -79,17 +82,28 @@ function getNowTz() {
 }
 
 async function fetchActiveWorkers(): Promise<Worker[]> {
-  // Ajusta el nombre de tabla/columna según tu esquema; aquí usamos "profiles"
-  const { data, error } = await supabase.from("profiles").select("id, full_name, email");
+  // Usa memberships para obtener company_id y filtra perfiles activos
+  const { data, error } = await supabase
+    .from("memberships")
+    .select("company_id, user_id:profiles(id, full_name, email, is_active)")
+    .eq("role", "worker");
   if (error) throw error;
-  return data as Worker[];
+  return (data || [])
+    .map((row: any) => ({
+      id: row.user_id?.id,
+      full_name: row.user_id?.full_name ?? null,
+      email: row.user_id?.email ?? null,
+      company_id: row.company_id,
+      is_active: row.user_id?.is_active ?? true,
+    }))
+    .filter((w: Worker) => !!w.id && !!w.company_id && w.is_active);
 }
 
 async function fetchSchedules(workerIds: string[], weekday: number): Promise<Schedule[]> {
   if (workerIds.length === 0) return [];
   const { data, error } = await supabase
     .from("worker_schedules")
-    .select("worker_id, start_time, end_time")
+    .select("worker_id, start_time, end_time, company_id")
     .in("worker_id", workerIds)
     .eq("weekday", weekday);
   if (error) throw error;
@@ -114,14 +128,15 @@ async function fetchAbsences(workerIds: string[], dateISO: string): Promise<Set<
   return new Set((data || []).map((row) => row.worker_id));
 }
 
-async function hasClockIn(workerId: string, from: Date, to: Date) {
+async function hasClockIn(workerId: string, companyId: string, from: Date, to: Date) {
   const { data, error } = await supabase
-    .from("clock_events")
+    .from("time_events")
     .select("id")
     .eq("worker_id", workerId)
-    .eq("clock_type", "in")
-    .gte("clocked_at", from.toISOString())
-    .lte("clocked_at", to.toISOString())
+    .eq("company_id", companyId)
+    .eq("event_type", "clock_in")
+    .gte("event_time", from.toISOString())
+    .lte("event_time", to.toISOString())
     .limit(1)
     .maybeSingle();
   if (error) throw error;
@@ -150,7 +165,11 @@ async function insertReminder(workerId: string, dateISO: string, shiftStart: str
 }
 
 async function sendReminderEmail(worker: Worker) {
-  if (!worker.email || !RESEND_API_KEY) return;
+  if (!worker.email) return;
+  if (!RESEND_API_KEY) {
+    console.error("RESEND_API_KEY missing, cannot send email");
+    return;
+  }
   const response = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: {
@@ -216,11 +235,14 @@ serve(async () => {
 
         if (now < reminderTime || now > reminderWindowEnd) continue;
 
+        // Usa company_id del schedule si existe, si no del worker
+        const companyId = sch.company_id || worker.company_id;
+
         const alreadyReminded = await hasReminder(worker.id, dateISO, sch.start_time);
         if (alreadyReminded) continue;
 
         const windowStart = addMinutes(startDateTime, -30);
-        const hasIn = await hasClockIn(worker.id, windowStart, reminderTime);
+        const hasIn = await hasClockIn(worker.id, companyId, windowStart, reminderTime);
         if (hasIn) continue;
 
         await insertReminder(worker.id, dateISO, sch.start_time);
