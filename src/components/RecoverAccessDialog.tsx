@@ -55,6 +55,7 @@ export const RecoverAccessDialog = ({ open, onOpenChange }: RecoverAccessDialogP
     setSubmitting(true);
     try {
       const { data, error: fnError } = await supabase.functions.invoke("request-login-code", {
+        headers: { "Content-Type": "application/json" },
         body: { email },
       });
 

@@ -12,38 +12,33 @@ const RATE_LIMIT_MINUTES = 15;
 const MAX_REQUESTS_PER_WINDOW = 3;
 
 serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return handleCorsOptions();
-  }
-
-  if (req.method !== "POST") {
-    return createErrorResponse("Method not allowed", 405);
-  }
+  if (req.method === "OPTIONS") return handleCorsOptions();
+  if (req.method !== "POST") return createErrorResponse("Method not allowed", 405);
 
   try {
-    const body: RecoverRequestBody = await req.json().catch(() => ({ email: "" }));
-    const email = (body.email || "").toLowerCase().trim();
+    const body: RecoverRequestBody | null = await req.json().catch(() => null);
+    const email = (body?.email || "").toLowerCase().trim();
 
     if (!email || !EMAIL_REGEX.test(email)) {
       return createErrorResponse("Email inválido", 400);
     }
 
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!serviceRoleKey) {
-      console.error("Missing SUPABASE_SERVICE_ROLE_KEY environment variable");
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error("Missing Supabase environment variables", {
+        hasUrl: !!supabaseUrl,
+        hasServiceRoleKey: !!serviceRoleKey,
+      });
       return createErrorResponse("Misconfigured server", 500);
     }
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      serviceRoleKey,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false,
-        },
-      }
-    );
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    });
 
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
@@ -105,12 +100,16 @@ serve(async (req) => {
       const resendApiKey = Deno.env.get("RESEND_API_KEY");
       const fromEmail = Deno.env.get("EMAIL_FROM") || "GTiQ <no-reply@gtiq.local>";
       if (resendApiKey) {
+        // Evita bloqueos si el proveedor de email tarda demasiado
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 8000);
         await fetch("https://api.resend.com/emails", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${resendApiKey}`,
             "Content-Type": "application/json",
           },
+          signal: controller.signal,
           body: JSON.stringify({
             from: fromEmail,
             to: profile.email,
@@ -124,7 +123,13 @@ serve(async (req) => {
               </div>
             `,
           }),
-        });
+        }).catch((err) => {
+          if (err?.name === "AbortError") {
+            console.warn("Email send aborted due to timeout");
+          } else {
+            throw err;
+          }
+        }).finally(() => clearTimeout(timeout));
       } else {
         console.warn("RESEND_API_KEY not configured; skipping email send.");
       }

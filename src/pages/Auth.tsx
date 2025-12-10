@@ -39,16 +39,26 @@ const Auth = () => {
           ? "Código incorrecto o expirado"
           : error === "INVALID_CODE_FORMAT"
             ? "El código debe tener 6 dígitos"
+            : error === "SESSION_VERIFICATION_FAILED"
+              ? "No se pudo verificar la sesión. Intenta de nuevo."
+            : error === "SESSION_SET_FAILED"
+              ? "No se pudo establecer la sesión. Intenta de nuevo."
+            : error === "NO_SESSION_TOKENS"
+              ? "No se recibieron tokens de sesión. Intenta de nuevo."
+            : error === "NETWORK_ERROR"
+              ? "Error de conexión. Verifica tu internet e intenta de nuevo."
             : "No se pudo crear la sesión. Intenta de nuevo.";
         toast.error(message);
+        setSubmitting(false);
         return;
       }
 
       toast.success("¡Bienvenido de nuevo!");
+      // La navegación se maneja en AuthContext
     } catch (error) {
+      console.error("Error inesperado en login:", error);
       const message = error instanceof Error ? error.message : "Error inesperado";
       toast.error(message);
-    } finally {
       setSubmitting(false);
     }
   };

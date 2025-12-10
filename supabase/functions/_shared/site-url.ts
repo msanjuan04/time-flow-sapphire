@@ -8,10 +8,10 @@ const normalizeUrl = (value?: string | null) => {
   return `https://${trimmed.replace(/\/$/, "")}`;
 };
 
-const isUsableUrl = (value?: string | null) => {
+const isUsableUrl = (value?: string | null, allowLocalhost = false) => {
   const normalized = normalizeUrl(value);
   if (!normalized) return null;
-  if (normalized.includes("localhost")) return null;
+  if (!allowLocalhost && normalized.includes("localhost")) return null;
   return normalized;
 };
 
@@ -23,8 +23,8 @@ const getEnv = (key: string) => {
   return denoEnv?.get(key) ?? undefined;
 };
 
-export const resolveSiteUrl = (req?: Request) => {
-  const protoHeader = req?.headers.get("x-forwarded-proto") || "https";
+export const resolveSiteUrl = (req?: Request, allowLocalhost = false) => {
+  const protoHeader = req?.headers.get("x-forwarded-proto") || (allowLocalhost ? "http" : "https");
   const forwardedHost = req?.headers.get("x-forwarded-host");
   const headerHostUrl = forwardedHost ? `${protoHeader}://${forwardedHost}` : null;
 
@@ -38,13 +38,27 @@ export const resolveSiteUrl = (req?: Request) => {
     headerHostUrl,
   ];
 
+  // First try without localhost
   for (const candidate of candidates) {
-    const usable = isUsableUrl(candidate);
+    const usable = isUsableUrl(candidate, false);
     if (usable) {
       return usable;
     }
   }
 
+  // If allowLocalhost and no production URL found, try with localhost
+  if (allowLocalhost) {
+    for (const candidate of candidates) {
+      const usable = isUsableUrl(candidate, true);
+      if (usable) {
+        return usable;
+      }
+    }
+    // Last resort: use localhost
+    return "http://localhost:8081";
+  }
+
   return FALLBACK_PRODUCTION_URL;
 };
+
 

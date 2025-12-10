@@ -153,8 +153,16 @@ export function extractRequestMetadata(req: Request): {
   ip: string | null;
   user_agent: string | null;
 } {
+  const rawForwarded = req.headers.get("x-forwarded-for");
+  // Take the first IP if the header contains a comma-separated list
+  const firstForwarded = rawForwarded
+    ? rawForwarded.split(",")[0]?.trim() || null
+    : null;
+
+  const realIp = req.headers.get("x-real-ip");
+
   return {
-    ip: req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || null,
+    ip: firstForwarded || realIp || null,
     user_agent: req.headers.get("user-agent") || null,
   };
 }

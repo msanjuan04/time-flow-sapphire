@@ -77,3 +77,6 @@ verify_jwt = true
 
 [functions.admin-example]
 verify_jwt = true
+
+[functions.request-login-code]
+verify_jwt = false

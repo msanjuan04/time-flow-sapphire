@@ -329,7 +329,17 @@ const CompanySettings = () => {
       const { error } = await supabase.from("companies").update(payload).eq("id", companyId);
 
       if (error) throw error;
-      toast.success("Configuración guardada");
+      
+      // Determinar qué se guardó para mostrar mensaje apropiado
+      const hasLocation = hqLat !== null && hqLng !== null;
+      const hasMaxHours = normalized !== "";
+      const hasClockRules = true; // Siempre se guardan las reglas de fichaje
+      
+      if (hasLocation || hasMaxHours || hasClockRules) {
+        toast.success("Configuración guardada correctamente");
+      } else {
+        toast.success("Configuración guardada");
+      }
     } catch (err) {
       console.error(err);
       toast.error("No pudimos guardar la configuración");
@@ -544,61 +554,84 @@ const CompanySettings = () => {
         <Card className="glass-card p-6 space-y-4">
           <div className="flex items-center gap-3">
             <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center shadow-sm">
-              <Shield className="w-5 h-5" />
+              <Timer className="w-5 h-5" />
             </div>
             <div className="flex-1 space-y-1">
               <h2 className="text-lg font-semibold">Reglas de fichaje</h2>
               <p className="text-sm text-muted-foreground">
-                Define cuántos minutos antes o después de la hora pueden fichar tus trabajadores.
+                Define cuántos minutos antes o después de la hora programada pueden fichar tus trabajadores. Si intentan fichar fuera de estos márgenes, verán un mensaje de error.
               </p>
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Entrada: minutos ANTES</Label>
+              <Label htmlFor="entry-early">Entrada: minutos ANTES</Label>
               <Input
+                id="entry-early"
                 type="number"
                 min={0}
                 value={entryEarly}
-                onChange={(e) => setEntryEarly(Math.max(0, Number(e.target.value)))}
+                onChange={(e) => setEntryEarly(Math.max(0, Number(e.target.value) || 0))}
                 placeholder="10"
+                disabled={!canEdit}
               />
+              <p className="text-xs text-muted-foreground">
+                Minutos antes de la hora de entrada programada
+              </p>
             </div>
             <div className="space-y-2">
-              <Label>Entrada: minutos DESPUÉS</Label>
+              <Label htmlFor="entry-late">Entrada: minutos DESPUÉS</Label>
               <Input
+                id="entry-late"
                 type="number"
                 min={0}
                 value={entryLate}
-                onChange={(e) => setEntryLate(Math.max(0, Number(e.target.value)))}
+                onChange={(e) => setEntryLate(Math.max(0, Number(e.target.value) || 0))}
                 placeholder="15"
+                disabled={!canEdit}
               />
+              <p className="text-xs text-muted-foreground">
+                Minutos después de la hora de entrada programada
+              </p>
             </div>
             <div className="space-y-2">
-              <Label>Salida: minutos ANTES</Label>
+              <Label htmlFor="exit-early">Salida: minutos ANTES</Label>
               <Input
+                id="exit-early"
                 type="number"
                 min={0}
                 value={exitEarly}
-                onChange={(e) => setExitEarly(Math.max(0, Number(e.target.value)))}
+                onChange={(e) => setExitEarly(Math.max(0, Number(e.target.value) || 0))}
                 placeholder="10"
+                disabled={!canEdit}
               />
+              <p className="text-xs text-muted-foreground">
+                Minutos antes de la hora de salida programada
+              </p>
             </div>
             <div className="space-y-2">
-              <Label>Salida: minutos DESPUÉS</Label>
+              <Label htmlFor="exit-late">Salida: minutos DESPUÉS</Label>
               <Input
+                id="exit-late"
                 type="number"
                 min={0}
                 value={exitLate}
-                onChange={(e) => setExitLate(Math.max(0, Number(e.target.value)))}
+                onChange={(e) => setExitLate(Math.max(0, Number(e.target.value) || 0))}
                 placeholder="15"
+                disabled={!canEdit}
               />
+              <p className="text-xs text-muted-foreground">
+                Minutos después de la hora de salida programada
+              </p>
             </div>
           </div>
+          {!canEdit && (
+            <p className="text-xs text-muted-foreground">Solo los owners/admin pueden modificar estas reglas.</p>
+          )}
           <div className="flex justify-end">
             <Button onClick={handleSave} disabled={!canEdit || saving}>
               {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
-              Guardar cambios
+              Guardar reglas de fichaje
             </Button>
           </div>
         </Card>
@@ -641,8 +674,8 @@ const CompanySettings = () => {
           </div>
         </Card>
 
+        </div>
       </div>
-    </div>
       <Dialog
         open={showKeepSessionsModal}
         onOpenChange={(open) => {

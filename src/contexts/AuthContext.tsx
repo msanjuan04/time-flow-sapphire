@@ -249,12 +249,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const signInWithCode = async (code: string): Promise<{ error: string | null }> => {
-    if (!/^\d{6}$/.test(code)) {
+    const normalizedCode = typeof code === "string" ? code.replace(/\D/g, "").trim() : "";
+
+    if (!/^\d{6}$/.test(normalizedCode)) {
       return { error: "INVALID_CODE_FORMAT" };
     }
 
     try {
-      console.log("Attempting login with code:", code);
+      console.log("Attempting login with code:", normalizedCode);
       const response = await fetch(`${SUPABASE_BASE_URL}/functions/v1/login-with-code`, {
         method: "POST",
         headers: {
@@ -264,7 +266,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
           } : {}),
         },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code: normalizedCode }),
       });
 
       const payload = await response
@@ -299,40 +301,72 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         console.log("Session established successfully with direct tokens");
       } else if (tokenHash || bareToken) {
-        console.log("Verifying OTP token to establish session");
+        console.log("Verifying OTP token to establish session", { 
+          hasTokenHash: !!tokenHash, 
+          hasBareToken: !!bareToken,
+          userEmail: payload.user?.email 
+        });
 
         try {
-          const verifyPayload: Parameters<typeof supabase.auth.verifyOtp>[0] = tokenHash
+          const email = payload.user?.email;
+          if (!email) {
+            throw new Error("Missing email for OTP verification");
+          }
+
+          // Prefer bare token over token_hash as it's more reliable
+          // When using token_hash, only token_hash and type should be provided (no email)
+          // When using token, both token and email are required
+          const verifyPayload: Parameters<typeof supabase.auth.verifyOtp>[0] = bareToken
+            ? {
+                type: (payload.verification_type || "magiclink") as "magiclink" | "email" | "recovery",
+                token: bareToken as string,
+                email: email,
+              }
+            : tokenHash
             ? {
                 type: (payload.verification_type || "magiclink") as "magiclink" | "email" | "recovery",
                 token_hash: tokenHash,
+                // NO email when using token_hash - Supabase requirement
               }
-            : (() => {
-                const email = payload.user?.email;
-                if (!email) {
-                  throw new Error("Missing email for OTP verification");
-                }
-                return {
-                  type: (payload.verification_type || "magiclink") as "magiclink" | "email" | "recovery",
-                  token: bareToken as string,
-                  email,
-                };
-              })();
+            : null;
 
+          if (!verifyPayload) {
+            throw new Error("No token available for verification");
+          }
+
+          console.log("Calling verifyOtp with payload type:", verifyPayload.type, "using:", bareToken ? "token" : "token_hash");
           const { data: sessionData, error: verifyError } = await supabase.auth.verifyOtp(verifyPayload);
 
-          if (verifyError || !sessionData.session) {
-            console.error("Failed to verify token:", verifyError);
+          if (verifyError) {
+            console.error("Failed to verify token - error details:", {
+              message: verifyError.message,
+              status: verifyError.status,
+              name: verifyError.name
+            });
             return { error: "SESSION_VERIFICATION_FAILED" };
+          }
+
+          if (!sessionData?.session) {
+            console.error("verifyOtp succeeded but no session returned");
+            // Try to get session anyway
+            const { data: { session: fallbackSession } } = await supabase.auth.getSession();
+            if (!fallbackSession) {
+              console.error("No session available after verifyOtp");
+              return { error: "SESSION_VERIFICATION_FAILED" };
+            }
+            console.log("Session found via getSession fallback");
+          } else {
+            console.log("Session established successfully via OTP verification");
           }
         } catch (verificationError) {
           console.error("OTP verification setup failed:", verificationError);
+          if (verificationError instanceof Error) {
+            console.error("Error details:", verificationError.message, verificationError.stack);
+          }
           return { error: "SESSION_VERIFICATION_FAILED" };
         }
-
-        console.log("Session established successfully via OTP verification");
       } else {
-        console.error("No session tokens received from login-with-code");
+        console.error("No session tokens received from login-with-code", { payloadKeys: Object.keys(payload) });
         return { error: "NO_SESSION_TOKENS" };
       }
 
@@ -379,18 +413,38 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setCompany(nextState.company ?? null);
       persistState(nextState);
 
-      // Get the current session (should be set by verifyOtp)
-      const { data: { session } } = await supabase.auth.getSession();
+      // Get the current session (should be set by verifyOtp or setSession)
+      const { data: { session }, error: getSessionError } = await supabase.auth.getSession();
+      
+      if (getSessionError) {
+        console.error("Error getting session after login:", getSessionError);
+        return { error: "SESSION_VERIFICATION_FAILED" };
+      }
       
       if (session) {
-        console.log("Storing session tokens");
+        console.log("Storing session tokens", { 
+          hasAccessToken: !!session.access_token,
+          hasRefreshToken: !!session.refresh_token 
+        });
         persistTokens({
           access_token: session.access_token,
           refresh_token: session.refresh_token,
         });
       } else {
-        console.error("No session after verifyOtp");
-        return { error: "SESSION_VERIFICATION_FAILED" };
+        console.error("No session after verifyOtp/setSession - this should not happen");
+        // Wait a bit and try again - sometimes there's a race condition
+        await new Promise(resolve => setTimeout(resolve, 500));
+        const { data: { session: retrySession } } = await supabase.auth.getSession();
+        if (retrySession) {
+          console.log("Session found on retry");
+          persistTokens({
+            access_token: retrySession.access_token,
+            refresh_token: retrySession.refresh_token,
+          });
+        } else {
+          console.error("Still no session after retry");
+          return { error: "SESSION_VERIFICATION_FAILED" };
+        }
       }
 
       const resolved = resolveDefaultRoute(nextState.user, nextState.memberships, nextState.company);
