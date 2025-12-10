@@ -92,9 +92,9 @@ const Auth = () => {
             <Button
               type="submit"
               className="w-full smooth-transition"
-              disabled={loading || submitting || code.length !== 6}
+              disabled={submitting || code.length !== 6}
             >
-              {(loading || submitting) && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {submitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Entrar
             </Button>
           </form>

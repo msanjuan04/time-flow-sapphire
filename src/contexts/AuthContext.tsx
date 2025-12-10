@@ -388,6 +388,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           access_token: session.access_token,
           refresh_token: session.refresh_token,
         });
+      } else {
+        console.error("No session after verifyOtp");
+        return { error: "SESSION_VERIFICATION_FAILED" };
       }
 
       const resolved = resolveDefaultRoute(nextState.user, nextState.memberships, nextState.company);

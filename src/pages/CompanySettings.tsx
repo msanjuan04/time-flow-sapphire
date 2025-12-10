@@ -56,6 +56,10 @@ const CompanySettings = () => {
   const [maxShiftHours, setMaxShiftHours] = useState<string>("");
   const [keepSessionsOpen, setKeepSessionsOpen] = useState<boolean>(false);
   const [keepSessionsDays, setKeepSessionsDays] = useState<number>(5);
+  const [entryEarly, setEntryEarly] = useState<number>(10);
+  const [entryLate, setEntryLate] = useState<number>(15);
+  const [exitEarly, setExitEarly] = useState<number>(10);
+  const [exitLate, setExitLate] = useState<number>(15);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -70,7 +74,7 @@ const CompanySettings = () => {
           .from("companies")
           .select(
             withLogo
-              ? "name, hq_lat, hq_lng, max_shift_hours, logo_url, keep_sessions_open, keep_sessions_days"
+              ? "name, hq_lat, hq_lng, max_shift_hours, logo_url, keep_sessions_open, keep_sessions_days, entry_early_minutes, entry_late_minutes, exit_early_minutes, exit_late_minutes"
               : "name, hq_lat, hq_lng, max_shift_hours"
           )
           .eq("id", companyId)
@@ -110,6 +114,10 @@ const CompanySettings = () => {
         if (typeof data.keep_sessions_days === "number" && !Number.isNaN(data.keep_sessions_days)) {
           setKeepSessionsDays(data.keep_sessions_days);
         }
+        if (typeof data.entry_early_minutes === "number") setEntryEarly(data.entry_early_minutes);
+        if (typeof data.entry_late_minutes === "number") setEntryLate(data.entry_late_minutes);
+        if (typeof data.exit_early_minutes === "number") setExitEarly(data.exit_early_minutes);
+        if (typeof data.exit_late_minutes === "number") setExitLate(data.exit_late_minutes);
         // Si la columna no existe, data no trae logo_url; mantenemos lo que haya.
         // @ts-expect-error: logo_url puede no venir si la columna no existe aún
         setLogoUrl(data.logo_url ?? null);
@@ -312,6 +320,11 @@ const CompanySettings = () => {
         }
         payload.max_shift_hours = parsed;
       }
+
+      payload.entry_early_minutes = entryEarly;
+      payload.entry_late_minutes = entryLate;
+      payload.exit_early_minutes = exitEarly;
+      payload.exit_late_minutes = exitLate;
 
       const { error } = await supabase.from("companies").update(payload).eq("id", companyId);
 
@@ -525,6 +538,68 @@ const CompanySettings = () => {
                 <p className="text-xs text-muted-foreground mt-2">Solo los owners/admin pueden modificar esta opción.</p>
               )}
             </div>
+          </div>
+        </Card>
+
+        <Card className="glass-card p-6 space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center shadow-sm">
+              <Shield className="w-5 h-5" />
+            </div>
+            <div className="flex-1 space-y-1">
+              <h2 className="text-lg font-semibold">Reglas de fichaje</h2>
+              <p className="text-sm text-muted-foreground">
+                Define cuántos minutos antes o después de la hora pueden fichar tus trabajadores.
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Entrada: minutos ANTES</Label>
+              <Input
+                type="number"
+                min={0}
+                value={entryEarly}
+                onChange={(e) => setEntryEarly(Math.max(0, Number(e.target.value)))}
+                placeholder="10"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Entrada: minutos DESPUÉS</Label>
+              <Input
+                type="number"
+                min={0}
+                value={entryLate}
+                onChange={(e) => setEntryLate(Math.max(0, Number(e.target.value)))}
+                placeholder="15"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Salida: minutos ANTES</Label>
+              <Input
+                type="number"
+                min={0}
+                value={exitEarly}
+                onChange={(e) => setExitEarly(Math.max(0, Number(e.target.value)))}
+                placeholder="10"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Salida: minutos DESPUÉS</Label>
+              <Input
+                type="number"
+                min={0}
+                value={exitLate}
+                onChange={(e) => setExitLate(Math.max(0, Number(e.target.value)))}
+                placeholder="15"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button onClick={handleSave} disabled={!canEdit || saving}>
+              {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+              Guardar cambios
+            </Button>
           </div>
         </Card>
 

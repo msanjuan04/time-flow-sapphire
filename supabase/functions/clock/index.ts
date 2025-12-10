@@ -186,7 +186,21 @@ Deno.serve(async (req) => {
     // Get user's company membership
     let membershipQuery = supabaseAdmin
       .from('memberships')
-      .select('company_id, company:companies(id, name, status, hq_lat, hq_lng, max_shift_hours)')
+      .select(
+        `company_id,
+         company:companies(
+          id,
+          name,
+          status,
+          hq_lat,
+          hq_lng,
+          max_shift_hours,
+          entry_early_minutes,
+          entry_late_minutes,
+          exit_early_minutes,
+          exit_late_minutes
+        )`
+      )
       .eq('user_id', currentUserId);
     
     // If company_id is provided, filter by it
@@ -209,6 +223,10 @@ Deno.serve(async (req) => {
 
     const companyId = membership.company_id;
     const company = Array.isArray(membership.company) ? membership.company[0] : membership.company;
+    const entryEarly = Number.isFinite(company?.entry_early_minutes) ? Number(company.entry_early_minutes) : 10;
+    const entryLate = Number.isFinite(company?.entry_late_minutes) ? Number(company.entry_late_minutes) : 15;
+    const exitEarly = Number.isFinite(company?.exit_early_minutes) ? Number(company.exit_early_minutes) : 10;
+    const exitLate = Number.isFinite(company?.exit_late_minutes) ? Number(company.exit_late_minutes) : 15;
 
     // Check if company is active
     if (company?.status === 'suspended') {
@@ -275,7 +293,23 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Determine event type based on action
+    // Fetch horario programado para hoy (se reutiliza abajo)
+    const todayIso = new Date().toISOString().slice(0, 10);
+    let scheduled: { start_time?: string | null; end_time?: string | null; expected_hours?: number | null } | null = null;
+    try {
+      const { data: scheduledData } = await supabaseAdmin
+        .from('scheduled_hours')
+        .select('start_time, end_time, expected_hours')
+        .eq('user_id', currentUserId)
+        .eq('company_id', companyId)
+        .eq('date', todayIso)
+        .maybeSingle();
+      if (scheduledData) scheduled = scheduledData;
+    } catch (err) {
+      console.error('Error fetching scheduled hours for today', err);
+    }
+
+    // Determina tipo de evento según acción
     let eventType: string;
     switch (action) {
       case 'in':
@@ -324,6 +358,51 @@ Deno.serve(async (req) => {
       });
       return new Response(
         JSON.stringify({ error: 'No tienes ninguna sesión activa' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Validación de márgenes de fichaje respecto al horario
+    const parseTimeToMinutes = (t?: string | null) => {
+      if (!t) return null;
+      const [h, m] = String(t).split(':').map(Number);
+      if (Number.isNaN(h) || Number.isNaN(m)) return null;
+      return h * 60 + m;
+    };
+
+    const withinScheduleWindow = () => {
+      const current = new Date();
+      const currentMinutes = current.getHours() * 60 + current.getMinutes();
+      const startMinutes = parseTimeToMinutes(scheduled?.start_time);
+      const endMinutes = parseTimeToMinutes(scheduled?.end_time);
+
+      if (action === 'in' && startMinutes !== null) {
+        const minAllowed = startMinutes - entryEarly;
+        const maxAllowed = startMinutes + entryLate;
+        if (currentMinutes < minAllowed) {
+          return { ok: false, msg: 'No puedes fichar todavía' };
+        }
+        if (currentMinutes > maxAllowed) {
+          return { ok: false, msg: 'Ya no puedes fichar' };
+        }
+      }
+      if (action === 'out' && endMinutes !== null) {
+        const minAllowed = endMinutes - exitEarly;
+        const maxAllowed = endMinutes + exitLate;
+        if (currentMinutes < minAllowed) {
+          return { ok: false, msg: 'No puedes fichar todavía' };
+        }
+        if (currentMinutes > maxAllowed) {
+          return { ok: false, msg: 'Ya no puedes fichar' };
+        }
+      }
+      return { ok: true };
+    };
+
+    const scheduleCheck = withinScheduleWindow();
+    if (!scheduleCheck.ok) {
+      return new Response(
+        JSON.stringify({ error: scheduleCheck.msg }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -467,15 +546,6 @@ Deno.serve(async (req) => {
     // Aviso por fichaje fuera del horario programado del día (solo en entrada)
     if (action === 'in') {
       try {
-        const todayIso = new Date().toISOString().slice(0, 10);
-        const { data: scheduled } = await supabaseAdmin
-          .from('scheduled_hours')
-          .select('start_time, end_time, expected_hours')
-          .eq('user_id', currentUserId)
-          .eq('company_id', companyId)
-          .eq('date', todayIso)
-          .maybeSingle();
-
         if (scheduled?.start_time && scheduled?.end_time && Number(scheduled.expected_hours) > 0) {
           const now = new Date();
           const [sh, sm] = String(scheduled.start_time).split(':').map(Number);
