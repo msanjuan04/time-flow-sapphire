@@ -22,6 +22,7 @@ import { Loader2, MapPin, Save, Shield, Timer } from "lucide-react";
 import { GEOFENCE_RADIUS_METERS } from "@/config/geofence";
 import { BackButton } from "@/components/BackButton";
 import OwnerQuickNav from "@/components/OwnerQuickNav";
+import { getComplianceSettings, updateComplianceSettings } from "@/lib/compliance";
 
 const DEFAULT_CENTER: [number, number] = [40.4168, -3.7038]; // Madrid
 
@@ -65,6 +66,14 @@ const CompanySettings = () => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [showKeepSessionsModal, setShowKeepSessionsModal] = useState(false);
   const pendingKeepSessionsValue = useRef<boolean>(false);
+  // Compliance settings (owner only)
+  const [compLoading, setCompLoading] = useState(false);
+  const [compSaving, setCompSaving] = useState(false);
+  const [maxWeekHours, setMaxWeekHours] = useState("");
+  const [maxMonthHours, setMaxMonthHours] = useState("");
+  const [minBetweenShifts, setMinBetweenShifts] = useState("");
+  const [allowedStart, setAllowedStart] = useState("");
+  const [allowedEnd, setAllowedEnd] = useState("");
 
   useEffect(() => {
     const fetchCompany = async () => {
@@ -126,6 +135,27 @@ const CompanySettings = () => {
 
     fetchCompany();
   }, [companyId]);
+
+  useEffect(() => {
+    const loadCompliance = async () => {
+      if (!companyId || role !== "owner") return;
+      setCompLoading(true);
+      try {
+        const data = await getComplianceSettings(companyId);
+        setMaxWeekHours(data?.max_week_hours != null ? String(data.max_week_hours) : "");
+        setMaxMonthHours(data?.max_month_hours != null ? String(data.max_month_hours) : "");
+        setMinBetweenShifts(data?.min_hours_between_shifts != null ? String(data.min_hours_between_shifts) : "");
+        setAllowedStart(data?.allowed_checkin_start ? data.allowed_checkin_start.slice(0, 5) : "");
+        setAllowedEnd(data?.allowed_checkin_end ? data.allowed_checkin_end.slice(0, 5) : "");
+      } catch (err) {
+        console.error("Compliance load error", err);
+        toast.error("No pudimos cargar los ajustes legales");
+      } finally {
+        setCompLoading(false);
+      }
+    };
+    loadCompliance();
+  }, [companyId, role]);
 
   useEffect(() => {
     if (mapInstance.current || !mapContainer.current) return;
@@ -382,6 +412,32 @@ const CompanySettings = () => {
 
   const canEdit = role === "owner" || role === "admin";
 
+  const handleSaveCompliance = async () => {
+    if (!companyId) return;
+    setCompSaving(true);
+    try {
+      const normalizeNumber = (v: string) => {
+        const t = v.trim();
+        if (!t) return null;
+        const n = Number(t);
+        return Number.isFinite(n) ? n : null;
+      };
+      await updateComplianceSettings(companyId, {
+        max_week_hours: normalizeNumber(maxWeekHours),
+        max_month_hours: normalizeNumber(maxMonthHours),
+        min_hours_between_shifts: normalizeNumber(minBetweenShifts),
+        allowed_checkin_start: allowedStart ? `${allowedStart}:00` : null,
+        allowed_checkin_end: allowedEnd ? `${allowedEnd}:00` : null,
+      });
+      toast.success("Ajustes legales guardados");
+    } catch (err) {
+      console.error("Compliance save error", err);
+      toast.error("No pudimos guardar los ajustes legales");
+    } finally {
+      setCompSaving(false);
+    }
+  };
+
   return (
     <>
       <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
@@ -635,6 +691,78 @@ const CompanySettings = () => {
             </Button>
           </div>
         </Card>
+
+        {role === "owner" && (
+          <Card className="glass-card p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center shadow-sm">
+                <Shield className="w-5 h-5" />
+              </div>
+              <div className="flex-1 space-y-1">
+                <h2 className="text-lg font-semibold">Owner Compliance Settings</h2>
+                <p className="text-sm text-muted-foreground">
+                  Define los parámetros legales que aplican a todos los trabajadores de la empresa.
+                </p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Límite de horas semanales</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={maxWeekHours}
+                  onChange={(e) => setMaxWeekHours(e.target.value)}
+                  disabled={compLoading || compSaving}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Límite de horas mensuales</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={maxMonthHours}
+                  onChange={(e) => setMaxMonthHours(e.target.value)}
+                  disabled={compLoading || compSaving}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Tiempo mínimo entre turnos (horas)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  value={minBetweenShifts}
+                  onChange={(e) => setMinBetweenShifts(e.target.value)}
+                  disabled={compLoading || compSaving}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Hora mínima de fichaje</Label>
+                <Input
+                  type="time"
+                  value={allowedStart}
+                  onChange={(e) => setAllowedStart(e.target.value)}
+                  disabled={compLoading || compSaving}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Hora máxima de fichaje</Label>
+                <Input
+                  type="time"
+                  value={allowedEnd}
+                  onChange={(e) => setAllowedEnd(e.target.value)}
+                  disabled={compLoading || compSaving}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={handleSaveCompliance} disabled={compLoading || compSaving}>
+                {compSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                Guardar cambios
+              </Button>
+            </div>
+          </Card>
+        )}
 
         <Card className="glass-card p-6 space-y-4">
           <div className="flex items-center gap-3">

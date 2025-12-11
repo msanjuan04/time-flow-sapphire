@@ -243,6 +243,47 @@ Deno.serve(async (req) => {
       );
     }
 
+    // -------------------------------------------------------------------
+    // Compliance settings by company (if configured)
+    // -------------------------------------------------------------------
+    const { data: compliance } = await supabaseAdmin
+      .from('company_compliance_settings')
+      .select(
+        'max_week_hours, max_month_hours, min_hours_between_shifts, allowed_checkin_start, allowed_checkin_end'
+      )
+      .eq('company_id', companyId)
+      .maybeSingle();
+
+    const toMinutes = (t?: string | null) => {
+      if (!t) return null;
+      const [h, m] = String(t).split(':').map(Number);
+      if (Number.isNaN(h) || Number.isNaN(m)) return null;
+      return h * 60 + m;
+    };
+
+    const now = new Date();
+
+    // Allowed check-in window (aplica a cualquier acción)
+    if (compliance?.allowed_checkin_start && compliance?.allowed_checkin_end) {
+      const startMin = toMinutes(compliance.allowed_checkin_start);
+      const endMin = toMinutes(compliance.allowed_checkin_end);
+      const currentMin = now.getHours() * 60 + now.getMinutes();
+      if (
+        startMin !== null &&
+        endMin !== null &&
+        (currentMin < startMin || currentMin > endMin)
+      ) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'LEGAL_RESTRICTION',
+            reason: 'outside_allowed_hours',
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // Get current active session
     let { data: activeSession } = await supabaseAdmin
       .from('work_sessions')
@@ -454,6 +495,96 @@ Deno.serve(async (req) => {
 
     // Update or create work session
     if (action === 'in') {
+      // Compliance checks before opening a new session
+      if (compliance) {
+        // Horas acumuladas semana/mes
+        const weekStart = new Date(now);
+        weekStart.setUTCHours(0, 0, 0, 0);
+        // date_trunc('week') estilo lunes: restar day? Para simplicidad: se toma lunes como inicio:
+        const day = weekStart.getUTCDay(); // 0 domingo
+        const diff = (day === 0 ? 6 : day - 1); // días desde lunes
+        weekStart.setUTCDate(weekStart.getUTCDate() - diff);
+
+        const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0));
+
+        const fetchSessionsSum = async (from: Date) => {
+          const { data: sessions } = await supabaseAdmin
+            .from('work_sessions')
+            .select('clock_in_time, clock_out_time')
+            .eq('user_id', currentUserId)
+            .eq('company_id', companyId)
+            .eq('is_active', false)
+            .gte('clock_in_time', from.toISOString())
+            .lte('clock_in_time', now.toISOString());
+          let hours = 0;
+          (sessions || []).forEach((s: any) => {
+            if (s.clock_in_time && s.clock_out_time) {
+              const start = new Date(s.clock_in_time).getTime();
+              const end = new Date(s.clock_out_time).getTime();
+              if (end > start) {
+                hours += (end - start) / (1000 * 60 * 60);
+              }
+            }
+          });
+          return hours;
+        };
+
+        const weekHours = compliance.max_week_hours
+          ? await fetchSessionsSum(weekStart)
+          : 0;
+        if (compliance.max_week_hours && weekHours >= compliance.max_week_hours) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: 'LEGAL_RESTRICTION',
+              reason: 'exceeded_week_hours',
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        const monthHours = compliance.max_month_hours
+          ? await fetchSessionsSum(monthStart)
+          : 0;
+        if (compliance.max_month_hours && monthHours >= compliance.max_month_hours) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: 'LEGAL_RESTRICTION',
+              reason: 'exceeded_month_hours',
+            }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+
+        if (compliance.min_hours_between_shifts) {
+          const { data: lastSession } = await supabaseAdmin
+            .from('work_sessions')
+            .select('clock_out_time')
+            .eq('user_id', currentUserId)
+            .eq('company_id', companyId)
+            .eq('is_active', false)
+            .not('clock_out_time', 'is', null)
+            .order('clock_out_time', { ascending: false })
+            .limit(1);
+
+          if (lastSession && lastSession.length > 0) {
+            const lastOut = new Date(lastSession[0].clock_out_time);
+            const diffHours = (now.getTime() - lastOut.getTime()) / (1000 * 60 * 60);
+            if (diffHours < compliance.min_hours_between_shifts) {
+              return new Response(
+                JSON.stringify({
+                  success: false,
+                  error: 'LEGAL_RESTRICTION',
+                  reason: 'too_soon_between_shifts',
+                }),
+                { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+              );
+            }
+          }
+        }
+      }
+
       // Create new session
       const { error: sessionError } = await supabaseAdmin.from('work_sessions').insert({
         user_id: currentUserId,

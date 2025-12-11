@@ -26,6 +26,7 @@ const DevicesPage = lazy(() => import("./pages/Devices"));
 const KioskPage = lazy(() => import("./pages/Kiosk"));
 const KioskFreePage = lazy(() => import("./pages/KioskFree"));
 const KioskEmployeePage = lazy(() => import("./pages/KioskEmployee"));
+const OwnerComplianceSettingsPage = lazy(() => import("./pages/Owner/ComplianceSettings"));
 const AdminOverviewPage = lazy(() => import("./pages/AdminOverview"));
 const AdminCompaniesPage = lazy(() => import("./pages/AdminCompanies"));
 const AdminCompanyDetailPage = lazy(() => import("./pages/AdminCompanyDetail"));
@@ -41,7 +42,16 @@ const WorkerHistoryPage = lazy(() => import("./pages/WorkerHistory"));
 const IncidentsPage = lazy(() => import("./pages/Incidents"));
 const PrintViewPage = lazy(() => import("./pages/PrintView"));
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Mantiene datos frescos durante 5 minutos y evita refetches innecesarios
+      staleTime: 5 * 60 * 1000,
+      gcTime: 10 * 60 * 1000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 type AllowedRole = "superadmin" | Membership["role"];
 
@@ -223,6 +233,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["owner", "admin", "manager"]}>
                   <CompanySettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/owner/compliance"
+              element={
+                <ProtectedRoute allowedRoles={["owner"]}>
+                  <OwnerComplianceSettingsPage />
                 </ProtectedRoute>
               }
             />

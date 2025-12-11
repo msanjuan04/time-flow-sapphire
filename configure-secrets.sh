@@ -12,7 +12,7 @@ echo ""
 
 # Obtener anon key del .env si existe
 if [ -f .env ]; then
-  ANON_KEY=$(grep "VITE_SUPABASE_PUBLISHABLE_KEY" .env | cut -d '=' -f2 | tr -d ' ' | tr -d '"')
+  ANON_KEY=$(grep "VITE_SUPABASE_ANON_KEY" .env | cut -d '=' -f2 | tr -d ' ' | tr -d '"')
   if [ -n "$ANON_KEY" ]; then
     echo "✅ Anon key encontrado en .env"
   else

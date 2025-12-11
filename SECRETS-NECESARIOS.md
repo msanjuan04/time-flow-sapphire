@@ -14,7 +14,7 @@ Para que las Edge Functions funcionen correctamente, necesitas configurar estos 
 - Valor: Tu anon key (pública)
 - Dónde obtenerlo: 
   - Dashboard → Settings → API
-  - O desde tu archivo `.env` (VITE_SUPABASE_PUBLISHABLE_KEY)
+  - O desde tu archivo `.env` (VITE_SUPABASE_ANON_KEY)
 
 **SUPABASE_SERVICE_ROLE_KEY**
 - Valor: Tu service role key (SECRETA, no la compartas)

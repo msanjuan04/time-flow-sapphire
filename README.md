@@ -107,7 +107,7 @@ Ambos proveedores siguen los mismos pasos básicos:
 2. **Directorio de publicación**: `dist/`
 3. **Variables de entorno (todas en el panel del hosting, nunca en el código)**  
    - `VITE_SUPABASE_URL=https://TU-PROYECTO.supabase.co`  
-   - `VITE_SUPABASE_PUBLISHABLE_KEY=tu_anon_key`  
+   - `VITE_SUPABASE_ANON_KEY=tu_anon_key`
    - `VITE_SUPABASE_PROJECT_ID=tu_project_id`
 4. **Comando de pre-deploy recomendado**: `npm run test:ci && npm run build` (en Vercel usa el campo “Build Command”).  
    Esto garantiza que Vitest pase antes de publicar.  

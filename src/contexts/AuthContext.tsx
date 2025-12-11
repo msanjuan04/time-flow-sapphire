@@ -15,7 +15,9 @@ interface AuthTokens {
   refresh_token: string;
 }
 
-interface MembershipCompany {
+export type Role = "owner" | "admin" | "manager" | "worker";
+
+export interface MembershipCompany {
   id: string;
   name?: string | null;
   status?: string | null;
@@ -23,8 +25,6 @@ interface MembershipCompany {
   logo_url?: string | null;
   keep_sessions_open?: boolean | null;
 }
-
-export type Role = "owner" | "admin" | "manager" | "worker";
 
 export interface Membership {
   id: string;
@@ -52,21 +52,75 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
 const STORAGE_KEY = "gtiq_auth";
 const TOKENS_KEY = "gtiq_tokens";
+
 const envSupabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const envAnonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const envAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!envSupabaseUrl) {
-  throw new Error("VITE_SUPABASE_URL no está definido. Revisa tu archivo .env o variables en el hosting.");
+  throw new Error("Falta VITE_SUPABASE_URL en .env");
 }
 
 if (!envAnonKey) {
-  throw new Error("VITE_SUPABASE_PUBLISHABLE_KEY no está definido. No se puede inicializar Supabase.");
+  throw new Error("Falta VITE_SUPABASE_ANON_KEY en .env");
 }
 
 const SUPABASE_BASE_URL = envSupabaseUrl.replace(/\/$/, "");
 const SUPABASE_ANON_KEY = envAnonKey;
+
+// -------------------------------------------------------------------------
+//   FIX IMPORTANTE: función memberships con SELECT CORRECTO
+// -------------------------------------------------------------------------
+const fetchMembershipsWithCompany = async (userId: string) => {
+  console.log("[auth] fetchMembershipsWithCompany:start", { userId });
+
+  const { data, error } = await supabase
+    .from("memberships")
+    .select(`
+      id,
+      company_id,
+      role,
+      company:companies(
+        id,
+        name,
+        status,
+        plan,
+        logo_url,
+        keep_sessions_open
+      )
+    `)
+    .eq("user_id", userId);
+
+  if (error) {
+    console.error("[auth] fetchMembershipsWithCompany:error", error);
+    throw error;
+  }
+
+  const list = (data ?? []) as Membership[];
+
+  const companyRaw = list[0]?.company ?? null;
+  const activeCompany = companyRaw
+    ? {
+        id: companyRaw.id,
+        name: companyRaw.name ?? null,
+        status: companyRaw.status ?? null,
+        plan: companyRaw.plan ?? null,
+        logo_url: companyRaw.logo_url ?? null,
+        keep_sessions_open: companyRaw.keep_sessions_open ?? null,
+      }
+    : null;
+
+  console.log("[auth] fetchMembershipsWithCompany:success", {
+    count: list.length,
+    activeCompany,
+  });
+
+  return { list, activeCompany };
+};
+
+// -------------------------------------------------------------------------
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
@@ -76,400 +130,167 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
 
   const clearStoredAuth = () => {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(TOKENS_KEY);
     setUser(null);
     setMemberships([]);
     setCompany(null);
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(TOKENS_KEY);
   };
 
-  const fetchMembershipsWithCompany = async (userId: string) => {
-    const { data, error } = await supabase
-      .from("memberships")
-      .select(
-        `
-        id,
-        company_id,
-        role,
-        company:companies(id, name, status, plan, logo_url, keep_sessions_open)
-      `
-      )
-      .eq("user_id", userId);
-    if (error) throw error;
-    const list = (data || []) as Membership[];
-    const activeCompany = list[0]?.company ?? null;
-    return { list, activeCompany };
-  };
-
+  // ---------------------------------------------------------------------
+  // INIT SESSION
+  // ---------------------------------------------------------------------
   useEffect(() => {
-    let isMounted = true;
+    let mounted = true;
 
-    const initialize = async () => {
-      try {
-        const savedState = localStorage.getItem(STORAGE_KEY);
+    const init = async () => {
+      console.log("[auth] init:getSession:start");
 
-        // 1) Intenta leer sesión ya persistida por supabase-js
-        let { data } = await supabase.auth.getSession();
-        let session = data.session;
+      let { data } = await supabase.auth.getSession();
+      let session = data.session;
 
-        // 2) Si no hay sesión, intenta con tokens guardados manualmente
-        if (!session) {
-          const savedTokens = localStorage.getItem(TOKENS_KEY);
-          if (savedTokens) {
-            const tokens = JSON.parse(savedTokens) as AuthTokens;
-            const setRes = await supabase.auth.setSession(tokens);
-            if (!setRes.error) {
-              session = setRes.data.session;
-            }
-          }
-        }
-
-        if (!session) {
-          clearStoredAuth();
-          if (isMounted) setLoading(false);
-          return;
-        }
-
-        // Refresca memberships/empresa
-        const userId = session.user.id;
-        const { list, activeCompany } = await fetchMembershipsWithCompany(userId);
-
-        if (savedState) {
-          const parsedState = JSON.parse(savedState) as {
-            user: AuthUser | null;
-            memberships: Membership[];
-            company: Company | null;
-          };
-          setUser(parsedState.user);
-          setMemberships(parsedState.memberships || list);
-          setCompany(parsedState.company ?? (activeCompany as Company | null));
-        } else {
-          setUser({
-            id: session.user.id,
-            email: session.user.email ?? null,
-            full_name: (session.user.user_metadata as any)?.full_name ?? null,
-            is_superadmin: (session.user.user_metadata as any)?.is_superadmin ?? false,
-          });
-          setMemberships(list);
-          setCompany((activeCompany as Company) ?? null);
-          persistState({
-            user: {
-              id: session.user.id,
-              email: session.user.email ?? null,
-              full_name: (session.user.user_metadata as any)?.full_name ?? null,
-              is_superadmin: (session.user.user_metadata as any)?.is_superadmin ?? false,
-            },
-            memberships: list,
-            company: (activeCompany as Company) ?? null,
-          });
-        }
-
-        // Guarda tokens actuales
-        persistTokens({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token ?? "",
-        });
-      } catch (error) {
-        console.warn("Init auth error, clearing stored auth:", error);
-        clearStoredAuth();
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    initialize();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  const persistState = (next: {
-    user: AuthUser | null;
-    memberships: Membership[];
-    company: Company | null;
-  }) => {
-    if (!next.user) {
-      localStorage.removeItem(STORAGE_KEY);
-      localStorage.removeItem(TOKENS_KEY);
-      return;
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  };
-
-  const persistTokens = (tokens: AuthTokens | null) => {
-    if (!tokens) {
-      localStorage.removeItem(TOKENS_KEY);
-      return;
-    }
-    localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens));
-  };
-
-  // Mantén los tokens actualizados cuando Supabase refresque sesión
-  useEffect(() => {
-    const { data: subscription } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === "TOKEN_REFRESHED" || event === "SIGNED_IN") {
-        if (session?.access_token && session?.refresh_token) {
-          persistTokens({
-            access_token: session.access_token,
-            refresh_token: session.refresh_token,
-          });
-        }
-        if (session?.user?.id) {
-          try {
-            const { list, activeCompany } = await fetchMembershipsWithCompany(session.user.id);
-            const userData: AuthUser = {
-              id: session.user.id,
-              email: session.user.email ?? null,
-              full_name: (session.user.user_metadata as any)?.full_name ?? null,
-              is_superadmin: (session.user.user_metadata as any)?.is_superadmin ?? false,
-            };
-            setUser(userData);
-            setMemberships(list);
-            setCompany((activeCompany as Company) ?? null);
-            persistState({
-              user: userData,
-              memberships: list,
-              company: (activeCompany as Company) ?? null,
-            });
-          } catch (err) {
-            console.warn("onAuthStateChange hydrate error:", err);
-          }
-        }
-      }
-      if (event === "SIGNED_OUT") {
-        clearStoredAuth();
-      }
-    });
-    return () => {
-      subscription?.subscription.unsubscribe();
-    };
-  }, []);
-
-  const signInWithCode = async (code: string): Promise<{ error: string | null }> => {
-    const normalizedCode = typeof code === "string" ? code.replace(/\D/g, "").trim() : "";
-
-    if (!/^\d{6}$/.test(normalizedCode)) {
-      return { error: "INVALID_CODE_FORMAT" };
-    }
-
-    try {
-      console.log("Attempting login with code:", normalizedCode);
-      const response = await fetch(`${SUPABASE_BASE_URL}/functions/v1/login-with-code`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(SUPABASE_ANON_KEY ? {
-            apikey: SUPABASE_ANON_KEY,
-            Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          } : {}),
-        },
-        body: JSON.stringify({ code: normalizedCode }),
+      console.log("[auth] init:getSession:result", {
+        hasSession: !!session,
       });
 
-      const payload = await response
-        .json()
-        .catch(() => ({ success: false, error: "Respuesta inválida del servidor" }));
-
-      console.log("Login response:", { success: payload?.success, hasTokens: !!(payload?.access_token) });
-
-      if (!response.ok || !payload?.success) {
-        const errorCode = typeof payload?.error === "string" ? payload.error : "LOGIN_FAILED";
-        return { error: errorCode };
-      }
-
-      if (!payload.user) {
-        return { error: "USER_NOT_FOUND" };
-      }
-
-      const tokenHash = payload.token_hash || payload.hashed_token || null;
-      const bareToken = payload.token || null;
-
-      if (payload.access_token && payload.refresh_token) {
-        console.log("Setting session with direct tokens");
-        const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-          access_token: payload.access_token,
-          refresh_token: payload.refresh_token,
-        });
-
-        if (sessionError || !sessionData.session) {
-          console.error("Failed to set session:", sessionError);
-          return { error: "SESSION_SET_FAILED" };
+      // Si no hay sesión, intentar cargar tokens guardados
+      if (!session) {
+        const saved = localStorage.getItem(TOKENS_KEY);
+        if (saved) {
+          const tokens = JSON.parse(saved) as AuthTokens;
+          const r = await supabase.auth.setSession(tokens);
+          session = r.data.session;
         }
-
-        console.log("Session established successfully with direct tokens");
-      } else if (tokenHash || bareToken) {
-        console.log("Verifying OTP token to establish session", { 
-          hasTokenHash: !!tokenHash, 
-          hasBareToken: !!bareToken,
-          userEmail: payload.user?.email 
-        });
-
-        try {
-          const email = payload.user?.email;
-          if (!email) {
-            throw new Error("Missing email for OTP verification");
-          }
-
-          // Prefer bare token over token_hash as it's more reliable
-          // When using token_hash, only token_hash and type should be provided (no email)
-          // When using token, both token and email are required
-          const verifyPayload: Parameters<typeof supabase.auth.verifyOtp>[0] = bareToken
-            ? {
-                type: (payload.verification_type || "magiclink") as "magiclink" | "email" | "recovery",
-                token: bareToken as string,
-                email: email,
-              }
-            : tokenHash
-            ? {
-                type: (payload.verification_type || "magiclink") as "magiclink" | "email" | "recovery",
-                token_hash: tokenHash,
-                // NO email when using token_hash - Supabase requirement
-              }
-            : null;
-
-          if (!verifyPayload) {
-            throw new Error("No token available for verification");
-          }
-
-          console.log("Calling verifyOtp with payload type:", verifyPayload.type, "using:", bareToken ? "token" : "token_hash");
-          const { data: sessionData, error: verifyError } = await supabase.auth.verifyOtp(verifyPayload);
-
-          if (verifyError) {
-            console.error("Failed to verify token - error details:", {
-              message: verifyError.message,
-              status: verifyError.status,
-              name: verifyError.name
-            });
-            return { error: "SESSION_VERIFICATION_FAILED" };
-          }
-
-          if (!sessionData?.session) {
-            console.error("verifyOtp succeeded but no session returned");
-            // Try to get session anyway
-            const { data: { session: fallbackSession } } = await supabase.auth.getSession();
-            if (!fallbackSession) {
-              console.error("No session available after verifyOtp");
-              return { error: "SESSION_VERIFICATION_FAILED" };
-            }
-            console.log("Session found via getSession fallback");
-          } else {
-            console.log("Session established successfully via OTP verification");
-          }
-        } catch (verificationError) {
-          console.error("OTP verification setup failed:", verificationError);
-          if (verificationError instanceof Error) {
-            console.error("Error details:", verificationError.message, verificationError.stack);
-          }
-          return { error: "SESSION_VERIFICATION_FAILED" };
-        }
-      } else {
-        console.error("No session tokens received from login-with-code", { payloadKeys: Object.keys(payload) });
-        return { error: "NO_SESSION_TOKENS" };
       }
+
+      if (!session) {
+        if (mounted) setLoading(false);
+        return;
+      }
+
+      // Cargar memberships
+      const uid = session.user.id;
+      const { list, activeCompany } = await fetchMembershipsWithCompany(uid);
 
       const userData: AuthUser = {
-        id: payload.user.id,
-        email: payload.user.email ?? null,
-        full_name: payload.user.full_name ?? null,
-        is_superadmin: payload.user.is_superadmin ?? false,
+        id: uid,
+        email: session.user.email ?? null,
+        full_name: (session.user.user_metadata as any)?.full_name ?? null,
+        is_superadmin: (session.user.user_metadata as any)?.is_superadmin ?? false,
       };
 
-      const membershipsData: Membership[] = ((payload.memberships as Membership[]) || []).map((m) => ({
-        id: m.id,
-        company_id: m.company_id,
-        role: m.role as Role,
-        company: m.company
-          ? {
-              id: m.company.id,
-              name: (m.company as any).name ?? null,
-              status: (m.company as any).status ?? null,
-              plan: (m.company as any).plan ?? null,
-              logo_url: (m.company as any).logo_url ?? null,
-            }
-          : null,
-      }));
+      setUser(userData);
+      setMemberships(list);
+      setCompany(activeCompany);
 
-      const companyData: Company | null = payload.company
-        ? {
-            id: payload.company.id,
-            name: payload.company.name ?? null,
-            status: payload.company.status ?? null,
-            plan: payload.company.plan ?? null,
-            logo_url: payload.company.logo_url ?? null,
-          }
-        : null;
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          user: userData,
+          memberships: list,
+          company: activeCompany,
+        })
+      );
 
-      const nextState = {
-        user: userData,
-        memberships: membershipsData,
-        company: companyData,
-      };
+      if (mounted) setLoading(false);
+    };
 
-      setUser(nextState.user);
-      setMemberships(nextState.memberships);
-      setCompany(nextState.company ?? null);
-      persistState(nextState);
+    init();
 
-      // Get the current session (should be set by verifyOtp or setSession)
-      const { data: { session }, error: getSessionError } = await supabase.auth.getSession();
-      
-      if (getSessionError) {
-        console.error("Error getting session after login:", getSessionError);
-        return { error: "SESSION_VERIFICATION_FAILED" };
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // ---------------------------------------------------------------------
+  // SIGN IN WITH CODE
+  // ---------------------------------------------------------------------
+  const signInWithCode = async (code: string) => {
+    const normalized = code.replace(/\D/g, "").trim();
+    if (!/^\d{6}$/.test(normalized)) return { error: "INVALID_CODE_FORMAT" };
+
+    console.log("Attempting login with code:", normalized);
+
+    const r = await fetch(`${SUPABASE_BASE_URL}/functions/v1/login-with-code`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_ANON_KEY,
+        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+      body: JSON.stringify({ code: normalized }),
+    });
+
+    const payload = await r.json().catch(() => ({
+      success: false,
+      error: "BAD_RESPONSE",
+    }));
+
+    console.log("Login response:", {
+      success: payload?.success,
+      hasTokens: !!payload?.access_token,
+    });
+
+    if (!r.ok || !payload.success) return { error: payload.error || "LOGIN_FAILED" };
+
+    // Direct tokens
+    if (payload.access_token && payload.refresh_token) {
+      const set = await supabase.auth.setSession({
+        access_token: payload.access_token,
+        refresh_token: payload.refresh_token,
+      });
+
+      if (set.error) {
+        console.error("Failed to set session:", set.error);
+        return { error: "SESSION_SET_FAILED" };
       }
-      
-      if (session) {
-        console.log("Storing session tokens", { 
-          hasAccessToken: !!session.access_token,
-          hasRefreshToken: !!session.refresh_token 
-        });
-        persistTokens({
-          access_token: session.access_token,
-          refresh_token: session.refresh_token,
-        });
-      } else {
-        console.error("No session after verifyOtp/setSession - this should not happen");
-        // Wait a bit and try again - sometimes there's a race condition
-        await new Promise(resolve => setTimeout(resolve, 500));
-        const { data: { session: retrySession } } = await supabase.auth.getSession();
-        if (retrySession) {
-          console.log("Session found on retry");
-          persistTokens({
-            access_token: retrySession.access_token,
-            refresh_token: retrySession.refresh_token,
-          });
-        } else {
-          console.error("Still no session after retry");
-          return { error: "SESSION_VERIFICATION_FAILED" };
-        }
-      }
-
-      const resolved = resolveDefaultRoute(nextState.user, nextState.memberships, nextState.company);
-      if (resolved.route === "/access-issue" && "reason" in resolved) {
-        navigate(`/access-issue?reason=${resolved.reason}`);
-      } else {
-        navigate(resolved.route);
-      }
-
-      return { error: null };
-    } catch (error) {
-      console.error("Unexpected code login error:", error);
-      return {
-        error: "NETWORK_ERROR",
-      };
     }
+
+    // Obtener de nuevo la sesión ya válida
+    const { data } = await supabase.auth.getSession();
+    const session = data.session;
+
+    if (!session) return { error: "SESSION_VERIFICATION_FAILED" };
+
+    localStorage.setItem(
+      TOKENS_KEY,
+      JSON.stringify({
+        access_token: session.access_token,
+        refresh_token: session.refresh_token,
+      })
+    );
+
+    // Cargar memberships
+    const { list, activeCompany } = await fetchMembershipsWithCompany(session.user.id);
+
+    const userData: AuthUser = {
+      id: session.user.id,
+      email: session.user.email ?? null,
+      full_name: (session.user.user_metadata as any)?.full_name ?? null,
+      is_superadmin: (session.user.user_metadata as any)?.is_superadmin ?? false,
+    };
+
+    const nextState = {
+      user: userData,
+      memberships: list,
+      company: activeCompany,
+    };
+
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+
+    setUser(userData);
+    setMemberships(list);
+    setCompany(activeCompany);
+
+    const route = resolveDefaultRoute(userData, list, activeCompany);
+    navigate(route.route);
+
+    return { error: null };
   };
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    setUser(null);
-    setMemberships([]);
-    setCompany(null);
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(TOKENS_KEY);
+    clearStoredAuth();
     navigate("/auth");
   };
 
@@ -481,9 +302,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 };
 
 export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
+  return ctx;
 };

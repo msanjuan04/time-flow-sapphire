@@ -30,11 +30,11 @@ else
   echo "✅ VITE_SUPABASE_URL=${VITE_SUPABASE_URL}"
 fi
 
-if [ -z "$VITE_SUPABASE_PUBLISHABLE_KEY" ]; then
-  echo "❌ VITE_SUPABASE_PUBLISHABLE_KEY no está configurada"
+if [ -z "$VITE_SUPABASE_ANON_KEY" ]; then
+  echo "❌ VITE_SUPABASE_ANON_KEY no está configurada"
   MISSING_VARS=1
 else
-  echo "✅ VITE_SUPABASE_PUBLISHABLE_KEY=${VITE_SUPABASE_PUBLISHABLE_KEY:0:30}..."
+  echo "✅ VITE_SUPABASE_ANON_KEY=${VITE_SUPABASE_ANON_KEY:0:30}..."
 fi
 
 if [ -z "$VITE_SUPABASE_PROJECT_ID" ]; then
@@ -64,7 +64,7 @@ fi
 
 # Verificar que el proyecto existe (hacer una petición simple)
 echo "📡 Probando conexión a ${SUPABASE_URL}..."
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${SUPABASE_URL}/rest/v1/" -H "apikey: ${VITE_SUPABASE_PUBLISHABLE_KEY}" 2>/dev/null)
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${SUPABASE_URL}/rest/v1/" -H "apikey: ${VITE_SUPABASE_ANON_KEY}" 2>/dev/null)
 
 if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "404" ]; then
   echo "✅ Conexión exitosa (HTTP ${HTTP_CODE})"

@@ -44,7 +44,9 @@ export const RecoverAccessDialog = ({ open, onOpenChange }: RecoverAccessDialogP
     setError(null);
 
     try {
-      schema.parse({ email });
+      const normalizedEmail = email.trim().toLowerCase();
+      schema.parse({ email: normalizedEmail });
+      setEmail(normalizedEmail);
     } catch (validationError) {
       if (validationError instanceof z.ZodError) {
         setError(validationError.issues[0]?.message || "Correo inválido");
@@ -54,19 +56,22 @@ export const RecoverAccessDialog = ({ open, onOpenChange }: RecoverAccessDialogP
 
     setSubmitting(true);
     try {
+      const normalizedEmail = email.trim().toLowerCase();
       const { data, error: fnError } = await supabase.functions.invoke("request-login-code", {
-        headers: { "Content-Type": "application/json" },
-        body: { email },
+        body: { email: normalizedEmail },
       });
 
       if (fnError) {
-        throw new Error(fnError.message);
+        // edge function usually returns the message in error.message
+        throw fnError;
       }
 
       setSuccessMessage(data?.message ?? "Si el correo existe te enviaremos un código nuevo.");
     } catch (fnErr) {
       const message =
-        fnErr instanceof Error ? fnErr.message : "No pudimos solicitar un nuevo código";
+        fnErr instanceof Error
+          ? fnErr.message || "No pudimos solicitar un nuevo código"
+          : "No pudimos solicitar un nuevo código";
       setError(message);
     } finally {
       setSubmitting(false);

@@ -9,7 +9,7 @@ SUPABASE_URL="https://${PROJECT_ID}.supabase.co"
 
 # Leer el anon key actual si existe
 if [ -f .env ]; then
-  CURRENT_ANON_KEY=$(grep "VITE_SUPABASE_PUBLISHABLE_KEY" .env | cut -d '=' -f2 | tr -d ' ')
+  CURRENT_ANON_KEY=$(grep "VITE_SUPABASE_ANON_KEY" .env | cut -d '=' -f2 | tr -d ' ')
   if [ -n "$CURRENT_ANON_KEY" ] && [ "$CURRENT_ANON_KEY" != "REEMPLAZA_CON_TU_ANON_KEY" ] && [ "$CURRENT_ANON_KEY" != "TU_ANON_KEY_AQUI" ]; then
     echo "✅ Manteniendo tu anon key actual: ${CURRENT_ANON_KEY:0:20}..."
     ANON_KEY="$CURRENT_ANON_KEY"
@@ -45,7 +45,7 @@ cat > .env << EOF
 # Project: gtiq (${PROJECT_ID})
 # Actualizado: $(date)
 VITE_SUPABASE_URL=${SUPABASE_URL}
-VITE_SUPABASE_PUBLISHABLE_KEY=${ANON_KEY}
+VITE_SUPABASE_ANON_KEY=${ANON_KEY}
 VITE_SUPABASE_PROJECT_ID=${PROJECT_ID}
 
 # Mapbox Configuration
@@ -59,7 +59,7 @@ echo "✅ Archivo .env actualizado correctamente!"
 echo ""
 echo "📋 Valores configurados:"
 echo "   VITE_SUPABASE_URL=${SUPABASE_URL}"
-echo "   VITE_SUPABASE_PUBLISHABLE_KEY=${ANON_KEY:0:30}..."
+echo "   VITE_SUPABASE_ANON_KEY=${ANON_KEY:0:30}..."
 echo "   VITE_SUPABASE_PROJECT_ID=${PROJECT_ID}"
 echo "   VITE_MAPBOX_PUBLIC_TOKEN=${MAPBOX_TOKEN:0:30}..."
 echo ""
