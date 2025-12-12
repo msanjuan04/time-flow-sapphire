@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -39,9 +39,12 @@ const AdminLogs = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [actionFilter, setActionFilter] = useState<string>("all");
+  const [entityFilter, setEntityFilter] = useState<string>("all");
+  const [companyFilter, setCompanyFilter] = useState("");
 
   useEffect(() => {
     fetchLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchLogs = async () => {
@@ -53,11 +56,7 @@ const AdminLogs = () => {
       if (actionFilter !== "all") {
         params.append("action", actionFilter);
       }
-      
-      if (searchQuery) {
-        params.append("action", searchQuery);
-      }
-      
+
       params.append("limit", "100");
 
       const { data, error } = await supabase.functions.invoke(
@@ -79,7 +78,44 @@ const AdminLogs = () => {
     }
   };
 
-  const filteredLogs = logs;
+  const filteredLogs = useMemo(() => {
+    const term = searchQuery.toLowerCase();
+    const companyTerm = companyFilter.toLowerCase();
+    return logs.filter((log) => {
+      if (entityFilter !== "all" && (log.entity_type || "").toLowerCase() !== entityFilter.toLowerCase()) {
+        return false;
+      }
+      if (term) {
+        const haystack = `${log.action} ${log.reason || ""} ${log.entity_type || ""}`.toLowerCase();
+        if (!haystack.includes(term)) return false;
+      }
+      if (companyTerm) {
+        const companyName = (log.companies?.name || "").toLowerCase();
+        if (!companyName.includes(companyTerm)) return false;
+      }
+      return true;
+    });
+  }, [logs, searchQuery, entityFilter, companyFilter]);
+
+  const exportCsv = () => {
+    const headers = ["action", "entity_type", "company", "ip", "reason", "created_at"];
+    const rows = filteredLogs.map((log) => [
+      log.action,
+      log.entity_type || "",
+      log.companies?.name || "",
+      log.ip || "",
+      (log.reason || "").replace(/\n/g, " "),
+      new Date(log.created_at).toISOString(),
+    ]);
+    const csv = [headers.join(","), ...rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "audit_logs.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <AdminLayout>
@@ -111,20 +147,45 @@ const AdminLogs = () => {
                 className="pl-10"
               />
             </div>
-            <Select value={actionFilter} onValueChange={setActionFilter}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue placeholder="Filtrar por acción" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas las acciones</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
-                <SelectItem value="impersonate">Impersonación</SelectItem>
-                <SelectItem value="company">Empresas</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button onClick={fetchLogs} variant="outline">
-              Filtrar
-            </Button>
+            <div className="flex items-center gap-2">
+              <Select value={actionFilter} onValueChange={setActionFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Filtrar por acción" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las acciones</SelectItem>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="impersonate">Impersonación</SelectItem>
+                  <SelectItem value="company">Empresas</SelectItem>
+                  <SelectItem value="role">Roles</SelectItem>
+                  <SelectItem value="rules">Reglas</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={entityFilter} onValueChange={setEntityFilter}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Entidad" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas las entidades</SelectItem>
+                  <SelectItem value="company">Empresa</SelectItem>
+                  <SelectItem value="membership">Roles</SelectItem>
+                  <SelectItem value="rules">Reglas</SelectItem>
+                  <SelectItem value="impersonation">Impersonación</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                placeholder="Filtrar por empresa"
+                value={companyFilter}
+                onChange={(e) => setCompanyFilter(e.target.value)}
+                className="w-[200px]"
+              />
+              <Button onClick={fetchLogs} variant="outline">
+                Filtrar
+              </Button>
+              <Button variant="secondary" onClick={exportCsv}>
+                Exportar CSV
+              </Button>
+            </div>
           </div>
         </Card>
 

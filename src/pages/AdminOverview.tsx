@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -9,11 +9,29 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Building2, Users, Clock, Shield, Loader2 } from "lucide-react";
+import {
+  Building2,
+  Users,
+  Clock,
+  Shield,
+  Loader2,
+  Activity,
+  Sparkles,
+  Ban,
+  PlayCircle,
+  Globe2,
+  LifeBuoy,
+  Zap,
+  UserCheck,
+} from "lucide-react";
 import { AdminLayout } from "@/components/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { useNavigate } from "react-router-dom";
 
 interface AdminStats {
   companies: {
@@ -27,13 +45,41 @@ interface AdminStats {
   recent_logs: any[];
 }
 
+interface AdminCompany {
+  id: string;
+  name: string;
+  status: string | null;
+  plan: string | null;
+  owner_email?: string | null;
+  users_count?: number | null;
+  last_event_at?: string | null;
+}
+
+interface AdminLog {
+  id: string;
+  action: string;
+  entity_type?: string | null;
+  companies?: { name?: string | null } | null;
+  created_at: string;
+}
+
 const AdminOverview = () => {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [companies, setCompanies] = useState<AdminCompany[]>([]);
+  const [companiesLoading, setCompaniesLoading] = useState(false);
+  const [logs, setLogs] = useState<AdminLog[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [impersonateCompany, setImpersonateCompany] = useState<string>("none");
+  const [impersonateRole, setImpersonateRole] = useState<"admin" | "manager" | "worker" | "inherit">("inherit");
+  const [impersonating, setImpersonating] = useState(false);
   useDocumentTitle("Admin • GTiQ");
+  const navigate = useNavigate();
 
   useEffect(() => {
     fetchStats();
+    fetchCompanies();
+    fetchLogs();
   }, []);
 
   const fetchStats = async () => {
@@ -54,6 +100,85 @@ const AdminOverview = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchCompanies = async () => {
+    setCompaniesLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-list-companies");
+      if (error) throw error;
+      setCompanies((data?.data as AdminCompany[]) || []);
+    } catch (err) {
+      console.error("Failed to fetch companies:", err);
+      toast.error("No se pudieron cargar empresas");
+    } finally {
+      setCompaniesLoading(false);
+    }
+  };
+
+  const fetchLogs = async () => {
+    setLogsLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-list-logs", {
+        query: { limit: 8 },
+      });
+      if (error) throw error;
+      setLogs((data?.data as AdminLog[]) || []);
+    } catch (err) {
+      console.error("Failed to fetch logs:", err);
+      toast.error("No se pudo cargar actividad reciente");
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  const criticalCompanies = useMemo(() => {
+    return companies
+      .filter((c) => c.status === "suspended" || c.status === "grace")
+      .slice(0, 5);
+  }, [companies]);
+
+  const activeRecently = useMemo(() => {
+    return companies
+      .filter((c) => c.last_event_at)
+      .sort((a, b) => (b.last_event_at || "").localeCompare(a.last_event_at || ""))
+      .slice(0, 5);
+  }, [companies]);
+
+  const handleImpersonate = async () => {
+    if (!impersonateCompany || impersonateCompany === "none") {
+      toast.error("Selecciona una empresa");
+      return;
+    }
+    setImpersonating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-impersonate", {
+        body: {
+          company_id: impersonateCompany,
+          as_role: impersonateRole === "inherit" ? undefined : impersonateRole,
+        },
+      });
+      if (error) throw error;
+      const payload = (data as any)?.data;
+      if (payload) {
+        localStorage.setItem("superadmin_impersonation", JSON.stringify(payload));
+        toast.success("Impersonación iniciada");
+        navigate("/"); // fuerza a recargar rutas con el nuevo contexto
+      } else {
+        toast.error("No se pudo iniciar la impersonación");
+      }
+    } catch (err) {
+      console.error("Impersonate failed", err);
+      toast.error("No se pudo impersonar");
+    } finally {
+      setImpersonating(false);
+    }
+  };
+
+  const stopImpersonation = () => {
+    localStorage.removeItem("superadmin_impersonation");
+    toast.success("Impersonación detenida");
+    navigate("/");
   };
 
   if (loading) {
@@ -148,44 +273,197 @@ const AdminOverview = () => {
           </Card>
         </div>
 
-        {/* Recent Activity */}
-        <Card className="glass-card p-6">
-          <h2 className="text-lg font-semibold mb-4">Actividad Reciente</h2>
-          {stats.recent_logs.length === 0 ? (
-            <p className="text-center py-8 text-muted-foreground">
-              No hay actividad reciente
-            </p>
-          ) : (
-            <div className="rounded-lg border overflow-hidden">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Acción</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Empresa</TableHead>
-                    <TableHead>Fecha</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {stats.recent_logs.map((log: any) => (
-                    <TableRow key={log.id}>
-                      <TableCell className="font-medium">{log.action}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{log.entity_type || "—"}</Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {log.companies?.name || "—"}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {new Date(log.created_at).toLocaleString()}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <Card className="glass-card p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-primary" /> Acciones rápidas
+                </h2>
+                <p className="text-sm text-muted-foreground">Operaciones comunes sin salir del panel.</p>
+              </div>
+              <Button variant="ghost" size="sm" onClick={fetchStats}>
+                <Loader2 className="w-4 h-4 mr-2" /> Refrescar KPIs
+              </Button>
             </div>
-          )}
-        </Card>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <Button variant="secondary" className="justify-start gap-2" onClick={() => navigate("/admin/companies")}>
+                <Building2 className="w-4 h-4" /> Ver empresas
+              </Button>
+              <Button variant="secondary" className="justify-start gap-2" onClick={() => navigate("/admin/users")}>
+                <Users className="w-4 h-4" /> Buscar usuarios
+              </Button>
+              <Button variant="secondary" className="justify-start gap-2" onClick={() => navigate("/admin/logs")}>
+                <Activity className="w-4 h-4" /> Ver auditoría
+              </Button>
+              <Button variant="secondary" className="justify-start gap-2" onClick={() => navigate("/admin/companies")}>
+                <Globe2 className="w-4 h-4" /> Crear empresa
+              </Button>
+              <Button variant="secondary" className="justify-start gap-2" onClick={() => navigate("/devices")}>
+                <Zap className="w-4 h-4" /> Dispositivos
+              </Button>
+              <Button variant="secondary" className="justify-start gap-2" onClick={() => navigate("/reports")}>
+                <LifeBuoy className="w-4 h-4" /> Reportes rápidos
+              </Button>
+            </div>
+
+            <div className="border rounded-lg p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-semibold flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-primary" /> Impersonar empresa
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    Activa una sesión como admin/manager/worker en la empresa seleccionada.
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" onClick={stopImpersonation}>
+                  Salir de impersonación
+                </Button>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <Select value={impersonateCompany} onValueChange={setImpersonateCompany}>
+                  <SelectTrigger>
+                    <SelectValue placeholder={companiesLoading ? "Cargando..." : "Empresa"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Selecciona empresa</SelectItem>
+                    {companies.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name} {c.status === "suspended" ? " (suspendida)" : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={impersonateRole} onValueChange={(v) => setImpersonateRole(v as any)}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Rol opcional" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="inherit">Hereda rol real</SelectItem>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="manager">Manager</SelectItem>
+                    <SelectItem value="worker">Worker</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button onClick={handleImpersonate} disabled={impersonating || companiesLoading}>
+                  {impersonating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Impersonar
+                </Button>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="glass-card p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Ban className="w-5 h-5 text-amber-500" /> Empresas en riesgo
+              </h2>
+              <Button variant="ghost" size="sm" onClick={fetchCompanies} disabled={companiesLoading}>
+                {companiesLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Refrescar
+              </Button>
+            </div>
+            {criticalCompanies.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sin empresas en gracia/suspendidas.</p>
+            ) : (
+              <div className="space-y-2">
+                {criticalCompanies.map((c) => (
+                  <div key={c.id} className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold">{c.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {c.owner_email || "Sin owner"} · {c.users_count || 0} workers
+                        </p>
+                      </div>
+                      <Badge variant={c.status === "suspended" ? "destructive" : "secondary"}>
+                        {c.status}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Último fichaje: {c.last_event_at ? new Date(c.last_event_at).toLocaleString() : "—"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <Card className="glass-card p-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Clock className="w-5 h-5 text-primary" /> Actividad reciente
+              </h2>
+              <Button variant="ghost" size="sm" onClick={fetchLogs} disabled={logsLoading}>
+                {logsLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />} Refrescar
+              </Button>
+            </div>
+            {logs.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sin registros recientes.</p>
+            ) : (
+              <div className="rounded-lg border overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Acción</TableHead>
+                      <TableHead>Entidad</TableHead>
+                      <TableHead>Empresa</TableHead>
+                      <TableHead>Fecha</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {logs.map((log) => (
+                      <TableRow key={log.id}>
+                        <TableCell className="font-medium">{log.action}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{log.entity_type || "—"}</Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {log.companies?.name || "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {new Date(log.created_at).toLocaleString()}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </Card>
+
+          <Card className="glass-card p-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold flex items-center gap-2">
+                <Globe2 className="w-5 h-5 text-primary" /> Últimas empresas activas
+              </h2>
+            </div>
+            {activeRecently.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sin actividad reciente.</p>
+            ) : (
+              <div className="space-y-2">
+                {activeRecently.map((c) => (
+                  <div key={c.id} className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-semibold">{c.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {c.plan || "sin plan"} · {c.users_count || 0} workers
+                        </p>
+                      </div>
+                      <Badge variant="outline">{c.status || "—"}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Último evento: {c.last_event_at ? new Date(c.last_event_at).toLocaleString() : "—"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
       </div>
     </AdminLayout>
   );

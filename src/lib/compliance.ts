@@ -8,6 +8,7 @@ export interface ComplianceSettings {
   min_hours_between_shifts: number | null;
   allowed_checkin_start: string | null; // HH:MM:SS
   allowed_checkin_end: string | null;   // HH:MM:SS
+  allow_outside_schedule: boolean | null;
   created_at: string;
   updated_at: string;
 }
@@ -39,4 +40,3 @@ export const updateComplianceSettings = async (
   if (error) throw error;
   return data as ComplianceSettings;
 };
-

@@ -172,11 +172,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const uid = session.user.id;
       const { list, activeCompany } = await fetchMembershipsWithCompany(uid);
 
+      // Fallback: leer perfil para asegurar flag de superadmin y nombre
+      let profileSuperadmin = false;
+      let profileFullName: string | null = null;
+      try {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("is_superadmin, full_name")
+          .eq("id", uid)
+          .maybeSingle();
+        profileSuperadmin = profile?.is_superadmin ?? false;
+        profileFullName = profile?.full_name ?? null;
+      } catch (err) {
+        console.error("[auth] profile load failed", err);
+      }
+
       const userData: AuthUser = {
         id: uid,
         email: session.user.email ?? null,
-        full_name: (session.user.user_metadata as any)?.full_name ?? null,
-        is_superadmin: (session.user.user_metadata as any)?.is_superadmin ?? false,
+        full_name: (session.user.user_metadata as any)?.full_name ?? profileFullName ?? null,
+        is_superadmin:
+          (session.user.user_metadata as any)?.is_superadmin ?? profileSuperadmin ?? false,
       };
 
       setUser(userData);
@@ -263,11 +279,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     // Cargar memberships
     const { list, activeCompany } = await fetchMembershipsWithCompany(session.user.id);
 
+    // Refrescar flag superadmin desde perfiles para no depender solo de user_metadata
+    let profileSuperadmin = false;
+    let profileFullName: string | null = null;
+    try {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("is_superadmin, full_name")
+        .eq("id", session.user.id)
+        .maybeSingle();
+      profileSuperadmin = profile?.is_superadmin ?? false;
+      profileFullName = profile?.full_name ?? null;
+    } catch (err) {
+      console.error("[auth] profile load failed (signin)", err);
+    }
+
     const userData: AuthUser = {
       id: session.user.id,
       email: session.user.email ?? null,
-      full_name: (session.user.user_metadata as any)?.full_name ?? null,
-      is_superadmin: (session.user.user_metadata as any)?.is_superadmin ?? false,
+      full_name: (session.user.user_metadata as any)?.full_name ?? profileFullName ?? null,
+      is_superadmin:
+        (session.user.user_metadata as any)?.is_superadmin ?? profileSuperadmin ?? false,
     };
 
     const nextState = {

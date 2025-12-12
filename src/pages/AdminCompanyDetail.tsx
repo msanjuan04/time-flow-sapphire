@@ -18,10 +18,11 @@ import { useImpersonation } from "@/hooks/useImpersonation";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { getCompanyPlanDefinition, normalizeCompanyPlan } from "@/config/companyPlans";
+import { Textarea } from "@/components/ui/textarea";
  
 
 interface CompanyDetail {
@@ -71,6 +72,12 @@ const AdminCompanyDetail = () => {
   const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<string>("");
   const [updatingPlan, setUpdatingPlan] = useState(false);
+  const [centerDialogOpen, setCenterDialogOpen] = useState(false);
+  const [teamDialogOpen, setTeamDialogOpen] = useState(false);
+  const [centerName, setCenterName] = useState("");
+  const [centerDesc, setCenterDesc] = useState("");
+  const [teamName, setTeamName] = useState("");
+  const [teamDesc, setTeamDesc] = useState("");
 
   useEffect(() => {
     if (id) {
@@ -182,13 +189,27 @@ const AdminCompanyDetail = () => {
     }
   };
 
-  const handleCreateCenter = async () => {
+  const openCenterDialog = () => {
+    setCenterName("");
+    setCenterDesc("");
+    setCenterDialogOpen(true);
+  };
+
+  const openTeamDialog = () => {
+    setTeamName("");
+    setTeamDesc("");
+    setTeamDialogOpen(true);
+  };
+
+  const handleSaveCenter = async () => {
     if (!id) return;
-    const name = window.prompt("Nombre del nuevo centro");
-    if (!name || !name.trim()) return;
+    if (!centerName.trim()) {
+      toast.error("El centro necesita un nombre");
+      return;
+    }
     const { data, error } = await supabase
       .from("centers")
-      .insert({ company_id: id, name: name.trim() })
+      .insert({ company_id: id, name: centerName.trim(), description: centerDesc || null })
       .select("id, name")
       .single();
     if (error) {
@@ -198,15 +219,18 @@ const AdminCompanyDetail = () => {
     await fetchAux();
     if (data?.id) setInviteCenter(data.id);
     toast.success("Centro creado");
+    setCenterDialogOpen(false);
   };
 
-  const handleCreateTeam = async () => {
+  const handleSaveTeam = async () => {
     if (!id) return;
-    const name = window.prompt("Nombre del nuevo equipo");
-    if (!name || !name.trim()) return;
+    if (!teamName.trim()) {
+      toast.error("El equipo necesita un nombre");
+      return;
+    }
     const { data, error } = await supabase
       .from("teams")
-      .insert({ company_id: id, name: name.trim() })
+      .insert({ company_id: id, name: teamName.trim(), description: teamDesc || null })
       .select("id, name")
       .single();
     if (error) {
@@ -216,6 +240,7 @@ const AdminCompanyDetail = () => {
     await fetchAux();
     if (data?.id) setInviteTeam(data.id);
     toast.success("Equipo creado");
+    setTeamDialogOpen(false);
   };
 
   const handleUpdatePlan = async () => {
@@ -501,7 +526,7 @@ const AdminCompanyDetail = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <Button type="button" variant="ghost" onClick={handleCreateCenter}>Crear</Button>
+              <Button type="button" variant="ghost" onClick={openCenterDialog}>Crear</Button>
             </div>
             <div className="flex gap-2">
               <div className="flex-1">
@@ -516,7 +541,7 @@ const AdminCompanyDetail = () => {
                   </SelectContent>
                 </Select>
               </div>
-              <Button type="button" variant="ghost" onClick={handleCreateTeam}>Crear</Button>
+              <Button type="button" variant="ghost" onClick={openTeamDialog}>Crear</Button>
             </div>
             <Input placeholder="DNI/NIF (opcional)" value={inviteDni} onChange={(e) => setInviteDni(e.target.value)} />
             <Input placeholder="Teléfono (opcional)" value={invitePhone} onChange={(e) => setInvitePhone(e.target.value)} />
@@ -528,6 +553,54 @@ const AdminCompanyDetail = () => {
             </div>
           </div>
         </Card>
+
+        {/* Dialog crear centro */}
+        <Dialog open={centerDialogOpen} onOpenChange={setCenterDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Crear centro</DialogTitle>
+              <DialogDescription>Opcional: para agrupar usuarios por sede o ubicación.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label>Nombre del centro</Label>
+                <Input value={centerName} onChange={(e) => setCenterName(e.target.value)} placeholder="Ej. Centro Madrid" />
+              </div>
+              <div className="space-y-1">
+                <Label>Descripción (opcional)</Label>
+                <Textarea value={centerDesc} onChange={(e) => setCenterDesc(e.target.value)} placeholder="Notas internas o dirección" />
+              </div>
+            </div>
+            <DialogFooter className="mt-4">
+              <Button variant="ghost" onClick={() => setCenterDialogOpen(false)}>Cancelar</Button>
+              <Button onClick={handleSaveCenter}>Guardar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dialog crear equipo */}
+        <Dialog open={teamDialogOpen} onOpenChange={setTeamDialogOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Crear equipo</DialogTitle>
+              <DialogDescription>Opcional: para agrupar usuarios por departamento o proyecto.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <Label>Nombre del equipo</Label>
+                <Input value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder="Ej. Ventas Norte" />
+              </div>
+              <div className="space-y-1">
+                <Label>Descripción (opcional)</Label>
+                <Textarea value={teamDesc} onChange={(e) => setTeamDesc(e.target.value)} placeholder="Objetivo, proyecto, etc." />
+              </div>
+            </div>
+            <DialogFooter className="mt-4">
+              <Button variant="ghost" onClick={() => setTeamDialogOpen(false)}>Cancelar</Button>
+              <Button onClick={handleSaveTeam}>Guardar</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">

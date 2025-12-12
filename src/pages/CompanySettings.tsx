@@ -7,6 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +31,15 @@ import { GEOFENCE_RADIUS_METERS } from "@/config/geofence";
 import { BackButton } from "@/components/BackButton";
 import OwnerQuickNav from "@/components/OwnerQuickNav";
 import { getComplianceSettings, updateComplianceSettings } from "@/lib/compliance";
+import {
+  getCompanyDayRules,
+  getWorkerDayRules,
+  upsertCompanyDayRules,
+  upsertWorkerDayRule,
+  HolidayPolicy,
+  SpecialDayPolicy,
+  WorkerDayRules,
+} from "@/lib/dayRules";
 
 const DEFAULT_CENTER: [number, number] = [40.4168, -3.7038]; // Madrid
 
@@ -74,6 +91,22 @@ const CompanySettings = () => {
   const [minBetweenShifts, setMinBetweenShifts] = useState("");
   const [allowedStart, setAllowedStart] = useState("");
   const [allowedEnd, setAllowedEnd] = useState("");
+  const [allowOutsideSchedule, setAllowOutsideSchedule] = useState(true);
+  // Day rules (owner)
+  const [dayLoading, setDayLoading] = useState(false);
+  const [daySaving, setDaySaving] = useState(false);
+  const [allowSunday, setAllowSunday] = useState(false);
+  const [holidayPolicy, setHolidayPolicy] = useState<HolidayPolicy>("block");
+  const [specialPolicy, setSpecialPolicy] = useState<SpecialDayPolicy>("restrict");
+  const [workerSearch, setWorkerSearch] = useState("");
+  const [workerList, setWorkerList] = useState<{ user_id: string; full_name: string; email: string; role: string }[]>([]);
+  const [workerRules, setWorkerRules] = useState<Record<string, WorkerDayRules>>({});
+  const [workerDialogOpen, setWorkerDialogOpen] = useState(false);
+  const [workerSaving, setWorkerSaving] = useState(false);
+  const [selectedWorker, setSelectedWorker] = useState<{ user_id: string; full_name: string; email: string } | null>(null);
+  const [workerAllowSunday, setWorkerAllowSunday] = useState<"inherit" | boolean>("inherit");
+  const [workerHoliday, setWorkerHoliday] = useState<"inherit" | HolidayPolicy>("inherit");
+  const [workerSpecial, setWorkerSpecial] = useState<"inherit" | SpecialDayPolicy>("inherit");
 
   useEffect(() => {
     const fetchCompany = async () => {
@@ -147,6 +180,7 @@ const CompanySettings = () => {
         setMinBetweenShifts(data?.min_hours_between_shifts != null ? String(data.min_hours_between_shifts) : "");
         setAllowedStart(data?.allowed_checkin_start ? data.allowed_checkin_start.slice(0, 5) : "");
         setAllowedEnd(data?.allowed_checkin_end ? data.allowed_checkin_end.slice(0, 5) : "");
+        setAllowOutsideSchedule(data?.allow_outside_schedule ?? true);
       } catch (err) {
         console.error("Compliance load error", err);
         toast.error("No pudimos cargar los ajustes legales");
@@ -155,6 +189,64 @@ const CompanySettings = () => {
       }
     };
     loadCompliance();
+  }, [companyId, role]);
+
+  useEffect(() => {
+    if (!companyId || role !== "owner") return;
+    const loadDayRules = async () => {
+      setDayLoading(true);
+      try {
+        const data = await getCompanyDayRules(companyId);
+        if (data) {
+          setAllowSunday(Boolean(data.allow_sunday_clock));
+          setHolidayPolicy(data.holiday_clock_policy);
+          setSpecialPolicy(data.special_day_policy);
+        } else {
+          setAllowSunday(false);
+          setHolidayPolicy("block");
+          setSpecialPolicy("restrict");
+        }
+      } catch (err) {
+        console.error("Day rules load error", err);
+        toast.error("No pudimos cargar las reglas por día");
+      } finally {
+        setDayLoading(false);
+      }
+    };
+
+    const loadWorkersAndRules = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("memberships")
+          .select("user_id, role, profiles(full_name, email)")
+          .eq("company_id", companyId);
+        if (error) throw error;
+        const list =
+          (data || [])
+            .filter((row: any) => row.role === "worker")
+            .map((row: any) => ({
+              user_id: row.user_id,
+              role: row.role,
+              full_name: row.profiles?.full_name || "Sin nombre",
+              email: row.profiles?.email || "Sin email",
+            })) ?? [];
+        setWorkerList(list);
+      } catch (err) {
+        console.error("Workers load error", err);
+      }
+
+      try {
+        const rules = await getWorkerDayRules(companyId);
+        const map: Record<string, WorkerDayRules> = {};
+        rules.forEach((r) => (map[r.user_id] = r));
+        setWorkerRules(map);
+      } catch (err) {
+        console.error("Worker day rules load error", err);
+      }
+    };
+
+    loadDayRules();
+    loadWorkersAndRules();
   }, [companyId, role]);
 
   useEffect(() => {
@@ -428,6 +520,7 @@ const CompanySettings = () => {
         min_hours_between_shifts: normalizeNumber(minBetweenShifts),
         allowed_checkin_start: allowedStart ? `${allowedStart}:00` : null,
         allowed_checkin_end: allowedEnd ? `${allowedEnd}:00` : null,
+        allow_outside_schedule: allowOutsideSchedule,
       });
       toast.success("Ajustes legales guardados");
     } catch (err) {
@@ -437,6 +530,61 @@ const CompanySettings = () => {
       setCompSaving(false);
     }
   };
+
+  const handleSaveDayRules = async () => {
+    if (!companyId) return;
+    setDaySaving(true);
+    try {
+      await upsertCompanyDayRules(companyId, {
+        allow_sunday_clock: allowSunday,
+        holiday_clock_policy: holidayPolicy,
+        special_day_policy: specialPolicy,
+      });
+      toast.success("Reglas por tipo de día guardadas");
+    } catch (err) {
+      console.error("Day rules save error", err);
+      toast.error("No pudimos guardar las reglas por día");
+    } finally {
+      setDaySaving(false);
+    }
+  };
+
+  const openWorkerDialog = (worker: { user_id: string; full_name: string; email: string }) => {
+    setSelectedWorker(worker);
+    const current = workerRules[worker.user_id];
+    setWorkerAllowSunday(
+      typeof current?.allow_sunday_clock === "boolean" ? current.allow_sunday_clock : "inherit"
+    );
+    setWorkerHoliday(current?.holiday_clock_policy ?? "inherit");
+    setWorkerSpecial(current?.special_day_policy ?? "inherit");
+    setWorkerDialogOpen(true);
+  };
+
+  const handleSaveWorkerRule = async () => {
+    if (!companyId || !selectedWorker) return;
+    setWorkerSaving(true);
+    try {
+      const saved = await upsertWorkerDayRule(companyId, selectedWorker.user_id, {
+        allow_sunday_clock: workerAllowSunday === "inherit" ? null : Boolean(workerAllowSunday),
+        holiday_clock_policy: workerHoliday === "inherit" ? null : workerHoliday,
+        special_day_policy: workerSpecial === "inherit" ? null : workerSpecial,
+      });
+      setWorkerRules((prev) => ({ ...prev, [selectedWorker.user_id]: saved }));
+      toast.success("Override guardado");
+      setWorkerDialogOpen(false);
+    } catch (err) {
+      console.error("Worker rule save error", err);
+      toast.error("No pudimos guardar el override");
+    } finally {
+      setWorkerSaving(false);
+    }
+  };
+
+  const filteredWorkers = workerList.filter((w) => {
+    const term = workerSearch.toLowerCase();
+    if (!term) return true;
+    return w.full_name.toLowerCase().includes(term) || w.email.toLowerCase().includes(term);
+  });
 
   return (
     <>
@@ -738,6 +886,9 @@ const CompanySettings = () => {
               </div>
               <div className="space-y-2">
                 <Label>Hora mínima de fichaje</Label>
+                <p className="text-xs text-muted-foreground">
+                  Déjalo vacío para permitir fichar a cualquier hora. Si lo rellenas, bloquea fichajes fuera de esa franja.
+                </p>
                 <Input
                   type="time"
                   value={allowedStart}
@@ -747,6 +898,9 @@ const CompanySettings = () => {
               </div>
               <div className="space-y-2">
                 <Label>Hora máxima de fichaje</Label>
+                <p className="text-xs text-muted-foreground">
+                  Junto con la hora mínima define la ventana diaria permitida. En modo “off” (campo vacío) no se aplican restricciones.
+                </p>
                 <Input
                   type="time"
                   value={allowedEnd}
@@ -755,11 +909,144 @@ const CompanySettings = () => {
                 />
               </div>
             </div>
+            <div className="flex items-center justify-between rounded-lg border p-4">
+              <div className="space-y-1">
+                <Label>Permitir fichar fuera de horario</Label>
+                <p className="text-sm text-muted-foreground">
+                  Si está activo, los trabajadores pueden fichar aunque estén fuera de la franja programada o ventana legal configurada.
+                </p>
+              </div>
+              <Switch
+                checked={allowOutsideSchedule}
+                onCheckedChange={setAllowOutsideSchedule}
+                disabled={compLoading || compSaving}
+                aria-label="Permitir fichar fuera de horario"
+              />
+            </div>
             <div className="flex justify-end">
               <Button onClick={handleSaveCompliance} disabled={compLoading || compSaving}>
                 {compSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
                 Guardar cambios
               </Button>
+            </div>
+          </Card>
+        )}
+
+        {role === "owner" && (
+          <Card className="glass-card p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center shadow-sm">
+                <Shield className="w-5 h-5" />
+              </div>
+              <div className="flex-1 space-y-1">
+                <h2 className="text-lg font-semibold">Reglas por tipo de día</h2>
+                <p className="text-sm text-muted-foreground">
+                  Define si se puede fichar domingos, festivos o días especiales. Los overrides individuales prevalecen.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-lg border p-4">
+              <div className="space-y-1">
+                <Label>Fichar domingos</Label>
+                <p className="text-sm text-muted-foreground">Activa para permitir fichajes en domingo.</p>
+              </div>
+              <Switch
+                checked={allowSunday}
+                onCheckedChange={setAllowSunday}
+                disabled={dayLoading || daySaving}
+              />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Festivos</Label>
+                <Select
+                  value={holidayPolicy}
+                  onValueChange={(v: HolidayPolicy) => setHolidayPolicy(v)}
+                  disabled={dayLoading || daySaving}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona política" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="allow">Permitido</SelectItem>
+                    <SelectItem value="require_reason">Permitido con motivo</SelectItem>
+                    <SelectItem value="block">Bloqueado</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">“Permitido con motivo” obliga a añadir nota en el fichaje.</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Días especiales</Label>
+                <Select
+                  value={specialPolicy}
+                  onValueChange={(v: SpecialDayPolicy) => setSpecialPolicy(v)}
+                  disabled={dayLoading || daySaving}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecciona política" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="allow">Permitido</SelectItem>
+                    <SelectItem value="restrict">Modo restrictivo (bloquea)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">Usa días especiales para cierres/eventos; “restrict” bloquea fichar.</p>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Button onClick={handleSaveDayRules} disabled={daySaving}>
+                {daySaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Save className="w-4 h-4 mr-2" />}
+                Guardar reglas
+              </Button>
+            </div>
+
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center gap-2">
+                <Input
+                  placeholder="Buscar trabajador por nombre o email"
+                  value={workerSearch}
+                  onChange={(e) => setWorkerSearch(e.target.value)}
+                  className="max-w-md"
+                />
+                {dayLoading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+              </div>
+              <div className="space-y-2">
+                {filteredWorkers.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No hay trabajadores para mostrar.</p>
+                )}
+                {filteredWorkers.map((w) => {
+                  const override = workerRules[w.user_id];
+                  const hasOverride =
+                    override &&
+                    (override.allow_sunday_clock !== null ||
+                      override.holiday_clock_policy !== null ||
+                      override.special_day_policy !== null);
+                  return (
+                    <div key={w.user_id} className="flex items-center justify-between rounded-lg border p-3">
+                      <div className="space-y-1">
+                        <p className="font-medium">{w.full_name}</p>
+                        <p className="text-sm text-muted-foreground">{w.email}</p>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={hasOverride ? "default" : "outline"}>
+                            {hasOverride ? "Override activo" : "Heredando regla global"}
+                          </Badge>
+                          {hasOverride && override && (
+                            <span className="text-xs text-muted-foreground">
+                              Domingos: {override.allow_sunday_clock === null ? "hereda" : override.allow_sunday_clock ? "permitido" : "bloqueado"} · Festivos: {override.holiday_clock_policy || "hereda"} · Especiales: {override.special_day_policy || "hereda"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <Button variant="outline" onClick={() => openWorkerDialog(w)}>
+                        Configurar
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </Card>
         )}
@@ -804,6 +1091,72 @@ const CompanySettings = () => {
 
         </div>
       </div>
+      <Dialog open={workerDialogOpen} onOpenChange={setWorkerDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Configurar reglas para {selectedWorker?.full_name || "trabajador"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Domingos</Label>
+              <Select
+                value={String(workerAllowSunday)}
+                onValueChange={(v) => setWorkerAllowSunday(v === "inherit" ? "inherit" : v === "true")}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="inherit">Heredar regla global</SelectItem>
+                  <SelectItem value="true">Permitir</SelectItem>
+                  <SelectItem value="false">Bloquear</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Festivos</Label>
+              <Select
+                value={workerHoliday || "inherit"}
+                onValueChange={(v) => setWorkerHoliday(v as "inherit" | HolidayPolicy)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="inherit">Heredar regla global</SelectItem>
+                  <SelectItem value="allow">Permitido</SelectItem>
+                  <SelectItem value="require_reason">Permitido con motivo</SelectItem>
+                  <SelectItem value="block">Bloqueado</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Días especiales</Label>
+              <Select
+                value={workerSpecial || "inherit"}
+                onValueChange={(v) => setWorkerSpecial(v as "inherit" | SpecialDayPolicy)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="inherit">Heredar regla global</SelectItem>
+                  <SelectItem value="allow">Permitido</SelectItem>
+                  <SelectItem value="restrict">Modo restrictivo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter className="mt-4">
+            <Button variant="outline" onClick={() => setWorkerDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSaveWorkerRule} disabled={workerSaving}>
+              {workerSaving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog
         open={showKeepSessionsModal}
         onOpenChange={(open) => {

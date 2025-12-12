@@ -33,7 +33,7 @@ interface MembershipResult {
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { status: 200, headers: corsHeaders });
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }); // FIX ensure JSON preflight response
   }
 
   try {
@@ -55,6 +55,8 @@ Deno.serve(async (req) => {
     // Get request body
     const body: ClockRequest = await req.json();
     const { action, latitude, longitude, photo_url, device_id, source = 'web', user_id, company_id, notes } = body;
+    const now = new Date();
+    const todayIso = now.toISOString().slice(0, 10);
 
     let currentUserId: string;
 
@@ -70,8 +72,120 @@ Deno.serve(async (req) => {
       currentUserId = user_id;
     } else {
       return new Response(
-        JSON.stringify({ error: 'No autenticado o user_id no proporcionado' }),
+        JSON.stringify({ success: false, error: 'No autenticado o user_id no proporcionado' }), // FIX always return JSON shape
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // -------------------------------------------------------------------
+    // Day-type rules (domingo, festivos, días especiales)
+    // -------------------------------------------------------------------
+    const dayOfWeek = now.getUTCDay(); // 0 = domingo
+    let isHoliday = false;
+    let isSpecialDay = false;
+
+    // Regla global
+    let companyDayRules: {
+      allow_sunday_clock?: boolean;
+      holiday_clock_policy?: 'allow' | 'require_reason' | 'block';
+      special_day_policy?: 'allow' | 'restrict';
+    } | null = null;
+    try {
+      const { data } = await supabaseAdmin
+        .from('company_day_rules')
+        .select('allow_sunday_clock, holiday_clock_policy, special_day_policy')
+        .eq('company_id', companyId)
+        .maybeSingle();
+      companyDayRules = data;
+    } catch (err) {
+      console.error('No se pudo obtener company_day_rules', err);
+    }
+
+    // Regla individual
+    let workerDayRules: {
+      allow_sunday_clock?: boolean | null;
+      holiday_clock_policy?: 'allow' | 'require_reason' | 'block' | null;
+      special_day_policy?: 'allow' | 'restrict' | null;
+    } | null = null;
+    try {
+      const { data } = await supabaseAdmin
+        .from('worker_day_rules')
+        .select('allow_sunday_clock, holiday_clock_policy, special_day_policy')
+        .eq('company_id', companyId)
+        .eq('user_id', currentUserId)
+        .maybeSingle();
+      workerDayRules = data;
+    } catch (err) {
+      console.error('No se pudo obtener worker_day_rules', err);
+    }
+
+    // Detectar festivo
+    try {
+      const { data } = await supabaseAdmin
+        .from('public_holidays')
+        .select('id')
+        .eq('date', todayIso)
+        .maybeSingle();
+      isHoliday = !!data;
+    } catch (err) {
+      // Tabla puede no existir en algunos entornos
+      console.error('Error comprobando festivos', err);
+    }
+
+    // Detectar día especial por empresa (tabla opcional)
+    try {
+      const { data } = await supabaseAdmin
+        .from('company_special_days')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('date', todayIso)
+        .maybeSingle();
+      isSpecialDay = !!data;
+    } catch (err) {
+      // Tabla opcional; si no existe, ignoramos
+      if (!`${err}`.includes('42P01')) {
+        console.error('Error comprobando días especiales', err);
+      }
+    }
+
+    const effectiveAllowSunday =
+      typeof workerDayRules?.allow_sunday_clock === 'boolean'
+        ? workerDayRules.allow_sunday_clock
+        : companyDayRules?.allow_sunday_clock ?? false;
+    const effectiveHolidayPolicy =
+      workerDayRules?.holiday_clock_policy ?? companyDayRules?.holiday_clock_policy ?? 'block';
+    const effectiveSpecialPolicy =
+      workerDayRules?.special_day_policy ?? companyDayRules?.special_day_policy ?? 'restrict';
+
+    if (dayOfWeek === 0 && !effectiveAllowSunday) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'DAY_POLICY_VIOLATION', reason: 'sunday_blocked' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (isHoliday) {
+      if (effectiveHolidayPolicy === 'block') {
+        return new Response(
+          JSON.stringify({ success: false, error: 'DAY_POLICY_VIOLATION', reason: 'holiday_blocked' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      if (effectiveHolidayPolicy === 'require_reason') {
+        const reason = notes || (body as any)?.reason;
+        if (!reason || String(reason).trim().length < 3) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'DAY_POLICY_VIOLATION', reason: 'holiday_requires_reason' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+    }
+
+    if (isSpecialDay && effectiveSpecialPolicy === 'restrict') {
+      return new Response(
+        JSON.stringify({ success: false, error: 'DAY_POLICY_VIOLATION', reason: 'special_day_restricted' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -213,7 +327,7 @@ Deno.serve(async (req) => {
     if (membershipError || !memberships || memberships.length === 0) {
       console.error('Membership error:', membershipError);
       return new Response(
-        JSON.stringify({ error: 'Usuario sin empresa asignada' }),
+        JSON.stringify({ success: false, error: 'Usuario sin empresa asignada' }), // FIX include success flag on error
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -238,7 +352,7 @@ Deno.serve(async (req) => {
         severity: 'error',
       });
       return new Response(
-        JSON.stringify({ error: 'Empresa suspendida. Contacta con administración.' }),
+        JSON.stringify({ success: false, error: 'Empresa suspendida. Contacta con administración.' }), // FIX consistent error envelope
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -249,7 +363,7 @@ Deno.serve(async (req) => {
     const { data: compliance } = await supabaseAdmin
       .from('company_compliance_settings')
       .select(
-        'max_week_hours, max_month_hours, min_hours_between_shifts, allowed_checkin_start, allowed_checkin_end'
+        'max_week_hours, max_month_hours, min_hours_between_shifts, allowed_checkin_start, allowed_checkin_end, allow_outside_schedule'
       )
       .eq('company_id', companyId)
       .maybeSingle();
@@ -261,16 +375,20 @@ Deno.serve(async (req) => {
       return h * 60 + m;
     };
 
-    const now = new Date();
+    const allowOutsideSchedule =
+      typeof compliance?.allow_outside_schedule === 'boolean' ? compliance.allow_outside_schedule : true;
 
     // Allowed check-in window (aplica a cualquier acción)
-    if (compliance?.allowed_checkin_start && compliance?.allowed_checkin_end) {
+    if (!allowOutsideSchedule && compliance?.allowed_checkin_start && compliance?.allowed_checkin_end) {
       const startMin = toMinutes(compliance.allowed_checkin_start);
       const endMin = toMinutes(compliance.allowed_checkin_end);
       const currentMin = now.getHours() * 60 + now.getMinutes();
-      if (
+      const enforceWindow =
         startMin !== null &&
         endMin !== null &&
+        !(startMin === 0 && endMin === 0); // 00:00-00:00 se interpreta como apagado
+      if (
+        enforceWindow &&
         (currentMin < startMin || currentMin > endMin)
       ) {
         return new Response(
@@ -335,7 +453,6 @@ Deno.serve(async (req) => {
     }
 
     // Fetch horario programado para hoy (se reutiliza abajo)
-    const todayIso = new Date().toISOString().slice(0, 10);
     let scheduled: { start_time?: string | null; end_time?: string | null; expected_hours?: number | null } | null = null;
     try {
       const { data: scheduledData } = await supabaseAdmin
@@ -367,7 +484,7 @@ Deno.serve(async (req) => {
         break;
       default:
         return new Response(
-          JSON.stringify({ error: 'Acción inválida' }),
+          JSON.stringify({ success: false, error: 'Acción inválida' }), // FIX consistent error envelope
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
@@ -380,7 +497,7 @@ Deno.serve(async (req) => {
         notifyMessage: 'Una sesión previa quedó abierta y el sistema bloqueó un nuevo fichaje de entrada.',
       });
       return new Response(
-        JSON.stringify({ error: 'Ya tienes una sesión activa' }),
+        JSON.stringify({ success: false, error: 'Ya tienes una sesión activa' }), // FIX consistent error envelope
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -388,7 +505,7 @@ Deno.serve(async (req) => {
     if ((action === 'out' || action === 'break_start' || action === 'break_end') && !activeSession) {
       if (exceededSession) {
         return new Response(
-          JSON.stringify({ error: 'shift_exceeded_max_hours' }),
+          JSON.stringify({ success: false, error: 'shift_exceeded_max_hours' }), // FIX consistent error envelope
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -398,7 +515,7 @@ Deno.serve(async (req) => {
         notifyMessage: 'Se detectó un intento de fichaje sin entrada previa.',
       });
       return new Response(
-        JSON.stringify({ error: 'No tienes ninguna sesión activa' }),
+        JSON.stringify({ success: false, error: 'No tienes ninguna sesión activa' }), // FIX consistent error envelope
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -416,8 +533,19 @@ Deno.serve(async (req) => {
       const currentMinutes = current.getHours() * 60 + current.getMinutes();
       const startMinutes = parseTimeToMinutes(scheduled?.start_time);
       const endMinutes = parseTimeToMinutes(scheduled?.end_time);
+      const expectedHours =
+        typeof scheduled?.expected_hours === 'number'
+          ? scheduled.expected_hours
+          : Number(scheduled?.expected_hours ?? 0);
 
-      if (action === 'in' && startMinutes !== null) {
+      if (allowOutsideSchedule) return { ok: true };
+
+      // Si no hay horario con horas asignadas, no bloqueamos fichajes por horario
+      const shouldEnforceSchedule =
+        Boolean(scheduled) && expectedHours > 0 && startMinutes !== null && endMinutes !== null;
+      if (!shouldEnforceSchedule) return { ok: true };
+
+      if (action === 'in') {
         const minAllowed = startMinutes - entryEarly;
         const maxAllowed = startMinutes + entryLate;
         if (currentMinutes < minAllowed) {
@@ -427,7 +555,7 @@ Deno.serve(async (req) => {
           return { ok: false, msg: 'Ya no puedes fichar' };
         }
       }
-      if (action === 'out' && endMinutes !== null) {
+      if (action === 'out') {
         const minAllowed = endMinutes - exitEarly;
         const maxAllowed = endMinutes + exitLate;
         if (currentMinutes < minAllowed) {
@@ -443,7 +571,7 @@ Deno.serve(async (req) => {
     const scheduleCheck = withinScheduleWindow();
     if (!scheduleCheck.ok) {
       return new Response(
-        JSON.stringify({ error: scheduleCheck.msg }),
+        JSON.stringify({ success: false, error: scheduleCheck.msg }), // FIX consistent error envelope
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -488,7 +616,7 @@ Deno.serve(async (req) => {
         severity: 'error',
       });
       return new Response(
-        JSON.stringify({ error: 'Error al registrar evento' }),
+        JSON.stringify({ success: false, error: 'Error al registrar evento' }), // FIX consistent error envelope
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -533,14 +661,14 @@ Deno.serve(async (req) => {
           ? await fetchSessionsSum(weekStart)
           : 0;
         if (compliance.max_week_hours && weekHours >= compliance.max_week_hours) {
-          return new Response(
-            JSON.stringify({
-              success: false,
-              error: 'LEGAL_RESTRICTION',
-              reason: 'exceeded_week_hours',
-            }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'LEGAL_RESTRICTION',
+            reason: 'exceeded_week_hours',
+          }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
         }
 
         const monthHours = compliance.max_month_hours
@@ -603,7 +731,7 @@ Deno.serve(async (req) => {
           severity: 'error',
         });
         return new Response(
-          JSON.stringify({ error: 'Error al crear sesión' }),
+          JSON.stringify({ success: false, error: 'Error al crear sesión' }), // FIX consistent error envelope
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -627,7 +755,7 @@ Deno.serve(async (req) => {
           severity: 'error',
         });
         return new Response(
-          JSON.stringify({ error: 'Error al cerrar sesión' }),
+          JSON.stringify({ success: false, error: 'Error al cerrar sesión' }), // FIX consistent error envelope
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -752,7 +880,7 @@ Deno.serve(async (req) => {
     console.error('Unexpected error:', error);
     // In case of total failure, we cannot determine company/user safely for incident
     return new Response(
-      JSON.stringify({ error: 'Error interno del servidor' }),
+      JSON.stringify({ success: false, error: 'Error interno del servidor' }), // FIX consistent error envelope
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }

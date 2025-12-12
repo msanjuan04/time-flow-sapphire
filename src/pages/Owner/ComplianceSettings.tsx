@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { Switch } from "@/components/ui/switch";
 import { getComplianceSettings, updateComplianceSettings, ComplianceSettings } from "@/lib/compliance";
 
 interface FormState {
@@ -19,6 +20,7 @@ interface FormState {
   min_hours_between_shifts: string;
   allowed_checkin_start: string;
   allowed_checkin_end: string;
+  allow_outside_schedule: boolean;
 }
 
 const toFormState = (settings: ComplianceSettings | null): FormState => ({
@@ -27,6 +29,7 @@ const toFormState = (settings: ComplianceSettings | null): FormState => ({
   min_hours_between_shifts: settings?.min_hours_between_shifts?.toString() ?? "",
   allowed_checkin_start: settings?.allowed_checkin_start?.slice(0, 5) ?? "",
   allowed_checkin_end: settings?.allowed_checkin_end?.slice(0, 5) ?? "",
+  allow_outside_schedule: settings?.allow_outside_schedule ?? true,
 });
 
 const normalizeNumber = (value: string) => {
@@ -66,6 +69,9 @@ const OwnerComplianceSettings = () => {
   const handleChange = (key: keyof FormState) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
   };
+  const handleBooleanChange = (key: keyof FormState) => (value: boolean) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,6 +84,7 @@ const OwnerComplianceSettings = () => {
         min_hours_between_shifts: normalizeNumber(form.min_hours_between_shifts),
         allowed_checkin_start: form.allowed_checkin_start ? `${form.allowed_checkin_start}:00` : null,
         allowed_checkin_end: form.allowed_checkin_end ? `${form.allowed_checkin_end}:00` : null,
+        allow_outside_schedule: form.allow_outside_schedule,
       });
       toast({ title: "Cambios guardados", description: "Las restricciones legales se han actualizado." });
     } catch (err) {
@@ -149,6 +156,9 @@ const OwnerComplianceSettings = () => {
               </div>
               <div className="space-y-2">
                 <Label>Hora mínima de fichaje</Label>
+                <p className="text-xs text-muted-foreground">
+                  Déjalo vacío para permitir fichar a cualquier hora. Si lo rellenas, bloquea todos los fichajes fuera de esta franja.
+                </p>
                 <Input
                   type="time"
                   value={form.allowed_checkin_start}
@@ -158,6 +168,9 @@ const OwnerComplianceSettings = () => {
               </div>
               <div className="space-y-2">
                 <Label>Hora máxima de fichaje</Label>
+                <p className="text-xs text-muted-foreground">
+                  Junto con la hora mínima define la ventana diaria permitida. En modo “off” (campo vacío) no se aplican restricciones.
+                </p>
                 <Input
                   type="time"
                   value={form.allowed_checkin_end}
@@ -165,6 +178,20 @@ const OwnerComplianceSettings = () => {
                   disabled={loading || saving}
                 />
               </div>
+            </div>
+            <div className="flex items-center justify-between rounded-lg border p-4">
+              <div className="space-y-1">
+                <Label>Permitir fichar fuera de horario</Label>
+                <p className="text-sm text-muted-foreground">
+                  Si está activo, los trabajadores pueden fichar aunque estén fuera de la franja programada o de la ventana legal configurada.
+                </p>
+              </div>
+              <Switch
+                checked={form.allow_outside_schedule}
+                onCheckedChange={handleBooleanChange("allow_outside_schedule")}
+                disabled={loading || saving}
+                aria-label="Permitir fichar fuera de horario"
+              />
             </div>
             <div className="flex justify-end">
               <Button type="submit" disabled={saving || loading}>
@@ -179,4 +206,3 @@ const OwnerComplianceSettings = () => {
 };
 
 export default OwnerComplianceSettings;
-
