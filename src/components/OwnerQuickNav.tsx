@@ -3,12 +3,13 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { CompanySelector } from "@/components/CompanySelector";
 import NotificationBell from "@/components/NotificationBell";
-import { AlertCircle, BarChart3, Calendar, Settings, Tablet, Users, LogOut } from "lucide-react";
+import { AlertCircle, BarChart3, Calendar, Settings, Tablet, Users, LogOut, QrCode } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
 
 const items = [
-  { href: "/devices", label: "Dispositivos", icon: Tablet },
+  // Reutilizamos el acceso de dispositivos para FastClock con icono QR
+  { href: "/owner/fastclock", label: "FastClock", icon: QrCode },
   { href: "/manager-calendar", label: "Calendario", icon: Calendar },
   { href: "/correction-requests", label: "Correcciones", icon: AlertCircle },
   { href: "/reports", label: "Reportes", icon: BarChart3 },

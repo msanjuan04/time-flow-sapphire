@@ -15,7 +15,8 @@ interface ClockRequest {
   longitude?: number;
   photo_url?: string;
   device_id?: string;
-  source?: 'mobile' | 'web' | 'kiosk';
+  source?: 'mobile' | 'web' | 'kiosk' | 'fastclock';
+  point_id?: string;
   user_id?: string; // For kiosk mode
   company_id?: string; // Active company
   notes?: string;
@@ -54,9 +55,11 @@ Deno.serve(async (req) => {
 
     // Get request body
     const body: ClockRequest = await req.json();
-    const { action, latitude, longitude, photo_url, device_id, source = 'web', user_id, company_id, notes } = body;
+    const { action, latitude, longitude, photo_url, device_id, source = 'web', user_id, company_id, notes, point_id } = body;
     const now = new Date();
-    const todayIso = now.toISOString().slice(0, 10);
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    const formatLocalDate = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    const todayLocal = formatLocalDate(now);
 
     let currentUserId: string;
 
@@ -74,118 +77,6 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ success: false, error: 'No autenticado o user_id no proporcionado' }), // FIX always return JSON shape
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // -------------------------------------------------------------------
-    // Day-type rules (domingo, festivos, días especiales)
-    // -------------------------------------------------------------------
-    const dayOfWeek = now.getUTCDay(); // 0 = domingo
-    let isHoliday = false;
-    let isSpecialDay = false;
-
-    // Regla global
-    let companyDayRules: {
-      allow_sunday_clock?: boolean;
-      holiday_clock_policy?: 'allow' | 'require_reason' | 'block';
-      special_day_policy?: 'allow' | 'restrict';
-    } | null = null;
-    try {
-      const { data } = await supabaseAdmin
-        .from('company_day_rules')
-        .select('allow_sunday_clock, holiday_clock_policy, special_day_policy')
-        .eq('company_id', companyId)
-        .maybeSingle();
-      companyDayRules = data;
-    } catch (err) {
-      console.error('No se pudo obtener company_day_rules', err);
-    }
-
-    // Regla individual
-    let workerDayRules: {
-      allow_sunday_clock?: boolean | null;
-      holiday_clock_policy?: 'allow' | 'require_reason' | 'block' | null;
-      special_day_policy?: 'allow' | 'restrict' | null;
-    } | null = null;
-    try {
-      const { data } = await supabaseAdmin
-        .from('worker_day_rules')
-        .select('allow_sunday_clock, holiday_clock_policy, special_day_policy')
-        .eq('company_id', companyId)
-        .eq('user_id', currentUserId)
-        .maybeSingle();
-      workerDayRules = data;
-    } catch (err) {
-      console.error('No se pudo obtener worker_day_rules', err);
-    }
-
-    // Detectar festivo
-    try {
-      const { data } = await supabaseAdmin
-        .from('public_holidays')
-        .select('id')
-        .eq('date', todayIso)
-        .maybeSingle();
-      isHoliday = !!data;
-    } catch (err) {
-      // Tabla puede no existir en algunos entornos
-      console.error('Error comprobando festivos', err);
-    }
-
-    // Detectar día especial por empresa (tabla opcional)
-    try {
-      const { data } = await supabaseAdmin
-        .from('company_special_days')
-        .select('id')
-        .eq('company_id', companyId)
-        .eq('date', todayIso)
-        .maybeSingle();
-      isSpecialDay = !!data;
-    } catch (err) {
-      // Tabla opcional; si no existe, ignoramos
-      if (!`${err}`.includes('42P01')) {
-        console.error('Error comprobando días especiales', err);
-      }
-    }
-
-    const effectiveAllowSunday =
-      typeof workerDayRules?.allow_sunday_clock === 'boolean'
-        ? workerDayRules.allow_sunday_clock
-        : companyDayRules?.allow_sunday_clock ?? false;
-    const effectiveHolidayPolicy =
-      workerDayRules?.holiday_clock_policy ?? companyDayRules?.holiday_clock_policy ?? 'block';
-    const effectiveSpecialPolicy =
-      workerDayRules?.special_day_policy ?? companyDayRules?.special_day_policy ?? 'restrict';
-
-    if (dayOfWeek === 0 && !effectiveAllowSunday) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'DAY_POLICY_VIOLATION', reason: 'sunday_blocked' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    if (isHoliday) {
-      if (effectiveHolidayPolicy === 'block') {
-        return new Response(
-          JSON.stringify({ success: false, error: 'DAY_POLICY_VIOLATION', reason: 'holiday_blocked' }),
-          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      if (effectiveHolidayPolicy === 'require_reason') {
-        const reason = notes || (body as any)?.reason;
-        if (!reason || String(reason).trim().length < 3) {
-          return new Response(
-            JSON.stringify({ success: false, error: 'DAY_POLICY_VIOLATION', reason: 'holiday_requires_reason' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
-        }
-      }
-    }
-
-    if (isSpecialDay && effectiveSpecialPolicy === 'restrict') {
-      return new Response(
-        JSON.stringify({ success: false, error: 'DAY_POLICY_VIOLATION', reason: 'special_day_restricted' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
@@ -317,7 +208,6 @@ Deno.serve(async (req) => {
       )
       .eq('user_id', currentUserId);
     
-    // If company_id is provided, filter by it
     if (company_id) {
       membershipQuery = membershipQuery.eq('company_id', company_id);
     }
@@ -332,8 +222,21 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Use the first membership (or the one matching company_id if provided)
-    const membership = memberships[0] as any;
+    let membership = memberships[0] as any;
+
+    // If no company_id was provided and user has more than one membership, force selection
+    if (!company_id && memberships.length > 1) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Debe seleccionar una empresa para fichar' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // If company_id provided, pick the matching membership (defensive)
+    if (company_id && memberships.length > 0) {
+      const match = memberships.find((m: any) => m.company_id === company_id);
+      if (match) membership = match;
+    }
 
     const companyId = membership.company_id;
     const company = Array.isArray(membership.company) ? membership.company[0] : membership.company;
@@ -376,7 +279,7 @@ Deno.serve(async (req) => {
     };
 
     const allowOutsideSchedule =
-      typeof compliance?.allow_outside_schedule === 'boolean' ? compliance.allow_outside_schedule : true;
+      typeof compliance?.allow_outside_schedule === 'boolean' ? compliance.allow_outside_schedule : false;
 
     // Allowed check-in window (aplica a cualquier acción)
     if (!allowOutsideSchedule && compliance?.allowed_checkin_start && compliance?.allowed_checkin_end) {
@@ -452,6 +355,132 @@ Deno.serve(async (req) => {
       }
     }
 
+    // -------------------------------------------------------------------
+    // Day-type rules (domingo, festivos, días especiales) en hora local,
+    // considerando turnos que cruzan medianoche (se usa la fecha de inicio de sesión para acciones distintas de "in").
+    // -------------------------------------------------------------------
+    const policyDate = action === 'in' ? now : activeSession?.clock_in_time ? new Date(activeSession.clock_in_time) : now;
+    const policyDateLocal = formatLocalDate(policyDate);
+    const policyDayOfWeek = policyDate.getDay(); // 0 = domingo (local)
+    let isHoliday = false;
+    let isSpecialDay = false;
+
+    // Reglas globales de empresa
+    let companyDayRules: {
+      allow_sunday_clock?: boolean;
+      holiday_clock_policy?: 'allow' | 'require_reason' | 'block';
+      special_day_policy?: 'allow' | 'restrict';
+    } | null = null;
+    try {
+      const { data } = await supabaseAdmin
+        .from('company_day_rules')
+        .select('allow_sunday_clock, holiday_clock_policy, special_day_policy')
+        .eq('company_id', companyId)
+        .maybeSingle();
+      companyDayRules = data;
+    } catch (err) {
+      console.error('No se pudo obtener company_day_rules', err);
+    }
+
+    // Reglas específicas por trabajador
+    let workerDayRules: {
+      allow_sunday_clock?: boolean | null;
+      holiday_clock_policy?: 'allow' | 'require_reason' | 'block' | null;
+      special_day_policy?: 'allow' | 'restrict' | null;
+    } | null = null;
+    try {
+      const { data } = await supabaseAdmin
+        .from('worker_day_rules')
+        .select('allow_sunday_clock, holiday_clock_policy, special_day_policy')
+        .eq('company_id', companyId)
+        .eq('user_id', currentUserId)
+        .maybeSingle();
+      workerDayRules = data;
+    } catch (err) {
+      console.error('No se pudo obtener worker_day_rules', err);
+    }
+
+    // Detectar festivo (intenta filtrar por company_id si la columna existe; si no, usa global)
+    try {
+      let holidayQuery = supabaseAdmin.from('public_holidays').select('id').eq('date', policyDateLocal).limit(1);
+      // Si la columna company_id existe, este filtro funcionará; si no, el error se captura y se hace fallback.
+      holidayQuery = holidayQuery.or(`company_id.is.null,company_id.eq.${companyId}`);
+      const { data } = await holidayQuery.maybeSingle();
+      isHoliday = !!data;
+    } catch (err) {
+      // Fallback si la columna company_id no existe
+      if (`${err}`.includes('column') && `${err}`.includes('company_id')) {
+        try {
+          const { data } = await supabaseAdmin
+            .from('public_holidays')
+            .select('id')
+            .eq('date', policyDateLocal)
+            .maybeSingle();
+          isHoliday = !!data;
+        } catch (fallbackErr) {
+          console.error('Error comprobando festivos (fallback)', fallbackErr);
+        }
+      } else {
+        console.error('Error comprobando festivos', err);
+      }
+    }
+
+    // Detectar día especial por empresa (tabla opcional)
+    try {
+      const { data } = await supabaseAdmin
+        .from('company_special_days')
+        .select('id')
+        .eq('company_id', companyId)
+        .eq('date', policyDateLocal)
+        .maybeSingle();
+      isSpecialDay = !!data;
+    } catch (err) {
+      if (!`${err}`.includes('42P01')) {
+        console.error('Error comprobando días especiales', err);
+      }
+    }
+
+    const effectiveAllowSunday =
+      typeof workerDayRules?.allow_sunday_clock === 'boolean'
+        ? workerDayRules.allow_sunday_clock
+        : companyDayRules?.allow_sunday_clock ?? true;
+    const effectiveHolidayPolicy =
+      workerDayRules?.holiday_clock_policy ?? companyDayRules?.holiday_clock_policy ?? 'allow';
+    const effectiveSpecialPolicy =
+      workerDayRules?.special_day_policy ?? companyDayRules?.special_day_policy ?? 'allow';
+
+    if (policyDayOfWeek === 0 && !effectiveAllowSunday) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'DAY_POLICY_VIOLATION', reason: 'sunday_blocked' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (isHoliday) {
+      if (effectiveHolidayPolicy === 'block') {
+        return new Response(
+          JSON.stringify({ success: false, error: 'DAY_POLICY_VIOLATION', reason: 'holiday_blocked' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      if (effectiveHolidayPolicy === 'require_reason') {
+        const reason = notes || (body as any)?.reason;
+        if (!reason || String(reason).trim().length < 3) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'DAY_POLICY_VIOLATION', reason: 'holiday_requires_reason' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+    }
+
+    if (isSpecialDay && effectiveSpecialPolicy === 'restrict') {
+      return new Response(
+        JSON.stringify({ success: false, error: 'DAY_POLICY_VIOLATION', reason: 'special_day_restricted' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Fetch horario programado para hoy (se reutiliza abajo)
     let scheduled: { start_time?: string | null; end_time?: string | null; expected_hours?: number | null } | null = null;
     try {
@@ -460,7 +489,7 @@ Deno.serve(async (req) => {
         .select('start_time, end_time, expected_hours')
         .eq('user_id', currentUserId)
         .eq('company_id', companyId)
-        .eq('date', todayIso)
+        .eq('date', todayLocal)
         .maybeSingle();
       if (scheduledData) scheduled = scheduledData;
     } catch (err) {
@@ -598,6 +627,7 @@ Deno.serve(async (req) => {
         device_id: device_id || null,
         latitude: latitude || null,
         longitude: longitude || null,
+        point_id: point_id || null,
         distance_meters: distanceMeters,
         is_within_geofence: isWithinGeofence,
         photo_url: photo_url || null,
@@ -719,6 +749,7 @@ Deno.serve(async (req) => {
         company_id: companyId,
         clock_in_time: new Date().toISOString(),
         is_active: true,
+        point_id: point_id || null,
         status: 'open',
       });
 
@@ -833,7 +864,7 @@ Deno.serve(async (req) => {
             const recipientIds = Array.from(new Set((admins || []).map((m: any) => m.user_id)));
             const userLabel = profile?.full_name || profile?.email || 'Empleado';
             // Deduplicamos por día para no repetir avisos del mismo empleado fuera de horario
-            const dedupEntityId = `${currentUserId}-${todayIso}-schedule-out-of-hours`;
+          const dedupEntityId = `${currentUserId}-${todayLocal}-schedule-out-of-hours`;
             await notifyUsers(
               recipientIds,
               {

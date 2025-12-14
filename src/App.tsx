@@ -2,7 +2,7 @@ import React, { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth, Membership } from "@/contexts/AuthContext";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import ThemeToggle from "@/components/ThemeToggle";
@@ -26,7 +26,9 @@ const DevicesPage = lazy(() => import("./pages/Devices"));
 const KioskPage = lazy(() => import("./pages/Kiosk"));
 const KioskFreePage = lazy(() => import("./pages/KioskFree"));
 const KioskEmployeePage = lazy(() => import("./pages/KioskEmployee"));
+const FastClockPage = lazy(() => import("./pages/FastClock"));
 const OwnerComplianceSettingsPage = lazy(() => import("./pages/Owner/ComplianceSettings"));
+const FastClockPointsPage = lazy(() => import("./pages/Owner/FastClockPoints"));
 const AdminOverviewPage = lazy(() => import("./pages/AdminOverview"));
 const AdminCompaniesPage = lazy(() => import("./pages/AdminCompanies"));
 const AdminCompanyDetailPage = lazy(() => import("./pages/AdminCompanyDetail"));
@@ -89,13 +91,19 @@ const ProtectedRoute = ({
   return children;
 };
 
+const RouteAwareThemeToggle = () => {
+  const location = useLocation();
+  if (location.pathname.startsWith("/fastclock")) return null;
+  return <ThemeToggle />;
+};
+
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <Toaster />
     <Sonner />
-    <ThemeToggle />
     <BrowserRouter>
       <AuthProvider>
+        <RouteAwareThemeToggle />
         <ImpersonationBanner />
         <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-muted-foreground">Cargando...</div>}>
           <Routes>
@@ -244,9 +252,18 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/owner/fastclock"
+              element={
+                <ProtectedRoute allowedRoles={["owner", "admin", "manager"]}>
+                  <FastClockPointsPage />
+                </ProtectedRoute>
+              }
+            />
             <Route path="/kiosk" element={<KioskPage />} />
             <Route path="/kiosk-free" element={<KioskFreePage />} />
             <Route path="/kiosk/employee/:token" element={<KioskEmployeePage />} />
+            <Route path="/fastclock/:pointId" element={<FastClockPage />} />
 
             <Route
               path="/admin"

@@ -62,6 +62,10 @@ interface ManagerTimeEvent {
   event_type: string;
   event_time: string;
   notes: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  source?: string | null;
+  point_id?: string | null;
 }
 
 interface ScheduledHour {
@@ -128,6 +132,26 @@ const ManagerCalendar = () => {
   const [endDate, setEndDate] = useState("");
   const [absenceReasonType, setAbsenceReasonType] = useState(DEFAULT_ABSENCE_REASON);
   const [absenceOtherReason, setAbsenceOtherReason] = useState("");
+  const mapSrc = (lat: number, lng: number, z = 15) =>
+    `https://maps.google.com/maps?q=${lat},${lng}&z=${z}&output=embed`;
+
+  const renderSourceBadge = (event: ManagerTimeEvent) => {
+    const sourceLabel =
+      event.source === "fastclock"
+        ? "FastClock"
+        : event.source
+        ? event.source
+        : event.point_id
+        ? "FastClock"
+        : null;
+    if (!sourceLabel && !event.point_id) return null;
+    return (
+      <Badge variant="secondary" className="text-[11px]">
+        {sourceLabel || "FastClock"}
+        {event.point_id ? ` · ${event.point_id}` : ""}
+      </Badge>
+    );
+  };
 
   useEffect(() => {
     if (membership) {
@@ -186,7 +210,7 @@ const ManagerCalendar = () => {
 
     const { data, error } = await supabase
       .from("time_events")
-      .select("id, event_type, event_time, notes")
+      .select("id, event_type, event_time, notes, latitude, longitude, source, point_id")
       .eq("company_id", membership.company_id)
       .eq("user_id", selectedEmployee)
       .gte("event_time", monthStart.toISOString())
@@ -557,7 +581,7 @@ const ManagerCalendar = () => {
       setEventTime("");
       const { data } = await supabase
         .from("time_events")
-        .select("id, event_type, event_time, notes")
+        .select("id, event_type, event_time, notes, latitude, longitude, source, point_id")
         .eq("company_id", membership.company_id)
         .eq("user_id", selectedEmployee)
         .gte("event_time", startOfMonth(date).toISOString())
@@ -1346,26 +1370,43 @@ const ManagerCalendar = () => {
                     ) : (
                       <ul className="space-y-2">
                         {selectedDayEvents.map((e) => (
-                          <li key={e.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 smooth-transition hover:bg-muted/70">
-                            <span className="text-sm font-medium">
-                              {e.event_type === "clock_in"
-                                ? "Entrada"
-                                : e.event_type === "clock_out"
-                                ? "Salida"
-                                : e.event_type === "pause_start"
-                                ? "Inicio pausa"
-                                : "Fin pausa"}
-                              {" • "}
-                              {format(parseISO(e.event_time), "HH:mm")}
-                            </span>
-                            <div className="flex items-center gap-1">
-                              <Button size="icon" variant="ghost" onClick={() => openEdit(e)} title="Editar" className="hover-scale">
-                                <Pencil className="w-4 h-4" />
-                              </Button>
-                              <Button size="icon" variant="ghost" onClick={() => handleDeleteEvent(e.id)} title="Eliminar" className="hover-scale">
-                                <Trash2 className="w-4 h-4" />
-                              </Button>
+                          <li key={e.id} className="rounded-lg bg-muted/50 p-3 smooth-transition hover:bg-muted/70">
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-sm font-medium">
+                                {e.event_type === "clock_in"
+                                  ? "Entrada"
+                                  : e.event_type === "clock_out"
+                                  ? "Salida"
+                                  : e.event_type === "pause_start"
+                                  ? "Inicio pausa"
+                                  : "Fin pausa"}
+                                {" • "}
+                                {format(parseISO(e.event_time), "HH:mm")}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                {renderSourceBadge(e)}
+                                <Button size="icon" variant="ghost" onClick={() => openEdit(e)} title="Editar" className="hover-scale">
+                                  <Pencil className="w-4 h-4" />
+                                </Button>
+                                <Button size="icon" variant="ghost" onClick={() => handleDeleteEvent(e.id)} title="Eliminar" className="hover-scale">
+                                  <Trash2 className="w-4 h-4" />
+                                </Button>
+                              </div>
                             </div>
+                            {e.latitude && e.longitude ? (
+                              <div className="mt-2 overflow-hidden rounded-md border bg-white">
+                                <iframe
+                                  title={`Mapa ${e.id}`}
+                                  src={mapSrc(Number(e.latitude), Number(e.longitude), 16)}
+                                  width="100%"
+                                  height="140"
+                                  loading="lazy"
+                                  referrerPolicy="no-referrer-when-downgrade"
+                                  className="border-0"
+                                />
+                              </div>
+                            ) : null}
+                            {e.notes ? <p className="mt-2 text-xs text-muted-foreground">{e.notes}</p> : null}
                           </li>
                         ))}
                       </ul>
@@ -1434,27 +1475,44 @@ const ManagerCalendar = () => {
                             <p className="text-sm text-muted-foreground py-4 text-center">No hay eventos.</p>
                           ) : (
                             <ul className="space-y-2">
-                              {selectedDayEvents.map((e) => (
-                                <li key={e.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 smooth-transition hover:bg-muted/70">
-                                  <span className="text-sm font-medium">
-                                    {e.event_type === "clock_in"
-                                      ? "Entrada"
-                                      : e.event_type === "clock_out"
-                                      ? "Salida"
-                                      : e.event_type === "pause_start"
-                                      ? "Inicio pausa"
-                                      : "Fin pausa"}
-                                    {" • "}
-                                    {format(parseISO(e.event_time), "HH:mm")}
-                                  </span>
-                                  <div className="flex items-center gap-1">
-                                    <Button size="icon" variant="ghost" onClick={() => openEdit(e)} title="Editar" className="hover-scale">
-                                      <Pencil className="w-4 h-4" />
-                                    </Button>
-                                    <Button size="icon" variant="ghost" onClick={() => handleDeleteEvent(e.id)} title="Eliminar" className="hover-scale">
-                                      <Trash2 className="w-4 h-4" />
-                                    </Button>
+                            {selectedDayEvents.map((e) => (
+                                <li key={e.id} className="rounded-lg bg-muted/50 p-3 smooth-transition hover:bg-muted/70">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-sm font-medium">
+                                      {e.event_type === "clock_in"
+                                        ? "Entrada"
+                                        : e.event_type === "clock_out"
+                                        ? "Salida"
+                                        : e.event_type === "pause_start"
+                                        ? "Inicio pausa"
+                                        : "Fin pausa"}
+                                      {" • "}
+                                      {format(parseISO(e.event_time), "HH:mm")}
+                                    </span>
+                                    <div className="flex items-center gap-2">
+                                      {renderSourceBadge(e)}
+                                      <Button size="icon" variant="ghost" onClick={() => openEdit(e)} title="Editar" className="hover-scale">
+                                        <Pencil className="w-4 h-4" />
+                                      </Button>
+                                      <Button size="icon" variant="ghost" onClick={() => handleDeleteEvent(e.id)} title="Eliminar" className="hover-scale">
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </div>
                                   </div>
+                                  {e.latitude && e.longitude ? (
+                                    <div className="mt-2 overflow-hidden rounded-md border bg-white">
+                                      <iframe
+                                        title={`Mapa ${e.id}`}
+                                        src={mapSrc(Number(e.latitude), Number(e.longitude), 16)}
+                                        width="100%"
+                                        height="140"
+                                        loading="lazy"
+                                        referrerPolicy="no-referrer-when-downgrade"
+                                        className="border-0"
+                                      />
+                                    </div>
+                                  ) : null}
+                                  {e.notes ? <p className="mt-2 text-xs text-muted-foreground">{e.notes}</p> : null}
                                 </li>
                               ))}
                             </ul>

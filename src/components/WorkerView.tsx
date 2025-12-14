@@ -65,6 +65,9 @@ const WorkerView = () => {
     location: { latitude: number; longitude: number };
   } | null>(null);
   const [outsideNote, setOutsideNote] = useState("");
+  const [holidayReason, setHolidayReason] = useState("");
+  const [showHolidayReason, setShowHolidayReason] = useState(false);
+  const [holidayAction, setHolidayAction] = useState<ClockAction | null>(null);
   const [maxShiftHours, setMaxShiftHours] = useState<number | null>(null);
 
   // Update clock every second
@@ -424,14 +427,21 @@ const WorkerView = () => {
           : typeof error === "string"
           ? error
           : "Error al registrar fichaje";
-      const friendlyMessage = normalizeErrorMessage(rawMessage);
-      console.error("Clock raw message:", rawMessage);
-    toast.error(friendlyMessage, {
-        action: {
-          label: "Reintentar",
-          onClick: () => callClockAPI(action),
-        },
-      });
+      const lower = rawMessage.toLowerCase();
+      if (lower.includes("holiday_requires_reason")) {
+        setHolidayAction(action);
+        setShowHolidayReason(true);
+        toast.warning("Añade un motivo para fichar en festivo");
+      } else {
+        const friendlyMessage = normalizeErrorMessage(rawMessage);
+        console.error("Clock raw message:", rawMessage);
+        toast.error(friendlyMessage, {
+          action: {
+            label: "Reintentar",
+            onClick: () => callClockAPI(action),
+          },
+        });
+      }
     } finally {
       setLoading(false);
       setActionPending(null);
@@ -442,6 +452,20 @@ const WorkerView = () => {
   const handleClockOut = () => attemptAction('out');
   const handleBreakStart = () => attemptAction('break_start');
   const handleBreakEnd = () => attemptAction('break_end');
+
+  const submitHolidayReason = async () => {
+    const reason = holidayReason.trim();
+    if (!holidayAction) return;
+    if (reason.length < 3) {
+      toast.error("Añade un motivo más detallado (mín. 3 caracteres)");
+      return;
+    }
+    setShowHolidayReason(false);
+    const actionToRetry = holidayAction;
+    setHolidayAction(null);
+    setHolidayReason("");
+    await callClockAPI(actionToRetry, { note: reason });
+  };
 
   const formatTime = (seconds: number) => {
     const hours = Math.floor(seconds / 3600);
@@ -1087,6 +1111,50 @@ const WorkerView = () => {
             <Button onClick={confirmOutsideClock} disabled={loading}>
               {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
               Sí, fichar fuera de zona
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={showHolidayReason}
+        onOpenChange={(open) => {
+          if (!open) {
+            setShowHolidayReason(false);
+            setHolidayAction(null);
+            setHolidayReason("");
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Fichaje en festivo</DialogTitle>
+            <DialogDescription>
+              Tu empresa solicita un motivo para fichar en festivo. Añádelo para continuar.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Motivo</label>
+            <Textarea
+              value={holidayReason}
+              onChange={(e) => setHolidayReason(e.target.value)}
+              placeholder="Ej. Guardia programada, incidencia urgente, turno pactado..."
+            />
+          </div>
+          <DialogFooter className="flex gap-2 sm:justify-between">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowHolidayReason(false);
+                setHolidayAction(null);
+                setHolidayReason("");
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button onClick={submitHolidayReason} disabled={loading}>
+              {loading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Enviar motivo y fichar
             </Button>
           </DialogFooter>
         </DialogContent>

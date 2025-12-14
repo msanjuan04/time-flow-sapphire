@@ -34,9 +34,9 @@ interface WorkerRow {
 }
 
 const defaultGlobal: Pick<CompanyDayRules, "allow_sunday_clock" | "holiday_clock_policy" | "special_day_policy"> = {
-  allow_sunday_clock: false,
-  holiday_clock_policy: "block",
-  special_day_policy: "restrict",
+  allow_sunday_clock: true,
+  holiday_clock_policy: "allow",
+  special_day_policy: "allow",
 };
 
 const DayRulesPage = () => {

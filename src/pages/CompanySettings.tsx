@@ -91,7 +91,7 @@ const CompanySettings = () => {
   const [minBetweenShifts, setMinBetweenShifts] = useState("");
   const [allowedStart, setAllowedStart] = useState("");
   const [allowedEnd, setAllowedEnd] = useState("");
-  const [allowOutsideSchedule, setAllowOutsideSchedule] = useState(true);
+  const [allowOutsideSchedule, setAllowOutsideSchedule] = useState(false);
   // Day rules (owner)
   const [dayLoading, setDayLoading] = useState(false);
   const [daySaving, setDaySaving] = useState(false);
@@ -180,7 +180,7 @@ const CompanySettings = () => {
         setMinBetweenShifts(data?.min_hours_between_shifts != null ? String(data.min_hours_between_shifts) : "");
         setAllowedStart(data?.allowed_checkin_start ? data.allowed_checkin_start.slice(0, 5) : "");
         setAllowedEnd(data?.allowed_checkin_end ? data.allowed_checkin_end.slice(0, 5) : "");
-        setAllowOutsideSchedule(data?.allow_outside_schedule ?? true);
+        setAllowOutsideSchedule(data?.allow_outside_schedule ?? false);
       } catch (err) {
         console.error("Compliance load error", err);
         toast.error("No pudimos cargar los ajustes legales");
@@ -202,9 +202,9 @@ const CompanySettings = () => {
           setHolidayPolicy(data.holiday_clock_policy);
           setSpecialPolicy(data.special_day_policy);
         } else {
-          setAllowSunday(false);
-          setHolidayPolicy("block");
-          setSpecialPolicy("restrict");
+          setAllowSunday(true);
+          setHolidayPolicy("allow");
+          setSpecialPolicy("allow");
         }
       } catch (err) {
         console.error("Day rules load error", err);
@@ -913,7 +913,7 @@ const CompanySettings = () => {
               <div className="space-y-1">
                 <Label>Permitir fichar fuera de horario</Label>
                 <p className="text-sm text-muted-foreground">
-                  Si está activo, los trabajadores pueden fichar aunque estén fuera de la franja programada o ventana legal configurada.
+                  Si está activo, se saltan la ventana legal y el horario programado. Déjalo apagado por defecto salvo que quieras permitir fichajes libres.
                 </p>
               </div>
               <Switch

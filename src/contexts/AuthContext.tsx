@@ -47,7 +47,7 @@ interface AuthContextType {
   memberships: Membership[];
   company: Company | null;
   loading: boolean;
-  signInWithCode: (code: string) => Promise<{ error: string | null }>;
+  signInWithCode: (code: string, options?: { redirect?: string | null }) => Promise<{ error: string | null }>;
   signOut: () => void;
 }
 
@@ -221,7 +221,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // ---------------------------------------------------------------------
   // SIGN IN WITH CODE
   // ---------------------------------------------------------------------
-  const signInWithCode = async (code: string) => {
+  const signInWithCode = async (code: string, options?: { redirect?: string | null }) => {
     const normalized = code.replace(/\D/g, "").trim();
     if (!/^\d{6}$/.test(normalized)) return { error: "INVALID_CODE_FORMAT" };
 
@@ -314,8 +314,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setMemberships(list);
     setCompany(activeCompany);
 
-    const route = resolveDefaultRoute(userData, list, activeCompany);
-    navigate(route.route);
+    const targetRoute =
+      options && Object.prototype.hasOwnProperty.call(options, "redirect")
+        ? options.redirect
+        : null;
+    if (targetRoute) {
+      navigate(targetRoute);
+    } else {
+      const route = resolveDefaultRoute(userData, list, activeCompany);
+      navigate(route.route);
+    }
 
     return { error: null };
   };
