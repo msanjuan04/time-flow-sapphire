@@ -69,6 +69,18 @@ const WorkerView = () => {
   const [showHolidayReason, setShowHolidayReason] = useState(false);
   const [holidayAction, setHolidayAction] = useState<ClockAction | null>(null);
   const [maxShiftHours, setMaxShiftHours] = useState<number | null>(null);
+  const [deviceId] = useState(() => {
+    const key = "gtiq_device_id";
+    const existing = typeof window !== "undefined" ? localStorage.getItem(key) : null;
+    if (existing) return existing;
+    const generated = (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`).toString();
+    try {
+      localStorage.setItem(key, generated);
+    } catch (err) {
+      console.warn("No se pudo persistir device_id", err);
+    }
+    return generated;
+  });
 
   // Update clock every second
   useEffect(() => {
@@ -373,6 +385,7 @@ const WorkerView = () => {
           longitude: loc?.longitude,
           source: 'web',
           company_id: companyId,
+          device_id: deviceId,
           notes: options?.note || undefined,
         },
       });

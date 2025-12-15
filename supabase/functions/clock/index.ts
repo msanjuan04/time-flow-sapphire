@@ -31,6 +31,8 @@ interface MembershipResult {
   } | null;
 }
 
+const MAX_DEVICES_PER_USER = Number(Deno.env.get('MAX_DEVICES_PER_USER') ?? '3');
+
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -258,6 +260,61 @@ Deno.serve(async (req) => {
         JSON.stringify({ success: false, error: 'Empresa suspendida. Contacta con administración.' }), // FIX consistent error envelope
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // -------------------------------------------------------------------
+    // Device binding: exigir device_id y vincular si no existe, con límite
+    // -------------------------------------------------------------------
+    const deviceId = device_id || null;
+    if (!deviceId) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'DEVICE_REQUIRED' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ¿Ya vinculado?
+    const { data: existingDevice } = await supabaseAdmin
+      .from('worker_devices' as any)
+      .select('id, active')
+      .eq('user_id', currentUserId)
+      .eq('company_id', companyId)
+      .eq('device_id', deviceId)
+      .maybeSingle();
+
+    if (existingDevice) {
+      if (!existingDevice.active) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'DEVICE_REVOKED' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      await supabaseAdmin
+        .from('worker_devices' as any)
+        .update({ last_used_at: new Date().toISOString() })
+        .eq('id', existingDevice.id);
+    } else {
+      // Verificar límite de dispositivos activos
+      const { count: activeCount } = await supabaseAdmin
+        .from('worker_devices' as any)
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', currentUserId)
+        .eq('company_id', companyId)
+        .eq('active', true);
+      if (Number.isFinite(MAX_DEVICES_PER_USER) && typeof activeCount === 'number' && activeCount >= MAX_DEVICES_PER_USER) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'DEVICE_LIMIT_EXCEEDED' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      // Vincular nuevo dispositivo
+      await supabaseAdmin.from('worker_devices' as any).insert({
+        user_id: currentUserId,
+        company_id: companyId,
+        device_id: deviceId,
+        active: true,
+        last_used_at: new Date().toISOString(),
+      });
     }
 
     // -------------------------------------------------------------------

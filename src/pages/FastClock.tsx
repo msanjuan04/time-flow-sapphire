@@ -27,6 +27,21 @@ const FastClockPage = () => {
   const [gpsReady, setGpsReady] = useState(false);
   const [loginCode, setLoginCode] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
+  const [deviceId] = useState(() => {
+    const key = "gtiq_device_id";
+    const existing = typeof window !== "undefined" ? localStorage.getItem(key) : null;
+    if (existing) return existing;
+    const generated =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      localStorage.setItem(key, generated);
+    } catch (err) {
+      console.warn("No se pudo persistir device_id", err);
+    }
+    return generated;
+  });
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -112,6 +127,7 @@ const FastClockPage = () => {
         point_id: pointId,
         latitude: coords?.lat,
         longitude: coords?.lng,
+        device_id: deviceId,
       },
     });
     if (response.error) {
