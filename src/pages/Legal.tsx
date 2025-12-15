@@ -51,7 +51,8 @@ const Legal = () => {
             <div className="space-y-2 text-sm leading-relaxed">
               <p><strong>1) Finalidades</strong> — Registro de fichajes (entrada/salida/pausas), gestión de usuarios y roles, control de dispositivos, elaboración de informes, y, en su caso, geolocalización/fotografía con fines de verificación.</p>
               <p><strong>2) Base jurídica</strong> — Cumplimiento de una obligación legal (art. 6.1.c RGPD; RDL 8/2019), ejecución de contrato (6.1.b), interés legítimo (6.1.f) para seguridad e integridad, y consentimiento (6.1.a) para funcionalidades opcionales (p. ej., geolocalización/foto).</p>
-              <p><strong>3) Datos tratados</strong> — Identificativos (nombre, email), laborales (rol/centro/equipo), fichajes (fechas/horas), dispositivos, y opcionalmente coordenadas GPS y fotografía en el momento del fichaje si la empresa lo habilita.</p>
+              <p><strong>3) Datos tratados</strong> — Identificativos (nombre, email), laborales (rol/centro/equipo), fichajes (fechas/horas), dispositivos (identificador técnico generado por la aplicación, navegador/SO, fechas de vinculación y último uso), y opcionalmente coordenadas GPS y fotografía en el momento del fichaje si la empresa lo habilita. No se recogen IMEI, número de teléfono ni se realiza seguimiento permanente del dispositivo.</p>
+              <p><strong>Acceso mediante NFC y vinculación de dispositivo</strong> — De forma opcional, la plataforma permite abrir el fichaje rápido a través de NFC/QR y vincular el dispositivo móvil tras una primera identificación. Se genera un identificador técnico interno para reconocer el dispositivo en accesos posteriores y reducir fricción, sin cambiar la finalidad ni la base jurídica del registro de jornada. Este mecanismo es revocable por la empresa y no añade nuevas finalidades.</p>
               <p><strong>4) Destinatarios</strong> — Proveedores tecnológicos como encargados del tratamiento (alojamiento, email, analítica operativa) y administraciones/Inspección de Trabajo cuando proceda legalmente.</p>
               <p><strong>5) Transferencias internacionales</strong> — Si existieran, se amparan en cláusulas contractuales tipo y medidas complementarias. Consulte al administrador de su empresa por la lista de subencargados actualizada.</p>
               <p><strong>6) Plazos de conservación</strong> — Los registros de jornada se conservan al menos 4 años (o el plazo que resulte aplicable). Los logs de auditoría y revisiones se conservan como prueba de integridad durante el mismo periodo o el que la empresa determine.</p>
@@ -75,6 +76,12 @@ const Legal = () => {
           <section id="consentimientos" className="space-y-3">
             <h2 className="text-xl font-semibold">Textos de consentimiento</h2>
             <div className="space-y-4 text-sm leading-relaxed">
+              <div className="rounded-md border p-3 bg-muted/50">
+                <p className="font-medium">Aviso informativo en app (sin consentimiento)</p>
+                <p className="text-muted-foreground">
+                  “Este dispositivo quedará vinculado a tu cuenta para facilitar el fichaje sin código. Si cambias de móvil o el dispositivo es revocado, se te solicitará nuevamente el código.”
+                </p>
+              </div>
               <div>
                 <h3 className="font-medium">1) Geolocalización en fichajes (opcional)</h3>
                 <p>
@@ -121,6 +128,7 @@ const Legal = () => {
 
           <section className="space-y-2 text-xs text-muted-foreground">
             <p>Esta información es orientativa. Cada empresa (responsable del tratamiento) debe adaptar estos contenidos a su realidad organizativa, proveedores y flujos de datos específicos.</p>
+            <p>Nota técnica-legal: el uso de NFC y la vinculación de dispositivo son mecanismos de autenticación y trazabilidad del fichaje, no sistemas de control adicionales. El registro sigue siendo personal, auditable y revocable por la empresa.</p>
           </section>
         </Card>
       </div>
