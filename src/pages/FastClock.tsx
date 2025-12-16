@@ -152,7 +152,7 @@ const FastClockPage = () => {
   };
 
   const workerIdLabel = user?.email || user?.id || "Trabajador";
-  const pointLabel = pointId ? `Punto: ${pointId}` : "Punto de fichaje";
+  const pointLabel = pointId ? "Punto configurado" : "Punto de fichaje"; // UI: avoid mostrar UUID cruda
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

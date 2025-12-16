@@ -32,6 +32,7 @@ interface MembershipResult {
 }
 
 const MAX_DEVICES_PER_USER = Number(Deno.env.get('MAX_DEVICES_PER_USER') ?? '3');
+const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
@@ -262,6 +263,29 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Punto de fichaje (fastclock): se valida contra el punto concreto
+    let fastClockPoint: { id: string; company_id: string; latitude: number; longitude: number; radius_meters: number | null; active: boolean } | null = null;
+    if (point_id) {
+      if (!isUuid(point_id)) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'POINT_INVALID' }), // FIX validar UUID de punto
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      const { data: point } = await supabaseAdmin
+        .from('fastclock_points' as any)
+        .select('id, company_id, latitude, longitude, radius_meters, active')
+        .eq('id', point_id)
+        .maybeSingle();
+      if (!point || point.company_id !== companyId || point.active === false) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'POINT_NOT_FOUND' }), // FIX rechaza punto no válido
+          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      fastClockPoint = point;
+    }
+
     // -------------------------------------------------------------------
     // Device binding: exigir device_id y vincular si no existe, con límite
     // -------------------------------------------------------------------
@@ -276,7 +300,7 @@ Deno.serve(async (req) => {
     // ¿Ya vinculado?
     const { data: existingDevice } = await supabaseAdmin
       .from('worker_devices' as any)
-      .select('id, active')
+      .select('id, active, point_id')
       .eq('user_id', currentUserId)
       .eq('company_id', companyId)
       .eq('device_id', deviceId)
@@ -289,11 +313,28 @@ Deno.serve(async (req) => {
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+      if (fastClockPoint) {
+        if (!existingDevice.point_id || existingDevice.point_id !== fastClockPoint.id) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'DEVICE_POINT_MISMATCH' }), // FIX dispositivo no corresponde al punto
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+      }
+      // Si el dispositivo existe y está activo, solo refrescamos last_used
       await supabaseAdmin
         .from('worker_devices' as any)
         .update({ last_used_at: new Date().toISOString() })
         .eq('id', existingDevice.id);
     } else {
+      // Para fastclock con punto, exigimos registro previo del tag
+      if (fastClockPoint) {
+        return new Response(
+          JSON.stringify({ success: false, error: 'DEVICE_NOT_REGISTERED' }), // FIX tag no registrado para este punto
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
       // Verificar límite de dispositivos activos
       const { count: activeCount } = await supabaseAdmin
         .from('worker_devices' as any)
@@ -307,14 +348,40 @@ Deno.serve(async (req) => {
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      // Vincular nuevo dispositivo
+      // Vincular nuevo dispositivo (solo flujos sin punto específico)
       await supabaseAdmin.from('worker_devices' as any).insert({
         user_id: currentUserId,
         company_id: companyId,
         device_id: deviceId,
+        point_id: fastClockPoint?.id || null,
         active: true,
         last_used_at: new Date().toISOString(),
       });
+    }
+
+    // Aseguramos que el device_id exista en la tabla devices (o lo retiramos para evitar FK 23503)
+    let deviceIdForEvent: string | null = deviceId;
+    if (deviceIdForEvent) {
+      if (!isUuid(deviceIdForEvent)) {
+        console.warn('Discarding non-UUID device_id for event to avoid FK error', { device_id: deviceIdForEvent });
+        deviceIdForEvent = null;
+      } else {
+        const { data: registeredDevice, error: deviceLookupError } = await supabaseAdmin
+          .from('devices' as any)
+          .select('id')
+          .eq('id', deviceIdForEvent)
+          .eq('company_id', companyId)
+          .maybeSingle();
+
+        if (deviceLookupError || !registeredDevice) {
+          console.warn('Device not found in devices table; dropping device_id to avoid FK', {
+            device_id: deviceIdForEvent,
+            company_id: companyId,
+            lookup_error: deviceLookupError || null,
+          });
+          deviceIdForEvent = null;
+        }
+      }
     }
 
     // -------------------------------------------------------------------
@@ -665,12 +732,35 @@ Deno.serve(async (req) => {
     let distanceMeters: number | null = null;
     let isWithinGeofence: boolean | null = null;
 
-    const hasCompanyLocation = typeof company?.hq_lat === 'number' && typeof company?.hq_lng === 'number';
     const hasWorkerLocation = typeof latitude === 'number' && typeof longitude === 'number';
+    const hasCompanyLocation = typeof company?.hq_lat === 'number' && typeof company?.hq_lng === 'number';
+    const hasPointLocation =
+      fastClockPoint && typeof fastClockPoint.latitude === 'number' && typeof fastClockPoint.longitude === 'number';
 
-    if (hasCompanyLocation && hasWorkerLocation) {
+    const geofenceRadius =
+      fastClockPoint && typeof fastClockPoint.radius_meters === 'number' && !Number.isNaN(fastClockPoint.radius_meters)
+        ? Number(fastClockPoint.radius_meters)
+        : GEOFENCE_RADIUS_METERS;
+
+    // Si hay punto configurado, exigimos coordenadas para validar geovalla del punto
+    if (fastClockPoint && hasPointLocation && !hasWorkerLocation) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'LOCATION_REQUIRED' }), // FIX requiere GPS para validar punto
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (hasWorkerLocation && hasPointLocation) {
+      distanceMeters = calculateDistanceMeters(
+        latitude!,
+        longitude!,
+        fastClockPoint!.latitude!,
+        fastClockPoint!.longitude!
+      );
+      isWithinGeofence = distanceMeters <= geofenceRadius;
+    } else if (hasWorkerLocation && hasCompanyLocation) {
       distanceMeters = calculateDistanceMeters(latitude!, longitude!, company.hq_lat!, company.hq_lng!);
-      isWithinGeofence = distanceMeters <= GEOFENCE_RADIUS_METERS;
+      isWithinGeofence = distanceMeters <= geofenceRadius;
     }
 
     // Insert time event
@@ -681,7 +771,7 @@ Deno.serve(async (req) => {
         company_id: companyId,
         event_type: eventType,
         source,
-        device_id: device_id || null,
+        device_id: deviceIdForEvent,
         latitude: latitude || null,
         longitude: longitude || null,
         point_id: point_id || null,
