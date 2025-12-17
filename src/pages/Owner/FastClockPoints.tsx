@@ -21,70 +21,78 @@ const FASTCLOCK_BASE_URL = "https://gneraitiq.com/fastclock/";
 type ClockPoint = {
   id: string;
   name: string;
-  center?: string;
+  latitude: number;
+  longitude: number;
+  radius_meters: number;
   active: boolean;
-  lastClock?: string | null;
 };
-
-const createId = () => (crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2, 10));
 
 const getClockPoints = async (companyId: string): Promise<ClockPoint[]> => {
   const { data, error } = await supabase
-    .from("clock_points" as any)
-    .select("id, name, center, active, last_clock")
+    .from("fastclock_points" as any)
+    .select("id, name, latitude, longitude, radius_meters, active")
     .eq("company_id", companyId)
     .order("created_at", { ascending: true });
   if (error) throw error;
   return (data || []).map((p: any) => ({
     id: p.id,
     name: p.name,
-    center: p.center || undefined,
+    latitude: Number(p.latitude),
+    longitude: Number(p.longitude),
+    radius_meters: Number(p.radius_meters),
     active: Boolean(p.active),
-    lastClock: p.last_clock || null,
   }));
 };
 
-const createClockPoint = async (companyId: string, payload: { name: string; center?: string; active: boolean }) => {
+const createClockPoint = async (
+  companyId: string,
+  payload: { name: string; latitude: number; longitude: number; radius_meters: number; active: boolean }
+) => {
   const { data, error } = await supabase
-    .from("clock_points" as any)
+    .from("fastclock_points" as any)
     .insert({
-      id: createId(),
       company_id: companyId,
       name: payload.name,
-      center: payload.center || null,
+      latitude: payload.latitude,
+      longitude: payload.longitude,
+      radius_meters: payload.radius_meters,
       active: payload.active,
     })
-    .select("id, name, center, active, last_clock")
+    .select("id, name, latitude, longitude, radius_meters, active")
     .maybeSingle();
   if (error) throw error;
   return {
     id: data!.id,
     name: data!.name,
-    center: data!.center || undefined,
+    latitude: Number(data!.latitude),
+    longitude: Number(data!.longitude),
+    radius_meters: Number(data!.radius_meters),
     active: Boolean(data!.active),
-    lastClock: data!.last_clock || null,
   } as ClockPoint;
 };
 
 const updateClockPoint = async (companyId: string, pointId: string, payload: Partial<ClockPoint>) => {
   const { data, error } = await supabase
-    .from("clock_points" as any)
+    .from("fastclock_points" as any)
     .update({
       name: payload.name,
-      center: payload.center ?? null,
+      latitude: payload.latitude,
+      longitude: payload.longitude,
+      radius_meters: payload.radius_meters,
       active: payload.active,
     })
     .eq("company_id", companyId)
     .eq("id", pointId)
-    .select("id, name, center, active, last_clock")
+    .select("id, name, latitude, longitude, radius_meters, active")
     .maybeSingle();
   if (error) throw error;
   return {
     id: data!.id,
     name: data!.name,
-    center: data!.center || undefined,
+    latitude: Number(data!.latitude),
+    longitude: Number(data!.longitude),
+    radius_meters: Number(data!.radius_meters),
     active: Boolean(data!.active),
-    lastClock: data!.last_clock || null,
   } as ClockPoint;
 };
 
@@ -96,7 +104,9 @@ const FastClockPoints = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ClockPoint | null>(null);
   const [name, setName] = useState("");
-  const [center, setCenter] = useState("");
+  const [latitude, setLatitude] = useState("");
+  const [longitude, setLongitude] = useState("");
+  const [radius, setRadius] = useState("200");
   const [active, setActive] = useState(true);
 
   useEffect(() => {
@@ -119,7 +129,9 @@ const FastClockPoints = () => {
   const openCreate = () => {
     setEditing(null);
     setName("");
-    setCenter("");
+    setLatitude("");
+    setLongitude("");
+    setRadius("200");
     setActive(true);
     setDialogOpen(true);
   };
@@ -127,7 +139,9 @@ const FastClockPoints = () => {
   const openEdit = (point: ClockPoint) => {
     setEditing(point);
     setName(point.name);
-    setCenter(point.center || "");
+    setLatitude(point.latitude.toString());
+    setLongitude(point.longitude.toString());
+    setRadius(point.radius_meters.toString());
     setActive(point.active);
     setDialogOpen(true);
   };
@@ -141,13 +155,36 @@ const FastClockPoints = () => {
       toast.error("Añade un nombre para el punto");
       return;
     }
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    const radiusMeters = Number(radius);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      toast.error("Introduce una latitud y longitud válidas");
+      return;
+    }
+    if (!Number.isFinite(radiusMeters) || radiusMeters <= 0) {
+      toast.error("Introduce un radio válido en metros");
+      return;
+    }
     try {
       if (editing) {
-        const updated = await updateClockPoint(companyId, editing.id, { name: name.trim(), center: center.trim() || undefined, active });
+        const updated = await updateClockPoint(companyId, editing.id, {
+          name: name.trim(),
+          latitude: lat,
+          longitude: lng,
+          radius_meters: radiusMeters,
+          active,
+        });
         setPoints((prev) => prev.map((p) => (p.id === editing.id ? { ...p, ...updated } : p)));
         toast.success("Punto actualizado");
       } else {
-        const created = await createClockPoint(companyId, { name: name.trim(), center: center.trim() || undefined, active });
+        const created = await createClockPoint(companyId, {
+          name: name.trim(),
+          latitude: lat,
+          longitude: lng,
+          radius_meters: radiusMeters,
+          active,
+        });
         setPoints((prev) => [...prev, created]);
         toast.success("Punto creado");
       }
@@ -227,9 +264,9 @@ const FastClockPoints = () => {
             <TableHeader>
               <TableRow>
                 <TableHead>Nombre</TableHead>
-                <TableHead>Centro</TableHead>
+                <TableHead>Coordenadas</TableHead>
+                <TableHead>Radio</TableHead>
                 <TableHead>Estado</TableHead>
-                <TableHead>Último fichaje</TableHead>
                 <TableHead className="text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
@@ -237,9 +274,11 @@ const FastClockPoints = () => {
               {points.map((p) => (
                 <TableRow key={p.id}>
                   <TableCell className="font-medium">{p.name}</TableCell>
-                  <TableCell>{p.center || "—"}</TableCell>
+                  <TableCell>
+                    {p.latitude.toFixed(5)}, {p.longitude.toFixed(5)}
+                  </TableCell>
+                  <TableCell>{Math.round(p.radius_meters)} m</TableCell>
                   <TableCell>{renderStatus(p)}</TableCell>
-                  <TableCell>{p.lastClock ? new Date(p.lastClock).toLocaleString() : "—"}</TableCell>
                   <TableCell className="text-right">
                     <Button variant="outline" size="sm" onClick={() => openEdit(p)}>
                       Ver / Editar
@@ -267,8 +306,14 @@ const FastClockPoints = () => {
               {renderStatus(selectedPoint)}
             </div>
             <div className="space-y-1">
-              <p className="text-xs text-muted-foreground">Centro</p>
-              <p className="text-sm">{selectedPoint.center || "—"}</p>
+              <p className="text-xs text-muted-foreground">Coordenadas</p>
+              <p className="text-sm">
+                {selectedPoint.latitude.toFixed(5)}, {selectedPoint.longitude.toFixed(5)}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">Radio</p>
+              <p className="text-sm">{Math.round(selectedPoint.radius_meters)} m</p>
             </div>
             <div className="space-y-1 sm:col-span-2">
               <p className="text-xs text-muted-foreground flex items-center gap-2">
@@ -315,9 +360,38 @@ const FastClockPoints = () => {
               <Label>Nombre del punto</Label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej. Entrada principal" />
             </div>
-            <div className="space-y-1">
-              <Label>Centro / local</Label>
-              <Input value={center} onChange={(e) => setCenter(e.target.value)} placeholder="Opcional" />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1">
+                <Label>Latitud</Label>
+                <Input
+                  type="number"
+                  step="0.000001"
+                  value={latitude}
+                  onChange={(e) => setLatitude(e.target.value)}
+                  placeholder="Ej. 40.41678"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Longitud</Label>
+                <Input
+                  type="number"
+                  step="0.000001"
+                  value={longitude}
+                  onChange={(e) => setLongitude(e.target.value)}
+                  placeholder="Ej. -3.70379"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Radio (metros)</Label>
+                <Input
+                  type="number"
+                  step="1"
+                  min="1"
+                  value={radius}
+                  onChange={(e) => setRadius(e.target.value)}
+                  placeholder="200"
+                />
+              </div>
             </div>
             <div className="flex items-center justify-between rounded-lg border p-3">
               <div className="space-y-1">

@@ -16,6 +16,81 @@ const actionCopy: Record<ClockAction, { label: string; tone: string }> = {
   break_end: { label: "Reanudar", tone: "bg-blue-600 hover:bg-blue-500" },
 };
 
+const parseFunctionError = async (response: Response | null | undefined) => {
+  if (!response) return null;
+  try {
+    const contentType = response.headers.get("content-type") || "";
+    const clone = typeof response.clone === "function" ? response.clone() : response;
+    if (contentType.includes("application/json")) {
+      const json = await clone.json();
+      if (json?.error) {
+        const baseError =
+          typeof json.error === "string"
+            ? json.error
+            : typeof json.error?.message === "string"
+            ? json.error.message
+            : null;
+        if (baseError) {
+          const reason = json?.reason ? `:${json.reason}` : "";
+          return `${baseError}${reason}`;
+        }
+      }
+      if (json?.message) return json.message as string;
+      return JSON.stringify(json);
+    }
+    const text = await clone.text();
+    return text || null;
+  } catch (err) {
+    console.error("No se pudo leer el error del clock:", err);
+    return null;
+  }
+};
+
+const normalizeErrorMessage = (raw: string) => {
+  const lower = raw.toLowerCase();
+  if (lower.includes("ya no puedes fichar") || lower.includes("no puedes fichar todavía")) {
+    return "Estás fuera del horario configurado para hoy. Pide a tu empresa que amplíe la tolerancia o desactive la restricción.";
+  }
+  if (lower.includes("legal_restriction")) {
+    if (lower.includes("outside_allowed_hours")) {
+      return "No puedes fichar fuera del horario permitido por tu empresa.";
+    }
+    if (lower.includes("too_soon_between_shifts")) {
+      return "No han pasado las horas mínimas entre turnos. Intenta más tarde.";
+    }
+    if (lower.includes("exceeded_week_hours")) {
+      return "Has alcanzado el máximo de horas semanales permitidas.";
+    }
+    if (lower.includes("exceeded_month_hours")) {
+      return "Has alcanzado el máximo de horas mensuales permitidas.";
+    }
+    return "No puedes fichar por una restricción de horario configurada.";
+  }
+  if (lower.includes("day_policy_violation")) {
+    if (lower.includes("sunday_blocked")) return "Tu empresa no permite fichar los domingos.";
+    if (lower.includes("holiday_requires_reason")) return "Debes añadir un motivo para fichar en festivo.";
+    if (lower.includes("holiday_blocked")) return "No se permiten fichajes en festivos.";
+    if (lower.includes("special_day_restricted")) return "Hoy es un día especial restringido. Contacta con tu empresa.";
+    return "No puedes fichar por la política del día configurada por tu empresa.";
+  }
+  if (lower.includes("shift_exceeded_max_hours")) {
+    return "Tu fichada superó el límite de horas configurado. El responsable debe revisarla. Solo puedes iniciar una nueva fichada.";
+  }
+  if (lower.includes("exceeded_limit")) {
+    return "Tu fichada anterior está pendiente de revisión. Solo puedes iniciar una nueva entrada.";
+  }
+  if (lower.includes("sesión activa")) {
+    return "Ya tienes una sesión activa. Finalízala antes de volver a fichar.";
+  }
+  if (lower.includes("ninguna sesión activa")) {
+    return "No tienes una sesión abierta. Registra una entrada antes de salir.";
+  }
+  if (lower.includes("suspendida")) {
+    return "Tu empresa está suspendida. Contacta con un administrador.";
+  }
+  return raw || "No pudimos registrar el fichaje. Intenta nuevamente.";
+};
+
 const FastClockPage = () => {
   const { pointId } = useParams<{ pointId: string }>();
   const { user, loading: authLoading, signInWithCode } = useAuth();
@@ -119,19 +194,27 @@ const FastClockPage = () => {
     if (!pointId) {
       throw new Error("Falta el punto de fichaje");
     }
-    // Conecta aquí con la Edge Function de fichaje existente (no enviamos user_id ni company_id, se toma de la sesión).
+    // Conecta aquí con la Edge Function de fichaje existente (no enviamos user_id; company_id ayuda si hay varias empresas).
     const response = await supabase.functions.invoke("clock", {
       body: {
         action,
         source: "fastclock",
         point_id: pointId,
+        company_id: companyId,
         latitude: coords?.lat,
         longitude: coords?.lng,
         device_id: deviceId,
       },
     });
     if (response.error) {
-      throw response.error;
+      const errorResponse = response.response ?? (response.error as any)?.context;
+      const parsedError = await parseFunctionError(errorResponse);
+      const serverMessage =
+        (response.data as any)?.error ||
+        parsedError ||
+        response.error.message ||
+        "Error en clock";
+      throw new Error(serverMessage);
     }
     return response.data;
   };
@@ -144,8 +227,10 @@ const FastClockPage = () => {
       toast.success(`✓ ${actionCopy[action].label} registrada`);
       await fetchStatus();
     } catch (err: any) {
-      const message = err?.message || "No se pudo registrar el fichaje.";
-      toast.error(message);
+      const rawMessage =
+        err instanceof Error ? err.message : typeof err === "string" ? err : "No se pudo registrar el fichaje.";
+      const friendlyMessage = normalizeErrorMessage(rawMessage);
+      toast.error(friendlyMessage);
     } finally {
       setActionPending(null);
     }

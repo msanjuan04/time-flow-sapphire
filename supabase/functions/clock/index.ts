@@ -359,28 +359,68 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Aseguramos que el device_id exista en la tabla devices (o lo retiramos para evitar FK 23503)
-    let deviceIdForEvent: string | null = deviceId;
-    if (deviceIdForEvent) {
-      if (!isUuid(deviceIdForEvent)) {
-        console.warn('Discarding non-UUID device_id for event to avoid FK error', { device_id: deviceIdForEvent });
-        deviceIdForEvent = null;
-      } else {
-        const { data: registeredDevice, error: deviceLookupError } = await supabaseAdmin
+    // Resolver device_id para time_events: crear en devices si no existe (multiempresa)
+    let deviceIdForEvent: string | null = null;
+    if (deviceId) {
+      try {
+        // Buscamos por meta.local_device_id dentro de la misma empresa
+        const { data: existingDevice, error: deviceLookupError } = await supabaseAdmin
           .from('devices' as any)
           .select('id')
-          .eq('id', deviceIdForEvent)
           .eq('company_id', companyId)
+          .contains('meta', { local_device_id: deviceId })
           .maybeSingle();
 
-        if (deviceLookupError || !registeredDevice) {
-          console.warn('Device not found in devices table; dropping device_id to avoid FK', {
-            device_id: deviceIdForEvent,
+        if (deviceLookupError) {
+          console.warn('Device lookup by meta failed', {
+            device_id: deviceId,
             company_id: companyId,
             lookup_error: deviceLookupError || null,
           });
-          deviceIdForEvent = null;
+        } else if (existingDevice?.id) {
+          deviceIdForEvent = existingDevice.id;
         }
+
+        if (!deviceIdForEvent) {
+          const label = isUuid(deviceId) ? deviceId.slice(0, 8) : deviceId.slice(0, 8);
+          const { data: createdDevice, error: createError } = await supabaseAdmin
+            .from('devices' as any)
+            .insert({
+              company_id: companyId,
+              name: `FastClock ${label}`,
+              type: 'kiosk',
+              meta: {
+                local_device_id: deviceId,
+                source: source || 'fastclock',
+                point_id: point_id || null,
+              },
+              last_seen_at: new Date().toISOString(),
+            })
+            .select('id')
+            .single();
+
+          if (createError || !createdDevice?.id) {
+            console.warn('Device auto-create failed; omitting device_id for event', {
+              device_id: deviceId,
+              company_id: companyId,
+              create_error: createError || null,
+            });
+          } else {
+            deviceIdForEvent = createdDevice.id;
+          }
+        } else {
+          // Touch last_seen_at for known device
+          await supabaseAdmin
+            .from('devices' as any)
+            .update({ last_seen_at: new Date().toISOString() })
+            .eq('id', deviceIdForEvent);
+        }
+      } catch (err) {
+        console.warn('Device resolution failed; omitting device_id for event', {
+          device_id: deviceId,
+          company_id: companyId,
+          error: err || null,
+        });
       }
     }
 
