@@ -1,5 +1,18 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.81.0'
-import { GEOFENCE_RADIUS_METERS, calculateDistanceMeters } from '../_shared/geofence.ts'
+
+const GEOFENCE_RADIUS_METERS = 200;
+
+const calculateDistanceMeters = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const R = 6371000; // metros
+
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -22,22 +35,13 @@ interface ClockRequest {
   notes?: string;
 }
 
-interface MembershipResult {
-  company_id: string;
-  company: {
-    id: string;
-    name: string;
-    status: string;
-  } | null;
-}
-
 const MAX_DEVICES_PER_USER = Number(Deno.env.get('MAX_DEVICES_PER_USER') ?? '3');
 const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
 Deno.serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }); // FIX ensure JSON preflight response
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
   try {
@@ -75,7 +79,8 @@ Deno.serve(async (req) => {
     const formatLocalDate = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
     const todayLocal = formatLocalDate(now);
     const normalizedPointId = typeof point_id === 'string' ? point_id.trim() : '';
-    const pointIdForEvent = isUuid(normalizedPointId) ? normalizedPointId : null;
+    // Asegurar que pointIdForEvent sea siempre null o UUID válido, nunca string vacío
+    const pointIdForEvent = normalizedPointId && isUuid(normalizedPointId) ? normalizedPointId : null;
 
     let currentUserId: string;
 
@@ -91,7 +96,7 @@ Deno.serve(async (req) => {
       currentUserId = user_id;
     } else {
       return new Response(
-        JSON.stringify({ success: false, error: 'No autenticado o user_id no proporcionado' }), // FIX always return JSON shape
+        JSON.stringify({ success: false, error: 'No autenticado o user_id no proporcionado' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -187,7 +192,6 @@ Deno.serve(async (req) => {
           title: 'Incidencia de fichaje',
           message: params.notifyMessage,
           type: params.severity || 'warning',
-          // Deduplicamos por sesión excedida para no silenciar notificaciones de nuevas incidencias distintas
           entity_type: params.type === 'missing_checkout' ? 'work_session' : 'incident',
           entity_id: params.type === 'missing_checkout' ? incident?.id || null : incident?.id || null,
         });
@@ -233,7 +237,7 @@ Deno.serve(async (req) => {
     if (membershipError || !memberships || memberships.length === 0) {
       console.error('Membership error:', membershipError);
       return new Response(
-        JSON.stringify({ success: false, error: 'Usuario sin empresa asignada' }), // FIX include success flag on error
+        JSON.stringify({ success: false, error: 'Usuario sin empresa asignada' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -271,7 +275,7 @@ Deno.serve(async (req) => {
         severity: 'error',
       });
       return new Response(
-        JSON.stringify({ success: false, error: 'Empresa suspendida. Contacta con administración.' }), // FIX consistent error envelope
+        JSON.stringify({ success: false, error: 'Empresa suspendida. Contacta con administración.' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -285,21 +289,22 @@ Deno.serve(async (req) => {
       radius_meters: number | null;
       active: boolean;
     } | null = null;
-    if (normalizedPointId) {
+    if (normalizedPointId && pointIdForEvent) {
       if (!isUuid(normalizedPointId)) {
         return new Response(
           JSON.stringify({
             success: false,
             error: 'POINT_INVALID',
             message: 'El enlace del punto de fichaje es inválido o está incompleto',
-          }), // FIX validar UUID de punto
+          }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
+      // Usar pointIdForEvent que ya está validado como UUID válido
       const { data: point } = await supabaseAdmin
         .from('fastclock_points' as any)
         .select('id, company_id, latitude, longitude, radius_meters, active')
-        .eq('id', normalizedPointId)
+        .eq('id', pointIdForEvent)
         .maybeSingle();
       if (!point || point.company_id !== companyId || point.active === false) {
         return new Response(
@@ -307,7 +312,7 @@ Deno.serve(async (req) => {
             success: false,
             error: 'POINT_NOT_FOUND',
             message: 'No encontramos este punto de fichaje. Escanea un código válido.',
-          }), // FIX rechaza punto no válido
+          }),
           { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -361,7 +366,7 @@ Deno.serve(async (req) => {
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      // Vincular nuevo dispositivo (ahora también permite fastclock con punto)
+      // Vincular nuevo dispositivo
       await supabaseAdmin.from('worker_devices' as any).insert({
         user_id: currentUserId,
         company_id: companyId,
@@ -405,7 +410,7 @@ Deno.serve(async (req) => {
               meta: {
                 local_device_id: deviceId,
                 source: source || 'fastclock',
-        point_id: pointIdForEvent,
+                point_id: pointIdForEvent,
               },
               last_seen_at: new Date().toISOString(),
             })
@@ -690,7 +695,7 @@ Deno.serve(async (req) => {
         break;
       default:
         return new Response(
-          JSON.stringify({ success: false, error: 'Acción inválida' }), // FIX consistent error envelope
+          JSON.stringify({ success: false, error: 'Acción inválida' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
     }
@@ -703,7 +708,7 @@ Deno.serve(async (req) => {
         notifyMessage: 'Una sesión previa quedó abierta y el sistema bloqueó un nuevo fichaje de entrada.',
       });
       return new Response(
-        JSON.stringify({ success: false, error: 'Ya tienes una sesión activa' }), // FIX consistent error envelope
+        JSON.stringify({ success: false, error: 'Ya tienes una sesión activa' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -711,7 +716,7 @@ Deno.serve(async (req) => {
     if ((action === 'out' || action === 'break_start' || action === 'break_end') && !activeSession) {
       if (exceededSession) {
         return new Response(
-          JSON.stringify({ success: false, error: 'shift_exceeded_max_hours' }), // FIX consistent error envelope
+          JSON.stringify({ success: false, error: 'shift_exceeded_max_hours' }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -721,7 +726,7 @@ Deno.serve(async (req) => {
         notifyMessage: 'Se detectó un intento de fichaje sin entrada previa.',
       });
       return new Response(
-        JSON.stringify({ success: false, error: 'No tienes ninguna sesión activa' }), // FIX consistent error envelope
+        JSON.stringify({ success: false, error: 'No tienes ninguna sesión activa' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -777,7 +782,7 @@ Deno.serve(async (req) => {
     const scheduleCheck = withinScheduleWindow();
     if (!scheduleCheck.ok) {
       return new Response(
-        JSON.stringify({ success: false, error: scheduleCheck.msg }), // FIX consistent error envelope
+        JSON.stringify({ success: false, error: scheduleCheck.msg }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -798,7 +803,7 @@ Deno.serve(async (req) => {
     // Si hay punto configurado, exigimos coordenadas para validar geovalla del punto
     if (fastClockPoint && hasPointLocation && !hasWorkerLocation) {
       return new Response(
-        JSON.stringify({ success: false, error: 'LOCATION_REQUIRED' }), // FIX requiere GPS para validar punto
+        JSON.stringify({ success: false, error: 'LOCATION_REQUIRED' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -817,26 +822,37 @@ Deno.serve(async (req) => {
     }
 
     // Insert time event (con fallback de source si el check constraint no admite fastclock)
-    const insertEvent = async (src: string) =>
-      supabaseAdmin
+    const insertEvent = async (src: string) => {
+      const insertData: Record<string, any> = {
+        user_id: currentUserId,
+        company_id: companyId,
+        event_type: eventType,
+        source: src,
+        device_id: deviceIdForEvent,
+        latitude: latitude || null,
+        longitude: longitude || null,
+        distance_meters: distanceMeters,
+        is_within_geofence: isWithinGeofence,
+        photo_url: photo_url || null,
+        notes: notes || null,
+        event_time: new Date().toISOString(),
+      };
+      
+      // Solo agregar point_id si es un UUID válido como string
+      // NO incluir point_id si es null para evitar problemas de comparación de tipos
+      // point_id es TEXT en time_events, así que podemos pasar el UUID como string
+      if (pointIdForEvent && typeof pointIdForEvent === 'string' && isUuid(pointIdForEvent)) {
+        insertData.point_id = pointIdForEvent;
+      }
+      // Si pointIdForEvent es null, simplemente no lo incluimos en el insert
+      // La columna point_id permitirá NULL automáticamente
+      
+      return supabaseAdmin
         .from('time_events')
-        .insert({
-          user_id: currentUserId,
-          company_id: companyId,
-          event_type: eventType,
-          source: src,
-          device_id: deviceIdForEvent,
-          latitude: latitude || null,
-          longitude: longitude || null,
-          point_id: pointIdForEvent,
-          distance_meters: distanceMeters,
-          is_within_geofence: isWithinGeofence,
-          photo_url: photo_url || null,
-          notes: notes || null,
-          event_time: new Date().toISOString(),
-        })
+        .insert(insertData)
         .select('id')
         .single();
+    };
 
     let newEvent: { id: string } | null = null;
     let eventError: any = null;
@@ -976,14 +992,22 @@ Deno.serve(async (req) => {
       }
 
       // Create new session
-      const { error: sessionError } = await supabaseAdmin.from('work_sessions').insert({
+      const sessionData: Record<string, any> = {
         user_id: currentUserId,
         company_id: companyId,
         clock_in_time: new Date().toISOString(),
         is_active: true,
-        point_id: pointIdForEvent,
         status: 'open',
-      });
+      };
+      // Solo incluir point_id si es un UUID válido como string
+      // NO incluir point_id si es null para evitar problemas de comparación de tipos
+      // point_id es TEXT en work_sessions, así que podemos pasar el UUID como string
+      if (pointIdForEvent && typeof pointIdForEvent === 'string' && isUuid(pointIdForEvent)) {
+        sessionData.point_id = pointIdForEvent;
+      }
+      // Si pointIdForEvent es null, simplemente no lo incluimos en el insert
+      // La columna point_id permitirá NULL automáticamente
+      const { error: sessionError } = await supabaseAdmin.from('work_sessions').insert(sessionData);
 
       if (sessionError) {
         console.error('Session insert error:', sessionError);
@@ -994,7 +1018,7 @@ Deno.serve(async (req) => {
           severity: 'error',
         });
         return new Response(
-          JSON.stringify({ success: false, error: 'Error al crear sesión' }), // FIX consistent error envelope
+          JSON.stringify({ success: false, error: 'Error al crear sesión' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -1018,7 +1042,7 @@ Deno.serve(async (req) => {
           severity: 'error',
         });
         return new Response(
-          JSON.stringify({ success: false, error: 'Error al cerrar sesión' }), // FIX consistent error envelope
+          JSON.stringify({ success: false, error: 'Error al cerrar sesión' }),
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
@@ -1143,8 +1167,9 @@ Deno.serve(async (req) => {
     console.error('Unexpected error:', error);
     // In case of total failure, we cannot determine company/user safely for incident
     return new Response(
-      JSON.stringify({ success: false, error: 'Error interno del servidor' }), // FIX consistent error envelope
+      JSON.stringify({ success: false, error: 'Error interno del servidor' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
+

@@ -16,6 +16,8 @@ const actionCopy: Record<ClockAction, { label: string; tone: string }> = {
   break_end: { label: "Reanudar", tone: "bg-blue-600 hover:bg-blue-500" },
 };
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const parseFunctionError = async (response: Response | null | undefined) => {
   if (!response) return null;
   try {
@@ -24,18 +26,19 @@ const parseFunctionError = async (response: Response | null | undefined) => {
     if (contentType.includes("application/json")) {
       const json = await clone.json();
       if (json?.error) {
+        const reason = json?.reason ? `:${json.reason}` : "";
+        const message =
+          typeof json?.message === "string" && json.message.trim() ? json.message.trim() : null;
         const baseError =
           typeof json.error === "string"
             ? json.error
             : typeof json.error?.message === "string"
             ? json.error.message
             : null;
-        if (baseError) {
-          const reason = json?.reason ? `:${json.reason}` : "";
-          return `${baseError}${reason}`;
-        }
+        if (message) return `${message}${reason}`;
+        if (baseError) return `${baseError}${reason}`;
       }
-      if (json?.message) return json.message as string;
+      if (typeof json?.message === "string" && json.message.trim()) return json.message as string;
       return JSON.stringify(json);
     }
     const text = await clone.text();
@@ -72,6 +75,18 @@ const normalizeErrorMessage = (raw: string) => {
     if (lower.includes("holiday_blocked")) return "No se permiten fichajes en festivos.";
     if (lower.includes("special_day_restricted")) return "Hoy es un día especial restringido. Contacta con tu empresa.";
     return "No puedes fichar por la política del día configurada por tu empresa.";
+  }
+  if (lower.includes("point_invalid")) {
+    return "El enlace de fichaje es inválido o está incompleto. Vuelve a escanear el QR correcto.";
+  }
+  if (lower.includes("point_not_found")) {
+    return "Este punto de fichaje ya no existe o está inactivo. Solicita o escanea un QR actualizado.";
+  }
+  if (lower.includes("device_not_registered")) {
+    return "Este dispositivo no está autorizado para este punto. Pide que registren el tag en la empresa.";
+  }
+  if (lower.includes("device_point_mismatch")) {
+    return "Estás usando un dispositivo de otro punto. Usa el QR correcto o solicita el alta del tag.";
   }
   if (lower.includes("shift_exceeded_max_hours")) {
     return "Tu fichada superó el límite de horas configurado. El responsable debe revisarla. Solo puedes iniciar una nueva fichada.";
@@ -117,6 +132,9 @@ const FastClockPage = () => {
     }
     return generated;
   });
+
+  const normalizedPointId = useMemo(() => (pointId ?? "").trim(), [pointId]);
+  const isPointIdValid = useMemo(() => UUID_REGEX.test(normalizedPointId), [normalizedPointId]);
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -184,22 +202,26 @@ const FastClockPage = () => {
   }, []);
 
   const availableActions: ClockAction[] = useMemo(() => {
+    if (!isPointIdValid) return [];
     if (status === "in") return ["break_start", "out"];
     if (status === "on_break") return ["break_end", "out"];
     if (status === "out") return ["in"];
     return [];
-  }, [status]);
+  }, [isPointIdValid, status]);
 
   const clockAction = async (action: ClockAction) => {
-    if (!pointId) {
-      throw new Error("Falta el punto de fichaje");
+    if (!normalizedPointId || !isPointIdValid) {
+      throw new Error("El enlace de fichaje es inválido. Reescanea el QR o solicita uno nuevo.");
+    }
+    if (!companyId) {
+      throw new Error("No se pudo determinar tu empresa. Asegúrate de estar asociado a una empresa.");
     }
     // Conecta aquí con la Edge Function de fichaje existente (no enviamos user_id; company_id ayuda si hay varias empresas).
     const response = await supabase.functions.invoke("clock", {
       body: {
         action,
         source: "fastclock",
-        point_id: pointId,
+        point_id: normalizedPointId,
         company_id: companyId,
         latitude: coords?.lat,
         longitude: coords?.lng,
@@ -221,6 +243,10 @@ const FastClockPage = () => {
 
   const handleAction = async (action: ClockAction) => {
     if (actionPending) return;
+    if (!isPointIdValid) {
+      toast.error("Este enlace de fichaje no es válido. Usa el QR correcto o solicita uno nuevo.");
+      return;
+    }
     setActionPending(action);
     try {
       await clockAction(action);
@@ -237,7 +263,7 @@ const FastClockPage = () => {
   };
 
   const workerIdLabel = user?.email || user?.id || "Trabajador";
-  const pointLabel = pointId ? "Punto configurado" : "Punto de fichaje"; // UI: avoid mostrar UUID cruda
+  const pointLabel = normalizedPointId ? (isPointIdValid ? "Punto configurado" : "Punto inválido") : "Punto de fichaje"; // UI: avoid mostrar UUID cruda
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -246,7 +272,7 @@ const FastClockPage = () => {
       return;
     }
     setLoginLoading(true);
-    const { error } = await signInWithCode(loginCode.trim(), { redirect: `/fastclock/${pointId ?? ""}` });
+    const { error } = await signInWithCode(loginCode.trim(), { redirect: `/fastclock/${normalizedPointId ?? ""}` });
     setLoginLoading(false);
     if (error) {
       toast.error("Código inválido o caducado");
@@ -346,12 +372,17 @@ const FastClockPage = () => {
         </header>
 
         <main>
+          {normalizedPointId && !isPointIdValid && (
+            <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-50">
+              El enlace de este punto no es válido o está incompleto. Reescanea el QR correcto o solicita uno nuevo.
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {availableActions.map((action) => (
               <button
                 key={action}
                 onClick={() => handleAction(action)}
-                disabled={actionPending !== null || membershipLoading || status === "loading"}
+                disabled={actionPending !== null || membershipLoading || status === "loading" || !isPointIdValid}
                 className={cn(
                   "relative overflow-hidden rounded-2xl p-6 text-left shadow-lg transition-all focus:outline-none focus:ring-2 focus:ring-white/40",
                   actionCopy[action].tone,
@@ -372,7 +403,9 @@ const FastClockPage = () => {
 
           {availableActions.length === 0 && (
             <div className="mt-6 rounded-xl border border-white/10 bg-white/5 p-4 text-sm text-slate-200">
-              {membershipLoading || status === "loading"
+              {normalizedPointId && !isPointIdValid
+                ? "No puedes fichar con este enlace. Escanea el QR correcto para continuar."
+                : membershipLoading || status === "loading"
                 ? "Cargando estado..."
                 : "No hay acciones disponibles ahora mismo."}
             </div>
