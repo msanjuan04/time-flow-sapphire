@@ -1,5 +1,15 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.81.0'
-import { GEOFENCE_RADIUS_METERS, calculateDistanceMeters } from '../_shared/geofence.ts'
+// Geofence helpers inlined to avoid missing _shared bundle in dashboard deploys
+const GEOFENCE_RADIUS_METERS = 200;
+const calculateDistanceMeters = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+  const toRad = (value: number) => (value * Math.PI) / 180;
+  const R = 6371000; // metros
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
