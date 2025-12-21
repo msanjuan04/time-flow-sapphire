@@ -135,6 +135,7 @@ const FastClockPage = () => {
 
   const normalizedPointId = useMemo(() => (pointId ?? "").trim(), [pointId]);
   const isPointIdValid = useMemo(() => UUID_REGEX.test(normalizedPointId), [normalizedPointId]);
+  const [pausesEnabled, setPausesEnabled] = useState<boolean>(true);
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -171,7 +172,7 @@ const FastClockPage = () => {
         .limit(1)
         .maybeSingle();
 
-      if (lastEvent?.event_type === "pause_start") {
+      if (lastEvent?.event_type === "pause_start" && pausesEnabled) {
         setStatus("on_break");
       } else {
         setStatus("in");
@@ -180,11 +181,26 @@ const FastClockPage = () => {
       console.error("Estado de fichaje no disponible:", err);
       setStatus("out");
     }
-  }, [companyId, user?.id]);
+  }, [companyId, pausesEnabled, user?.id]);
 
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    supabase
+      .from("companies")
+      .select("pauses_enabled")
+      .eq("id", companyId)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (typeof data?.pauses_enabled === "boolean") {
+          setPausesEnabled(Boolean(data.pauses_enabled));
+        }
+      })
+      .catch((err) => console.warn("No se pudo cargar pauses_enabled", err));
+  }, [companyId]);
 
   useEffect(() => {
     if (!("geolocation" in navigator)) return;
@@ -203,11 +219,15 @@ const FastClockPage = () => {
 
   const availableActions: ClockAction[] = useMemo(() => {
     if (!isPointIdValid) return [];
+    if (!pausesEnabled) {
+      if (status === "in" || status === "on_break") return ["out"];
+      return ["in"];
+    }
     if (status === "in") return ["break_start", "out"];
     if (status === "on_break") return ["break_end", "out"];
     if (status === "out") return ["in"];
     return [];
-  }, [isPointIdValid, status]);
+  }, [isPointIdValid, pausesEnabled, status]);
 
   const clockAction = async (action: ClockAction) => {
     if (!normalizedPointId || !isPointIdValid) {
@@ -219,7 +239,7 @@ const FastClockPage = () => {
     // Conecta aquí con la Edge Function de fichaje existente (no enviamos user_id; company_id ayuda si hay varias empresas).
     const response = await supabase.functions.invoke("clock", {
       body: {
-        action,
+        action: pausesEnabled ? action : action === "in" ? "in" : "out",
         source: "fastclock",
         point_id: normalizedPointId,
         company_id: companyId,

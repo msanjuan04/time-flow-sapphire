@@ -72,12 +72,13 @@ const AdminView = () => {
   const [ownerClockElapsed, setOwnerClockElapsed] = useState<number>(0);
   const [ownerClockPending, setOwnerClockPending] = useState(false);
   const [companyLogo, setCompanyLogo] = useState<string | null>(membership?.company?.logo_url ?? null);
+  const [pausesEnabled, setPausesEnabled] = useState<boolean>(true);
 
   const fetchCompanyStatus = useCallback(async () => {
     if (!companyId) return;
     const { data, error: statusError } = await supabase
       .from("companies")
-      .select("status")
+      .select("status, pauses_enabled, logo_url")
       .eq("id", companyId)
       .maybeSingle();
 
@@ -88,6 +89,12 @@ const AdminView = () => {
 
     if (data) {
       setCompanyStatus(data.status || "active");
+      if (typeof data.pauses_enabled === "boolean") {
+        setPausesEnabled(Boolean(data.pauses_enabled));
+      }
+      if (typeof data.logo_url === "string") {
+        setCompanyLogo(data.logo_url);
+      }
     } else {
       setCompanyStatus("active");
     }
@@ -473,6 +480,7 @@ const AdminView = () => {
         body: {
           action,
           company_id: companyId,
+          device_id: "owner-dashboard", // FIX: evitar DEVICE_REQUIRED en clock
           source: "owner-dashboard",
         },
       });

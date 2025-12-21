@@ -59,6 +59,7 @@ const WorkerView = () => {
   const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
   const [todaySchedule, setTodaySchedule] = useState<{ start_time: string | null; end_time: string | null; expected_hours: number } | null>(null);
   const [companyLocation, setCompanyLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [pausesEnabled, setPausesEnabled] = useState<boolean>(true);
   const [outsideConfirm, setOutsideConfirm] = useState<{
     action: ClockAction;
     distance: number;
@@ -178,7 +179,7 @@ const WorkerView = () => {
       if (!companyId) return;
       const { data, error } = await supabase
         .from("companies")
-        .select("hq_lat, hq_lng, max_shift_hours")
+        .select("hq_lat, hq_lng, max_shift_hours, pauses_enabled")
         .eq("id", companyId)
         .maybeSingle();
 
@@ -191,6 +192,10 @@ const WorkerView = () => {
         setMaxShiftHours(Number(data.max_shift_hours));
       } else {
         setMaxShiftHours(null);
+      }
+
+      if (typeof data?.pauses_enabled === "boolean") {
+        setPausesEnabled(Boolean(data.pauses_enabled));
       }
 
       if (data?.hq_lat !== null && data?.hq_lng !== null) {
@@ -919,7 +924,7 @@ const WorkerView = () => {
                 </motion.div>
               )}
 
-              {status === "in" && !forceNewEntry && (
+              {status === "in" && !forceNewEntry && pausesEnabled && (
                 <motion.div
                   initial={{ scale: 0.8, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
@@ -956,7 +961,57 @@ const WorkerView = () => {
                 </motion.div>
               )}
 
-              {status === "on_break" && (
+              {status === "in" && !forceNewEntry && !pausesEnabled && (
+                <motion.div
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="space-y-3"
+                >
+                  <Button
+                    onClick={handleClockOut}
+                    disabled={isActionDisabled || blockClockOut}
+                    size="lg"
+                    variant="destructive"
+                    className="w-full h-16 text-lg rounded-2xl shadow-md hover:shadow-lg smooth-transition"
+                  >
+                    {actionPending === "out" ? (
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    ) : (
+                      <LogOut className="w-6 h-6 mr-2" />
+                    )}
+                    Fichar Salida
+                  </Button>
+                </motion.div>
+              )}
+
+              {status === "on_break" && !pausesEnabled && (
+                <motion.div
+                  initial={{ scale: 0.8, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="space-y-3"
+                >
+                  <div className="flex items-center justify-center gap-2 text-muted-foreground mb-2">
+                    <Coffee className="w-5 h-5" />
+                    <span className="text-sm font-medium">Pausa (pausas desactivadas)</span>
+                  </div>
+                  <Button
+                    onClick={handleClockOut}
+                    disabled={isActionDisabled || blockClockOut}
+                    size="lg"
+                    variant="destructive"
+                    className="w-full h-16 text-lg rounded-2xl shadow-md hover:shadow-lg smooth-transition"
+                  >
+                    {actionPending === "out" ? (
+                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    ) : (
+                      <LogOut className="w-6 h-6 mr-2" />
+                    )}
+                    Fichar Salida
+                  </Button>
+                </motion.div>
+              )}
+
+              {status === "on_break" && pausesEnabled && (
                 <motion.div
                   initial={{ scale: 0.8, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}

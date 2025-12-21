@@ -79,6 +79,7 @@ const CompanySettings = () => {
   const [exitEarly, setExitEarly] = useState<number>(10);
   const [exitLate, setExitLate] = useState<number>(15);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [pausesEnabled, setPausesEnabled] = useState<boolean>(true);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [showKeepSessionsModal, setShowKeepSessionsModal] = useState(false);
@@ -116,8 +117,8 @@ const CompanySettings = () => {
           .from("companies")
           .select(
             withLogo
-              ? "name, hq_lat, hq_lng, max_shift_hours, logo_url, keep_sessions_open, keep_sessions_days, entry_early_minutes, entry_late_minutes, exit_early_minutes, exit_late_minutes"
-              : "name, hq_lat, hq_lng, max_shift_hours"
+              ? "name, hq_lat, hq_lng, max_shift_hours, logo_url, keep_sessions_open, keep_sessions_days, entry_early_minutes, entry_late_minutes, exit_early_minutes, exit_late_minutes, pauses_enabled"
+              : "name, hq_lat, hq_lng, max_shift_hours, pauses_enabled"
           )
           .eq("id", companyId)
           .maybeSingle();
@@ -160,6 +161,7 @@ const CompanySettings = () => {
         if (typeof data.entry_late_minutes === "number") setEntryLate(data.entry_late_minutes);
         if (typeof data.exit_early_minutes === "number") setExitEarly(data.exit_early_minutes);
         if (typeof data.exit_late_minutes === "number") setExitLate(data.exit_late_minutes);
+        if (typeof data.pauses_enabled === "boolean") setPausesEnabled(Boolean(data.pauses_enabled));
         // Si la columna no existe, data no trae logo_url; mantenemos lo que haya.
         // @ts-expect-error: logo_url puede no venir si la columna no existe aún
         setLogoUrl(data.logo_url ?? null);
@@ -447,6 +449,8 @@ const CompanySettings = () => {
       payload.entry_late_minutes = entryLate;
       payload.exit_early_minutes = exitEarly;
       payload.exit_late_minutes = exitLate;
+    payload.pauses_enabled = pausesEnabled;
+      payload.pauses_enabled = pausesEnabled;
 
       const { error } = await supabase.from("companies").update(payload).eq("id", companyId);
 
@@ -766,6 +770,15 @@ const CompanySettings = () => {
                 Define cuántos minutos antes o después de la hora programada pueden fichar tus trabajadores. Si intentan fichar fuera de estos márgenes, verán un mensaje de error.
               </p>
             </div>
+          </div>
+          <div className="flex items-center justify-between rounded-lg border p-4">
+            <div className="space-y-1">
+              <Label>Permitir pausas</Label>
+              <p className="text-sm text-muted-foreground">
+                Si lo desactivas, FastClock y la app no mostrarán opciones de pausa y solo podrán fichar entrada/salida.
+              </p>
+            </div>
+            <Switch checked={pausesEnabled} onCheckedChange={setPausesEnabled} disabled={!canEdit || saving} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">

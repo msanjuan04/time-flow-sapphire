@@ -20,7 +20,7 @@ const corsHeaders = {
 };
 
 interface ClockRequest {
-  action: 'in' | 'out' | 'break_start' | 'break_end';
+  action?: 'in' | 'out' | 'break_start' | 'break_end' | 'auto';
   latitude?: number;
   longitude?: number;
   photo_url?: string;
@@ -226,6 +226,7 @@ Deno.serve(async (req) => {
           hq_lat,
           hq_lng,
           max_shift_hours,
+          pauses_enabled,
           entry_early_minutes,
           entry_late_minutes,
           exit_early_minutes,
@@ -325,126 +326,132 @@ Deno.serve(async (req) => {
     }
 
     // -------------------------------------------------------------------
-    // Device binding: exigir device_id y vincular si no existe, con límite
+    // Device binding: skip for owner-dashboard; enforce for otros or fastclock
     // -------------------------------------------------------------------
     const deviceId = device_id || null;
-    if (!deviceId) {
-      return new Response(
-        JSON.stringify({ success: false, error: 'DEVICE_REQUIRED' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    let deviceIdForEvent: string | null = null;
 
-    // ¿Ya vinculado?
-    const { data: existingDevice } = await supabaseAdmin
-      .from('worker_devices' as any)
-      .select('id, active, point_id')
-      .eq('user_id', currentUserId)
-      .eq('company_id', companyId)
-      .eq('device_id', deviceId)
-      .maybeSingle();
-
-    if (existingDevice) {
-      if (!existingDevice.active) {
+    if (source !== 'owner-dashboard') {
+      if (!deviceId) {
         return new Response(
-          JSON.stringify({ success: false, error: 'DEVICE_REVOKED' }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          JSON.stringify({ success: false, error: 'DEVICE_REQUIRED' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      // Si el dispositivo existe y está activo, solo refrescamos last_used
-      const updates: Record<string, any> = { last_used_at: new Date().toISOString() };
-      if (fastClockPoint && existingDevice.point_id !== fastClockPoint.id) {
-        updates.point_id = fastClockPoint.id;
-      }
-      await supabaseAdmin.from('worker_devices' as any).update(updates).eq('id', existingDevice.id);
-    } else {
-      // Verificar límite de dispositivos activos
-      const { count: activeCount } = await supabaseAdmin
+
+      // ¿Ya vinculado?
+      const { data: existingDevice } = await supabaseAdmin
         .from('worker_devices' as any)
-        .select('id', { count: 'exact', head: true })
+        .select('id, active, point_id')
         .eq('user_id', currentUserId)
         .eq('company_id', companyId)
-        .eq('active', true);
-      if (Number.isFinite(MAX_DEVICES_PER_USER) && typeof activeCount === 'number' && activeCount >= MAX_DEVICES_PER_USER) {
-        return new Response(
-          JSON.stringify({ success: false, error: 'DEVICE_LIMIT_EXCEEDED' }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      // Vincular nuevo dispositivo (ahora también permite fastclock con punto)
-      await supabaseAdmin.from('worker_devices' as any).insert({
-        user_id: currentUserId,
-        company_id: companyId,
-        device_id: deviceId,
-        point_id: fastClockPoint?.id || null,
-        active: true,
-        last_used_at: new Date().toISOString(),
-      });
-    }
+        .eq('device_id', deviceId)
+        .maybeSingle();
 
-    // Resolver device_id para time_events: crear en devices si no existe (multiempresa)
-    let deviceIdForEvent: string | null = null;
-    if (deviceId) {
-      try {
-        // Buscamos por meta.local_device_id dentro de la misma empresa
-        const { data: existingDevice, error: deviceLookupError } = await supabaseAdmin
-          .from('devices' as any)
-          .select('id')
+      if (existingDevice) {
+        if (!existingDevice.active) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'DEVICE_REVOKED' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        // Si el dispositivo existe y está activo, solo refrescamos last_used
+        const updates: Record<string, any> = { last_used_at: new Date().toISOString() };
+        if (fastClockPoint && existingDevice.point_id !== fastClockPoint.id) {
+          updates.point_id = fastClockPoint.id;
+        }
+        await supabaseAdmin.from('worker_devices' as any).update(updates).eq('id', existingDevice.id);
+      } else {
+        // Verificar límite de dispositivos activos
+        const { count: activeCount } = await supabaseAdmin
+          .from('worker_devices' as any)
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', currentUserId)
           .eq('company_id', companyId)
-          .contains('meta', { local_device_id: deviceId })
-          .maybeSingle();
-
-        if (deviceLookupError) {
-          console.warn('Device lookup by meta failed', {
-            device_id: deviceId,
-            company_id: companyId,
-            lookup_error: deviceLookupError || null,
-          });
-        } else if (existingDevice?.id) {
-          deviceIdForEvent = existingDevice.id;
+          .eq('active', true);
+        if (Number.isFinite(MAX_DEVICES_PER_USER) && typeof activeCount === 'number' && activeCount >= MAX_DEVICES_PER_USER) {
+          return new Response(
+            JSON.stringify({ success: false, error: 'DEVICE_LIMIT_EXCEEDED' }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
         }
-
-        if (!deviceIdForEvent) {
-          const label = isUuid(deviceId) ? deviceId.slice(0, 8) : deviceId.slice(0, 8);
-          const { data: createdDevice, error: createError } = await supabaseAdmin
-            .from('devices' as any)
-            .insert({
-              company_id: companyId,
-              name: `FastClock ${label}`,
-              type: 'kiosk',
-              meta: {
-                local_device_id: deviceId,
-                source: source || 'fastclock',
-        point_id: pointIdForEvent,
-              },
-              last_seen_at: new Date().toISOString(),
-            })
-            .select('id')
-            .single();
-
-          if (createError || !createdDevice?.id) {
-            console.warn('Device auto-create failed; omitting device_id for event', {
-              device_id: deviceId,
-              company_id: companyId,
-              create_error: createError || null,
-            });
-          } else {
-            deviceIdForEvent = createdDevice.id;
-          }
-        } else {
-          // Touch last_seen_at for known device
-          await supabaseAdmin
-            .from('devices' as any)
-            .update({ last_seen_at: new Date().toISOString() })
-            .eq('id', deviceIdForEvent);
-        }
-      } catch (err) {
-        console.warn('Device resolution failed; omitting device_id for event', {
-          device_id: deviceId,
+        // Vincular nuevo dispositivo (ahora también permite fastclock con punto)
+        await supabaseAdmin.from('worker_devices' as any).insert({
+          user_id: currentUserId,
           company_id: companyId,
-          error: err || null,
+          device_id: deviceId,
+          point_id: fastClockPoint?.id || null,
+          active: true,
+          last_used_at: new Date().toISOString(),
         });
       }
+
+      // Resolver device_id para time_events: crear en devices si no existe (multiempresa)
+      if (deviceId) {
+        try {
+          // Buscamos por meta.local_device_id dentro de la misma empresa
+          const { data: existingDevice, error: deviceLookupError } = await supabaseAdmin
+            .from('devices' as any)
+            .select('id')
+            .eq('company_id', companyId)
+            .contains('meta', { local_device_id: deviceId })
+            .maybeSingle();
+
+          if (deviceLookupError) {
+            console.warn('Device lookup by meta failed', {
+              device_id: deviceId,
+              company_id: companyId,
+              lookup_error: deviceLookupError || null,
+            });
+          } else if (existingDevice?.id) {
+            deviceIdForEvent = existingDevice.id;
+          }
+
+          if (!deviceIdForEvent) {
+            const label = isUuid(deviceId) ? deviceId.slice(0, 8) : deviceId.slice(0, 8);
+            const { data: createdDevice, error: createError } = await supabaseAdmin
+              .from('devices' as any)
+              .insert({
+                company_id: companyId,
+                name: `FastClock ${label}`,
+                type: 'kiosk',
+                meta: {
+                  local_device_id: deviceId,
+                  source: source || 'fastclock',
+                  point_id: pointIdForEvent,
+                },
+                last_seen_at: new Date().toISOString(),
+              })
+              .select('id')
+              .single();
+
+            if (createError || !createdDevice?.id) {
+              console.warn('Device auto-create failed; omitting device_id for event', {
+                device_id: deviceId,
+                company_id: companyId,
+                create_error: createError || null,
+              });
+            } else {
+              deviceIdForEvent = createdDevice.id;
+            }
+          } else {
+            // Touch last_seen_at for known device
+            await supabaseAdmin
+              .from('devices' as any)
+              .update({ last_seen_at: new Date().toISOString() })
+              .eq('id', deviceIdForEvent);
+          }
+        } catch (err) {
+          console.warn('Device resolution failed; omitting device_id for event', {
+            device_id: deviceId,
+            company_id: companyId,
+            error: err || null,
+          });
+        }
+      }
+    } else {
+      // owner-dashboard: no exigimos device_id para fichar ni lo guardamos
+      deviceIdForEvent = null;
     }
 
     // -------------------------------------------------------------------
@@ -683,9 +690,54 @@ Deno.serve(async (req) => {
       console.error('Error fetching scheduled hours for today', err);
     }
 
-    // Determina tipo de evento según acción
+    // Último evento para inferir estado (trabajando/pausa)
+    const { data: lastEvent } = await supabaseAdmin
+      .from('time_events')
+      .select('event_type, event_time')
+      .eq('user_id', currentUserId)
+      .eq('company_id', companyId)
+      .order('event_time', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // Configuración de pausas
+    const pauseConfig = {
+      pauses_enabled: company?.pauses_enabled === true,
+      pause_required: false,
+      pause_after_hours: null as number | null,
+      allow_exit_without_pause: true,
+    };
+
+    type WorkerState = 'out' | 'in' | 'pause';
+    const currentState: WorkerState = !activeSession
+      ? 'out'
+      : lastEvent?.event_type === 'pause_start'
+      ? 'pause'
+      : 'in';
+
+    const resolveAutoAction = (): 'in' | 'out' | 'break_start' | 'break_end' => {
+      if (currentState === 'out') return 'in';
+      if (currentState === 'pause') return 'break_end';
+
+      // currentState === 'in'
+      if (!pauseConfig.pauses_enabled) return 'out';
+
+      if (pauseConfig.pause_required) {
+        // Si requiere pausa y aún no se ha marcado pausa
+        if (lastEvent?.event_type !== 'pause_start') return 'break_start';
+        return 'break_end';
+      }
+
+      // Pausas habilitadas pero no obligatorias
+      return 'out';
+    };
+
+    const effectiveAction: 'in' | 'out' | 'break_start' | 'break_end' =
+      action && action !== 'auto' ? action : resolveAutoAction();
+
+    // Determina tipo de evento según acción resuelta
     let eventType: string;
-    switch (action) {
+    switch (effectiveAction) {
       case 'in':
         eventType = 'clock_in';
         break;
@@ -706,7 +758,7 @@ Deno.serve(async (req) => {
     }
 
     // Validate action based on current state
-    if (action === 'in' && activeSession) {
+    if (effectiveAction === 'in' && activeSession) {
       await reportIncident({
         type: 'missing_checkout',
         description: 'El empleado intentó fichar entrada con una sesión previa abierta.',
@@ -718,7 +770,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    if ((action === 'out' || action === 'break_start' || action === 'break_end') && !activeSession) {
+    if ((effectiveAction === 'out' || effectiveAction === 'break_start' || effectiveAction === 'break_end') && !activeSession) {
       if (exceededSession) {
         return new Response(
           JSON.stringify({ success: false, error: 'shift_exceeded_max_hours' }), // FIX consistent error envelope
@@ -761,7 +813,7 @@ Deno.serve(async (req) => {
         Boolean(scheduled) && expectedHours > 0 && startMinutes !== null && endMinutes !== null;
       if (!shouldEnforceSchedule) return { ok: true };
 
-      if (action === 'in') {
+      if (effectiveAction === 'in') {
         const minAllowed = startMinutes - entryEarly;
         const maxAllowed = startMinutes + entryLate;
         if (currentMinutes < minAllowed) {
@@ -771,7 +823,7 @@ Deno.serve(async (req) => {
           return { ok: false, msg: 'Ya no puedes fichar' };
         }
       }
-      if (action === 'out') {
+      if (effectiveAction === 'out') {
         const minAllowed = endMinutes - exitEarly;
         const maxAllowed = endMinutes + exitLate;
         if (currentMinutes < minAllowed) {
@@ -894,7 +946,7 @@ Deno.serve(async (req) => {
     }
 
     // Update or create work session
-    if (action === 'in') {
+    if (effectiveAction === 'in') {
       // Compliance checks before opening a new session
       if (compliance) {
         // Horas acumuladas semana/mes
@@ -1008,7 +1060,7 @@ Deno.serve(async (req) => {
           { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-    } else if (action === 'out' && activeSession) {
+    } else if (effectiveAction === 'out' && activeSession) {
       // Close session
       const { error: updateError } = await supabaseAdmin
         .from('work_sessions')
@@ -1054,7 +1106,7 @@ Deno.serve(async (req) => {
           ? `(${latitude.toFixed(5)}, ${longitude.toFixed(5)})`
           : 'sin coordenadas';
       const userLabel = profile?.full_name || profile?.email || 'Empleado';
-      const actionLabels: Record<ClockRequest['action'], string> = {
+      const actionLabels: Record<'in' | 'out' | 'break_start' | 'break_end', string> = {
         in: 'una entrada',
         out: 'una salida',
         break_start: 'el inicio de una pausa',
@@ -1062,11 +1114,11 @@ Deno.serve(async (req) => {
       };
 
       await notifyUsers(
-        recipientIds,
+        recipientIds as string[],
         {
           company_id: companyId,
           title: 'Fichaje fuera de zona',
-          message: `${userLabel} registró ${actionLabels[action]} fuera del punto configurado (${distanceLabel} del centro). Ubicación reportada: ${coordinatesLabel}.`,
+          message: `${userLabel} registró ${actionLabels[effectiveAction]} fuera del punto configurado (${distanceLabel} del centro). Ubicación reportada: ${coordinatesLabel}.`,
           type: 'warning',
           entity_type: 'time_event',
           entity_id: newEvent?.id || null,
@@ -1076,7 +1128,7 @@ Deno.serve(async (req) => {
     }
 
     // Aviso por fichaje fuera del horario programado del día (solo en entrada)
-    if (action === 'in') {
+    if (effectiveAction === 'in') {
       try {
         if (scheduled?.start_time && scheduled?.end_time && Number(scheduled.expected_hours) > 0) {
           const now = new Date();
