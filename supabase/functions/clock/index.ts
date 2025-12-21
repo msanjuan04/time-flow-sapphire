@@ -41,7 +41,13 @@ interface MembershipResult {
   } | null;
 }
 
-const MAX_DEVICES_PER_USER = Number(Deno.env.get('MAX_DEVICES_PER_USER') ?? '3');
+const rawMaxDevices = Deno.env.get('MAX_DEVICES_PER_USER');
+const parsedMaxDevices =
+  rawMaxDevices === undefined || rawMaxDevices === null || rawMaxDevices.trim() === ''
+    ? 10
+    : Number(rawMaxDevices);
+const MAX_DEVICES_PER_USER = Number.isFinite(parsedMaxDevices) ? parsedMaxDevices : 10;
+const shouldEnforceDeviceLimit = MAX_DEVICES_PER_USER > 0;
 const isUuid = (value: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
 Deno.serve(async (req) => {
@@ -362,28 +368,80 @@ Deno.serve(async (req) => {
         }
         await supabaseAdmin.from('worker_devices' as any).update(updates).eq('id', existingDevice.id);
       } else {
-        // Verificar límite de dispositivos activos
+        // Desactivar dispositivos que no se han usado en 4 años antes de verificar el límite
+        const fourYearsAgo = new Date();
+        fourYearsAgo.setFullYear(fourYearsAgo.getFullYear() - 4);
+        await supabaseAdmin
+          .from('worker_devices' as any)
+          .update({ active: false })
+          .eq('user_id', currentUserId)
+          .eq('company_id', companyId)
+          .eq('active', true)
+          .lt('last_used_at', fourYearsAgo.toISOString());
+
+        const nowIso = new Date().toISOString();
+        const devicePointId = fastClockPoint?.id || null;
+
+        // Verificar límite de dispositivos activos (después de limpiar los antiguos)
         const { count: activeCount } = await supabaseAdmin
           .from('worker_devices' as any)
           .select('id', { count: 'exact', head: true })
           .eq('user_id', currentUserId)
           .eq('company_id', companyId)
           .eq('active', true);
-        if (Number.isFinite(MAX_DEVICES_PER_USER) && typeof activeCount === 'number' && activeCount >= MAX_DEVICES_PER_USER) {
-          return new Response(
-            JSON.stringify({ success: false, error: 'DEVICE_LIMIT_EXCEEDED' }),
-            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
+        let reusedDevice = false;
+        if (shouldEnforceDeviceLimit && typeof activeCount === 'number' && activeCount >= MAX_DEVICES_PER_USER) {
+          const { data: oldestDevice, error: oldestError } = await supabaseAdmin
+            .from('worker_devices' as any)
+            .select('id')
+            .eq('user_id', currentUserId)
+            .eq('company_id', companyId)
+            .eq('active', true)
+            .order('last_used_at', { ascending: true, nullsFirst: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (oldestError) {
+            console.warn('Device rotation lookup failed', oldestError);
+          }
+
+          if (oldestDevice?.id) {
+            const { error: rotateError } = await supabaseAdmin
+              .from('worker_devices' as any)
+              .update({
+                device_id: deviceId,
+                point_id: devicePointId,
+                active: true,
+                last_used_at: nowIso,
+              })
+              .eq('id', oldestDevice.id);
+
+            if (rotateError) {
+              console.warn('Device rotation update failed', rotateError);
+            } else {
+              reusedDevice = true;
+            }
+          }
+
+          if (!reusedDevice) {
+            return new Response(
+              JSON.stringify({ success: false, error: 'DEVICE_LIMIT_EXCEEDED' }),
+              { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
         }
-        // Vincular nuevo dispositivo (ahora también permite fastclock con punto)
-        await supabaseAdmin.from('worker_devices' as any).insert({
-          user_id: currentUserId,
-          company_id: companyId,
-          device_id: deviceId,
-          point_id: fastClockPoint?.id || null,
-          active: true,
-          last_used_at: new Date().toISOString(),
-        });
+
+        if (!reusedDevice) {
+          // Vincular nuevo dispositivo (ahora también permite fastclock con punto)
+          await supabaseAdmin.from('worker_devices' as any).insert({
+            user_id: currentUserId,
+            company_id: companyId,
+            device_id: deviceId,
+            point_id: devicePointId,
+            active: true,
+            last_used_at: nowIso,
+          });
+        }
       }
 
       // Resolver device_id para time_events: crear en devices si no existe (multiempresa)
