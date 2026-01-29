@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const messages: Record<string, { title: string; description: string }> = {
   "no-membership": {
@@ -26,6 +27,7 @@ const AccessIssue = () => {
   const [params] = useSearchParams();
   const reason = params.get("reason") || "invalid-session";
   const navigate = useNavigate();
+  const { signOut } = useAuth();
 
   const content = useMemo(() => {
     return messages[reason] ?? messages["invalid-session"];
@@ -42,10 +44,23 @@ const AccessIssue = () => {
         <h1 className="text-2xl font-bold">{content.title}</h1>
         <p className="text-muted-foreground">{content.description}</p>
         <div className="flex flex-col gap-3">
-          <Button onClick={() => navigate("/auth")} className="w-full">
+          <Button
+            onClick={async () => {
+              await signOut();
+              navigate("/auth", { replace: true });
+            }}
+            className="w-full"
+          >
             Volver a iniciar sesión
           </Button>
-          <Button variant="ghost" onClick={() => navigate("/")} className="w-full">
+          <Button
+            variant="ghost"
+            onClick={async () => {
+              await signOut();
+              navigate("/", { replace: true });
+            }}
+            className="w-full"
+          >
             Ir al inicio
           </Button>
         </div>

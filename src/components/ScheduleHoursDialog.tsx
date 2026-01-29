@@ -23,6 +23,16 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
 import { Loader2, CalendarClock, Trash2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import MonthScheduleTab from "@/components/schedule/MonthScheduleTab";
+import WeeklyScheduleEditor from "@/components/schedule/WeeklyScheduleEditor";
+import {
+  DayTemplate,
+  WeekTemplate,
+  WEEKDAYS,
+  createEmptyWeekTemplate,
+  parseDateOnlyUtc,
+} from "@/lib/schedule/templates";
 
 type ScheduleHistoryRow =
   Database["public"]["Tables"]["schedule_adjustments_history"]["Row"];
@@ -63,41 +73,7 @@ const HORIZON_FORWARD_DAYS = 365;
 const PREVIEW_GROUPS = 12;
 const HISTORY_DAYS = 120;
 
-type DayTemplate = {
-  day: number; // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
-  name: string;
-  short: string;
-  enabled: boolean;
-  morningStart: string;
-  morningEnd: string;
-  afternoonStart: string;
-  afternoonEnd: string;
-};
-
-type WeekTemplate = {
-  days: DayTemplate[];
-};
-
-const createEmptyDayTemplate = (wd: typeof WEEKDAYS[number]): DayTemplate => ({
-  day: wd.day,
-  name: wd.name,
-  short: wd.short,
-  enabled: false,
-  morningStart: "",
-  morningEnd: "",
-  afternoonStart: "",
-  afternoonEnd: "",
-});
-
-const createEmptyWeekTemplate = (): WeekTemplate => ({
-  days: WEEKDAYS.map(createEmptyDayTemplate),
-});
-
-// Evitar desajustes de zona horaria: parseamos fechas yyyy-mm-dd en UTC.
-const parseDateOnlyUtc = (value: string): Date => {
-  const [y, m, d] = value.split("-").map(Number);
-  return new Date(Date.UTC(y, (m || 1) - 1, d || 1));
-};
+// Nota: tipos y utilidades movidas a lib/schedule/templates para reutilizarlas en la pestaña Mes.
 
 const ScheduleHoursDialog = ({
   open,
@@ -561,227 +537,117 @@ const ScheduleHoursDialog = ({
         </DialogHeader>
 
         <div className="grid gap-6 lg:grid-cols-[2fr,0.9fr]">
-          {/* COLUMNA IZQUIERDA: SEMANAS ROTATIVAS + FECHA + MOTIVO + BOTONES */}
+          {/* COLUMNA IZQUIERDA: Tabs Semana/Mes */}
           <div className="space-y-5 rounded-2xl border bg-card/70 p-5">
-            {/* Fecha de inicio */}
-            <div className="space-y-2">
-              <Label htmlFor="start-date">Aplicar desde</Label>
-              <Input
-                id="start-date"
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="max-w-xs"
-              />
-              <p className="text-xs text-muted-foreground">
-                Las semanas se generarán a partir de esta fecha. Semana 1
-                corresponde a los primeros 7 días desde aquí.
-              </p>
-            </div>
+            <Tabs defaultValue="week">
+              <TabsList className="mb-2">
+                <TabsTrigger value="week">Semana</TabsTrigger>
+                <TabsTrigger value="month">Mes</TabsTrigger>
+              </TabsList>
 
-            <div className="space-y-4 pt-4 border-t">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
-                    Semanas rotativas
-                  </p>
-                  <h3 className="text-lg font-semibold">
-                    Configura turnos por semana
-                  </h3>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Estas 4 semanas se repiten de forma rotativa a partir de la
-                    fecha seleccionada.
+              <TabsContent value="week" className="space-y-4">
+                {/* Fecha de inicio */}
+                <div className="space-y-2">
+                  <Label htmlFor="start-date">Aplicar desde</Label>
+                  <Input
+                    id="start-date"
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="max-w-xs"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Las semanas se generarán a partir de esta fecha. Semana 1
+                    corresponde a los primeros 7 días desde aquí.
                   </p>
                 </div>
-                <span className="text-xs text-muted-foreground">
-                  Duplicar mañanas/tardes entre semanas
-                </span>
-              </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                {weeklySchedules.map((week, index) => (
-                  <div
-                    key={`week-block-${index}`}
-                    className="rounded-2xl border border-border/60 bg-muted/40 p-3 space-y-3"
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex flex-col">
-                        <span className="font-semibold">
-                          Semana {index + 1}
-                        </span>
-                        <span className="text-[11px] text-muted-foreground">
-                          {getWeekRangeLabel(index)}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-2 text-[11px]">
-                        <Select
-                          value={copyWeekTargets[index].toString()}
-                          onValueChange={(value) => {
-                            const numeric = Number(value);
-                            setCopyWeekTargets((prev) => {
-                              const next = [...prev];
-                              next[index] = numeric;
-                              return next;
-                            });
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Copiar a" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {[1, 2, 3, 4].map((weekNumber) => (
-                              <SelectItem
-                                key={`copy-${index}-${weekNumber}`}
-                                value={weekNumber.toString()}
-                                disabled={weekNumber === index + 1}
-                              >
-                                Semana {weekNumber}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <Button
-                          size="xs"
-                          variant="outline"
-                          onClick={() =>
-                            handleCopyWeek(index, copyWeekTargets[index])
-                          }
-                        >
-                          Copiar
-                        </Button>
-                      </div>
+                <div className="space-y-4 pt-4 border-t">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">
+                        Semanas rotativas
+                      </p>
+                      <h3 className="text-lg font-semibold">
+                        Configura turnos por semana
+                      </h3>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Estas 4 semanas se repiten de forma rotativa a partir de la
+                        fecha seleccionada.
+                      </p>
                     </div>
-
-                    <div className="grid gap-3">
-                      {week.days.map((day, dayIdx) => (
-                        <div
-                          key={`${index}-${day.day}`}
-                          className={`rounded-xl border p-3 ${
-                            day.enabled ? "bg-background" : "bg-muted/60"
-                          }`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <label className="flex items-center gap-2 text-sm font-medium">
-                              <input
-                                type="checkbox"
-                                checked={day.enabled}
-                                onChange={(e) =>
-                                  updateDaySchedule(index, dayIdx, {
-                                    enabled: e.target.checked,
-                                  })
-                                }
-                              />
-                              {day.name}
-                            </label>
-                            <span className="text-xs text-muted-foreground">
-                              {day.enabled ? "Trabaja" : "Libre"}
-                            </span>
-                          </div>
-
-                          {day.enabled && (
-                            <div className="mt-3 grid gap-2">
-                              <div className="space-y-1">
-                                <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                                  Mañana
-                                </p>
-                                <div className="grid grid-cols-2 gap-2">
-                                  <Input
-                                    type="time"
-                                    value={day.morningStart}
-                                    onChange={(e) =>
-                                      updateDaySchedule(index, dayIdx, {
-                                        morningStart: e.target.value,
-                                      })
-                                    }
-                                  />
-                                  <Input
-                                    type="time"
-                                    value={day.morningEnd}
-                                    onChange={(e) =>
-                                      updateDaySchedule(index, dayIdx, {
-                                        morningEnd: e.target.value,
-                                      })
-                                    }
-                                  />
-                                </div>
-                              </div>
-
-                              <div className="space-y-1">
-                                <p className="text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
-                                  Tarde
-                                </p>
-                                <div className="grid grid-cols-2 gap-2">
-                                  <Input
-                                    type="time"
-                                    value={day.afternoonStart}
-                                    onChange={(e) =>
-                                      updateDaySchedule(index, dayIdx, {
-                                        afternoonStart: e.target.value,
-                                      })
-                                    }
-                                  />
-                                  <Input
-                                    type="time"
-                                    value={day.afternoonEnd}
-                                    onChange={(e) =>
-                                      updateDaySchedule(index, dayIdx, {
-                                        afternoonEnd: e.target.value,
-                                      })
-                                    }
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      Duplicar mañanas/tardes entre semanas
+                    </span>
                   </div>
-                ))}
-              </div>
-            </div>
 
-            <div className="space-y-2 pt-4 border-t">
-              <Label htmlFor="change-reason">Motivo del ajuste</Label>
-              <Textarea
-                id="change-reason"
-                value={changeReason}
-                onChange={(e) => setChangeReason(e.target.value)}
-                placeholder="Ej. Cambio a jornada reducida por estudios, cobertura de temporada, horario flexible, etc."
-                rows={3}
-              />
-            </div>
+                  <WeeklyScheduleEditor
+                    weeklySchedules={weeklySchedules}
+                    copyWeekTargets={copyWeekTargets}
+                    onChangeCopyTarget={(weekIndex, target) =>
+                      setCopyWeekTargets((prev) => {
+                        const next = [...prev];
+                        next[weekIndex] = target;
+                        return next;
+                      })
+                    }
+                    onCopyWeek={handleCopyWeek}
+                    onUpdateDay={updateDaySchedule}
+                    renderWeekLabel={getWeekRangeLabel}
+                  />
+                </div>
 
-            <div className="flex flex-wrap gap-3 pt-2">
-              <Button
-                onClick={handleSave}
-                disabled={
-                  saving ||
-                  !changeReason.trim() ||
-                  !weeklySchedules.some((week) =>
-                    week.days.some((ds) => ds.enabled)
-                  )
-                }
-                className="hover-scale"
-              >
-                {saving ? (
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                ) : (
-                  <CheckCircle2 className="w-4 h-4 mr-2" />
-                )}
-                Guardar jornada
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={handleClearFuture}
-                disabled={saving}
-                className="text-destructive hover-scale"
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                Eliminar jornadas futuras
-              </Button>
-            </div>
+                <div className="space-y-2 pt-4 border-t">
+                  <Label htmlFor="change-reason">Motivo del ajuste</Label>
+                  <Textarea
+                    id="change-reason"
+                    value={changeReason}
+                    onChange={(e) => setChangeReason(e.target.value)}
+                    placeholder="Ej. Cambio a jornada reducida por estudios, cobertura de temporada, horario flexible, etc."
+                    rows={3}
+                  />
+                </div>
+
+                <div className="flex flex-wrap gap-3 pt-2">
+                  <Button
+                    onClick={handleSave}
+                    disabled={
+                      saving ||
+                      !changeReason.trim() ||
+                      !weeklySchedules.some((week) =>
+                        week.days.some((ds) => ds.enabled)
+                      )
+                    }
+                    className="hover-scale"
+                  >
+                    {saving ? (
+                      <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                    )}
+                    Guardar jornada
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={handleClearFuture}
+                    disabled={saving}
+                    className="text-destructive hover-scale"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    Eliminar jornadas futuras
+                  </Button>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="month">
+                <MonthScheduleTab
+                  employeeId={employee.id}
+                  companyId={companyId}
+                  createdBy={user?.id ?? null}
+                />
+              </TabsContent>
+            </Tabs>
           </div>
 
           {/* COLUMNA DERECHA: HISTORIAL */}
