@@ -34,6 +34,8 @@ const cloneWeek = (week: WeekTemplate): WeekTemplate => ({
   days: week.days.map((d) => ({ ...d })),
 });
 
+const toIsoDate = (d: Date) => d.toISOString().slice(0, 10);
+
 const computeHoursFromTimes = (start: string, end: string): number => {
   const [sh, sm] = start.split(":").map(Number);
   const [eh, em] = end.split(":").map(Number);
@@ -79,8 +81,8 @@ const buildWeekTemplateFromRows = (
     template.days[idx] = {
       ...template.days[idx],
       enabled: true,
-      morningStart: row.start_time ?? "",
-      morningEnd: row.end_time ?? "",
+      morningStart: (row.start_time ?? "").slice(0, 5),
+      morningEnd: (row.end_time ?? "").slice(0, 5),
       afternoonStart: "",
       afternoonEnd: "",
     };
@@ -182,6 +184,8 @@ const MonthScheduleTab = ({
       return next;
     });
     toast.success("Semana aplicada a todas las semanas del mes");
+    // Mantenemos la selección en la primera semana para que se vea el resultado
+    setSelectedWeekStart(weeks[0]?.weekStartDate ?? selectedWeekStart);
   };
 
   const copyFromPreviousMonth = async () => {
@@ -269,7 +273,7 @@ const MonthScheduleTab = ({
       payload.push({
         user_id: employeeId,
         company_id: companyId,
-        date: format(currentDate, "yyyy-MM-dd"),
+        date: toIsoDate(currentDate),
         expected_hours,
         created_by: createdBy,
         notes: `Mes ${monthLabel}`,
