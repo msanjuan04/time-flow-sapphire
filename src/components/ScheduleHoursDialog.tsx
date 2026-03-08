@@ -25,13 +25,14 @@ import { Loader2, CalendarClock, Trash2, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import MonthScheduleTab from "@/components/schedule/MonthScheduleTab";
+import SimpleScheduleTab from "@/components/schedule/SimpleScheduleTab";
 import WeeklyScheduleEditor from "@/components/schedule/WeeklyScheduleEditor";
 import {
   DayTemplate,
   WeekTemplate,
-  WEEKDAYS,
   createEmptyWeekTemplate,
   parseDateOnlyUtc,
+  hoursBetween,
 } from "@/lib/schedule/templates";
 
 type ScheduleHistoryRow =
@@ -102,11 +103,7 @@ const ScheduleHoursDialog = ({
   const [copyWeekTargets, setCopyWeekTargets] = useState<number[]>([2, 3, 4, 1]);
 
   const computeHoursFromTimes = useCallback((start: string, end: string): number => {
-    const [sh, sm] = start.split(":").map((v) => Number(v));
-    const [eh, em] = end.split(":").map((v) => Number(v));
-    if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return 0;
-    const minutes = eh * 60 + em - (sh * 60 + sm);
-    return Math.max(0, minutes / 60);
+    return hoursBetween(start, end);
   }, []);
 
   const updateDaySchedule = (
@@ -351,12 +348,7 @@ const ScheduleHoursDialog = ({
         template: weeklySchedules,
       });
 
-      const computeHours = (start: string, end: string) => {
-        const [sh, sm] = start.split(":").map(Number);
-        const [eh, em] = end.split(":").map(Number);
-        if ([sh, sm, eh, em].some((value) => Number.isNaN(value))) return 0;
-        return Math.max(0, (eh * 60 + em) - (sh * 60 + sm)) / 60;
-      };
+      const computeHours = (start: string, end: string) => hoursBetween(start, end);
 
       const firstEnabledDay = enabledDayTemplates[0];
       const historyHours: number[] = [];
@@ -539,11 +531,20 @@ const ScheduleHoursDialog = ({
         <div className="grid gap-6 lg:grid-cols-[2fr,0.9fr]">
           {/* COLUMNA IZQUIERDA: Tabs Semana/Mes */}
           <div className="space-y-5 rounded-2xl border bg-card/70 p-5">
-            <Tabs defaultValue="week">
+            <Tabs defaultValue="simple">
               <TabsList className="mb-2">
-                <TabsTrigger value="week">Semana</TabsTrigger>
+                <TabsTrigger value="simple">Horario simple</TabsTrigger>
+                <TabsTrigger value="week">Semana (turno partido)</TabsTrigger>
                 <TabsTrigger value="month">Mes</TabsTrigger>
               </TabsList>
+              <TabsContent value="simple" className="space-y-4">
+                <SimpleScheduleTab
+                  employeeId={employee.id}
+                  companyId={companyId}
+                  createdBy={user?.id ?? null}
+                  onSaved={loadUpcomingEntries}
+                />
+              </TabsContent>
 
               <TabsContent value="week" className="space-y-4">
                 {/* Fecha de inicio */}

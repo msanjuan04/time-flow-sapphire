@@ -35,7 +35,8 @@ const formatPauseLabel = (start: string | null, end: string | null, expectedHour
   const endMinutes = parseTimeToMinutes(end);
   if (startMinutes === null || endMinutes === null || expectedHours === null) return "—";
 
-  const totalMinutes = endMinutes - startMinutes;
+  let totalMinutes = endMinutes - startMinutes;
+  if (totalMinutes <= 0) totalMinutes += 24 * 60; // turno nocturno (ej. 20:00–02:00)
   if (totalMinutes <= 0) return "—";
 
   const pauseMinutes = Math.max(0, Math.round(totalMinutes - expectedHours * 60));

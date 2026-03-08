@@ -733,7 +733,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch horario programado para hoy (se reutiliza abajo)
+    // Fetch horario programado para hoy (se reutiliza abajo).
+    // Si es salida (out) y estamos en madrugada (ej. 02:00), el turno puede haber empezado ayer (ej. 20:00-02:00):
+    // en ese caso buscamos también el horario de la fecha de entrada.
     let scheduled: { start_time?: string | null; end_time?: string | null; expected_hours?: number | null } | null = null;
     try {
       const { data: scheduledData } = await supabaseAdmin
@@ -744,6 +746,25 @@ Deno.serve(async (req) => {
         .eq('date', todayLocal)
         .maybeSingle();
       if (scheduledData) scheduled = scheduledData;
+
+      // Turno nocturno: en madrugada (00:00–05:59) la sesión puede haber empezado el día anterior (ej. 20:00→02:00)
+      const now = new Date();
+      const currentHour = now.getHours();
+      const isEarlyMorning = currentHour >= 0 && currentHour < 6;
+      if (!scheduled && activeSession?.clock_in_time && isEarlyMorning) {
+        const clockInDate = new Date(activeSession.clock_in_time);
+        const sessionDateLocal = formatLocalDate(clockInDate);
+        if (sessionDateLocal !== todayLocal) {
+          const { data: sessionDayData } = await supabaseAdmin
+            .from('scheduled_hours')
+            .select('start_time, end_time, expected_hours')
+            .eq('user_id', currentUserId)
+            .eq('company_id', companyId)
+            .eq('date', sessionDateLocal)
+            .maybeSingle();
+          if (sessionDayData) scheduled = sessionDayData;
+        }
+      }
     } catch (err) {
       console.error('Error fetching scheduled hours for today', err);
     }
@@ -871,9 +892,11 @@ Deno.serve(async (req) => {
         Boolean(scheduled) && expectedHours > 0 && startMinutes !== null && endMinutes !== null;
       if (!shouldEnforceSchedule) return { ok: true };
 
+      const crossesMidnight = startMinutes !== null && endMinutes !== null && endMinutes < startMinutes;
+
       if (effectiveAction === 'in') {
-        const minAllowed = startMinutes - entryEarly;
-        const maxAllowed = startMinutes + entryLate;
+        const minAllowed = startMinutes! - entryEarly;
+        const maxAllowed = startMinutes! + entryLate;
         if (currentMinutes < minAllowed) {
           return { ok: false, msg: 'No puedes fichar todavía' };
         }
@@ -882,13 +905,21 @@ Deno.serve(async (req) => {
         }
       }
       if (effectiveAction === 'out') {
-        const minAllowed = endMinutes - exitEarly;
-        const maxAllowed = endMinutes + exitLate;
-        if (currentMinutes < minAllowed) {
-          return { ok: false, msg: 'No puedes fichar todavía' };
-        }
-        if (currentMinutes > maxAllowed) {
-          return { ok: false, msg: 'Ya no puedes fichar' };
+        if (crossesMidnight) {
+          // Turno nocturno (ej. 20:00–02:00): la salida es en madrugada; ventana válida 00:00 hasta end + exitLate
+          if (currentMinutes > endMinutes! + exitLate) {
+            return { ok: false, msg: 'Ya no puedes fichar' };
+          }
+          // Opcional: no permitir salida antes de medianoche el mismo día (minAllowed en “día siguiente” es 0)
+        } else {
+          const minAllowed = endMinutes! - exitEarly;
+          const maxAllowed = endMinutes! + exitLate;
+          if (currentMinutes < minAllowed) {
+            return { ok: false, msg: 'No puedes fichar todavía' };
+          }
+          if (currentMinutes > maxAllowed) {
+            return { ok: false, msg: 'Ya no puedes fichar' };
+          }
         }
       }
       return { ok: true };
@@ -1194,13 +1225,14 @@ Deno.serve(async (req) => {
           const [eh, em] = String(scheduled.end_time).split(':').map(Number);
           const startMinutes = sh * 60 + sm;
           const endMinutes = eh * 60 + em;
-          const currentMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
+          const currentMinutes = now.getHours() * 60 + now.getMinutes();
 
-          if (
-            Number.isFinite(startMinutes) &&
-            Number.isFinite(endMinutes) &&
-            (currentMinutes < startMinutes || currentMinutes > endMinutes)
-          ) {
+          const crossesMidnightNotify = endMinutes < startMinutes;
+          const isOutsideWindow =
+            crossesMidnightNotify
+              ? currentMinutes < startMinutes && currentMinutes > endMinutes
+              : currentMinutes < startMinutes || currentMinutes > endMinutes;
+          if (Number.isFinite(startMinutes) && Number.isFinite(endMinutes) && isOutsideWindow) {
             const { data: admins } = await supabaseAdmin
               .from('memberships')
               .select('user_id')

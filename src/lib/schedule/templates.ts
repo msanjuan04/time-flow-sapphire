@@ -50,3 +50,25 @@ export const parseDateOnlyUtc = (value: string): Date => {
 // Alinea una fecha al lunes de esa semana (semana ISO) en UTC
 export const startOfIsoWeekUtc = (date: Date) =>
   startOfWeek(date, { weekStartsOn: 1 });
+
+/** Convierte "HH:mm" o "HH:mm:ss" a minutos desde medianoche (0-1439). */
+export const timeToMinutes = (t: string): number | null => {
+  const parts = t.trim().split(":").map(Number);
+  const h = parts[0];
+  const m = parts[1] ?? 0;
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return (h % 24) * 60 + (m % 60);
+};
+
+/**
+ * Horas entre hora inicio y hora fin.
+ * Si fin < inicio (ej. 20:00 → 02:00), se asume que el turno cruza medianoche.
+ */
+export const hoursBetween = (start: string, end: string): number => {
+  const sm = timeToMinutes(start);
+  const em = timeToMinutes(end);
+  if (sm === null || em === null) return 0;
+  let diff = em - sm;
+  if (diff < 0) diff += 24 * 60; // turno nocturno
+  return Math.max(0, diff) / 60;
+};

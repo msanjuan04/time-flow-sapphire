@@ -14,6 +14,7 @@ import {
   WeekTemplate,
   createEmptyWeekTemplate,
   parseDateOnlyUtc,
+  hoursBetween,
 } from "@/lib/schedule/templates";
 import {
   MonthWeek,
@@ -36,13 +37,7 @@ const cloneWeek = (week: WeekTemplate): WeekTemplate => ({
 
 const toIsoDate = (d: Date) => d.toISOString().slice(0, 10);
 
-const computeHoursFromTimes = (start: string, end: string): number => {
-  const [sh, sm] = start.split(":").map(Number);
-  const [eh, em] = end.split(":").map(Number);
-  if ([sh, sm, eh, em].some((n) => Number.isNaN(n))) return 0;
-  const minutes = eh * 60 + em - (sh * 60 + sm);
-  return minutes <= 0 ? 0 : minutes / 60;
-};
+const computeHoursFromTimes = (start: string, end: string): number => hoursBetween(start, end);
 
 const validateDay = (day: DayTemplate): boolean => {
   const morningSet = day.morningStart && day.morningEnd;
