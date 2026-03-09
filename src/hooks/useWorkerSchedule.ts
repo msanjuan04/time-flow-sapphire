@@ -7,6 +7,8 @@ export interface WorkerScheduleDay {
   expected_hours: number | null;
   start_time: string | null;
   end_time: string | null;
+  morning_end_time: string | null;
+  afternoon_start_time: string | null;
   notes?: string | null;
 }
 
@@ -23,6 +25,8 @@ const buildEmptyWeek = (baseStart: Date): WorkerScheduleDay[] =>
       expected_hours: null,
       start_time: null,
       end_time: null,
+      morning_end_time: null,
+      afternoon_start_time: null,
       notes: null,
     };
   });
@@ -53,7 +57,7 @@ export const useWorkerSchedule = ({ userId, companyId }: UseWorkerScheduleParams
       try {
         const { data, error } = await supabase
           .from("scheduled_hours")
-          .select("date, expected_hours, start_time, end_time, notes")
+          .select("date, expected_hours, start_time, end_time, morning_end_time, afternoon_start_time, notes")
           .eq("user_id", userId)
           .eq("company_id", companyId)
           .gte("date", startIso)
@@ -71,15 +75,19 @@ export const useWorkerSchedule = ({ userId, companyId }: UseWorkerScheduleParams
             expected_hours: number | null;
             start_time: string | null;
             end_time: string | null;
+            morning_end_time: string | null;
+            afternoon_start_time: string | null;
             notes?: string | null;
           }
         >();
 
-        (data || []).forEach((row) => {
+        (data || []).forEach((row: any) => {
           scheduleMap.set(row.date, {
             expected_hours: row.expected_hours ?? null,
             start_time: row.start_time ?? null,
             end_time: row.end_time ?? null,
+            morning_end_time: row.morning_end_time ?? null,
+            afternoon_start_time: row.afternoon_start_time ?? null,
             notes: row.notes ?? null,
           });
         });
@@ -93,6 +101,8 @@ export const useWorkerSchedule = ({ userId, companyId }: UseWorkerScheduleParams
             expected_hours: match?.expected_hours ?? null,
             start_time: match?.start_time ?? null,
             end_time: match?.end_time ?? null,
+            morning_end_time: match?.morning_end_time ?? null,
+            afternoon_start_time: match?.afternoon_start_time ?? null,
             notes: match?.notes,
           };
         });

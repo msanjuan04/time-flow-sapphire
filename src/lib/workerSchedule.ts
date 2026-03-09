@@ -7,8 +7,10 @@ import type { WorkerScheduleDay } from "@/hooks/useWorkerSchedule";
 export interface ScheduleDisplayRow {
   isoDate: string;
   dayLabel: string;
-  startLabel: string;
-  endLabel: string;
+  /** Rango mañana (ej. "09:00 - 13:00") o jornada continua ("09:00 - 18:00") */
+  morningLabel: string;
+  /** Rango tarde en horario partido (ej. "16:00 - 20:00") o "—" si no aplica */
+  afternoonLabel: string;
   pauseLabel: string;
   totalLabel: string;
 }
@@ -47,11 +49,40 @@ const formatPauseLabel = (start: string | null, end: string | null, expectedHour
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
 };
 
+/** Si la hora fin es "anterior" a la de inicio (ej. 02:30 vs 15:00), el turno cruza medianoche. */
+const crossesMidnight = (start: string | null, end: string | null): boolean => {
+  const sm = parseTimeToMinutes(start);
+  const em = parseTimeToMinutes(end);
+  if (sm === null || em === null) return false;
+  return em < sm;
+};
+
 export const buildScheduleRows = (days: WorkerScheduleDay[]): ScheduleDisplayRow[] =>
   days.map((day) => {
     const dayLabel = format(day.date, "EEEE dd/MM", { locale: es });
-    const startLabel = formatTimeLabel(day.start_time);
-    const endLabel = formatTimeLabel(day.end_time);
+    const isSplit =
+      day.morning_end_time != null &&
+      day.morning_end_time !== "" &&
+      day.afternoon_start_time != null &&
+      day.afternoon_start_time !== "";
+    const midnightSuffix = " (día sig.)";
+    let morningLabel: string;
+    let afternoonLabel: string;
+    if (isSplit) {
+      morningLabel = `${formatTimeLabel(day.start_time)} - ${formatTimeLabel(day.morning_end_time)}`;
+      afternoonLabel =
+        day.afternoon_start_time && day.end_time
+          ? `${formatTimeLabel(day.afternoon_start_time)} - ${formatTimeLabel(day.end_time)}${crossesMidnight(day.afternoon_start_time, day.end_time) ? midnightSuffix : ""}`
+          : "—";
+    } else {
+      if (day.start_time && day.end_time) {
+        const range = `${formatTimeLabel(day.start_time)} - ${formatTimeLabel(day.end_time)}`;
+        morningLabel = crossesMidnight(day.start_time, day.end_time) ? `${range}${midnightSuffix}` : range;
+      } else {
+        morningLabel = "—";
+      }
+      afternoonLabel = "—";
+    }
     const totalLabel =
       day.expected_hours !== null && day.expected_hours !== undefined
         ? `${Number(day.expected_hours).toFixed(2)} h`
@@ -61,16 +92,16 @@ export const buildScheduleRows = (days: WorkerScheduleDay[]): ScheduleDisplayRow
     return {
       isoDate: format(day.date, "yyyy-MM-dd"),
       dayLabel: dayLabel.charAt(0).toUpperCase() + dayLabel.slice(1),
-      startLabel,
-      endLabel,
+      morningLabel,
+      afternoonLabel,
       pauseLabel,
       totalLabel,
     };
   });
 
 export const downloadScheduleCsv = (filename: string, rows: ScheduleDisplayRow[]) => {
-  const headers = ["Día", "Hora inicio", "Hora fin", "Pausa", "Total horas"];
-  const data = rows.map((row) => [row.dayLabel, row.startLabel, row.endLabel, row.pauseLabel, row.totalLabel]);
+  const headers = ["Día", "Mañana", "Tarde", "Pausa", "Total horas"];
+  const data = rows.map((row) => [row.dayLabel, row.morningLabel, row.afternoonLabel, row.pauseLabel, row.totalLabel]);
   exportCSV(filename, headers, data);
 };
 
@@ -95,8 +126,8 @@ export const downloadSchedulePdf = async ({ filename, rows, workerName, periodLa
         <thead>
           <tr>
             <th style="text-align: left; border-bottom: 1px solid #e2e8f0; padding: 8px;">Día</th>
-            <th style="text-align: left; border-bottom: 1px solid #e2e8f0; padding: 8px;">Hora inicio</th>
-            <th style="text-align: left; border-bottom: 1px solid #e2e8f0; padding: 8px;">Hora fin</th>
+            <th style="text-align: left; border-bottom: 1px solid #e2e8f0; padding: 8px;">Mañana</th>
+            <th style="text-align: left; border-bottom: 1px solid #e2e8f0; padding: 8px;">Tarde</th>
             <th style="text-align: left; border-bottom: 1px solid #e2e8f0; padding: 8px;">Pausa</th>
             <th style="text-align: left; border-bottom: 1px solid #e2e8f0; padding: 8px;">Total horas</th>
           </tr>
@@ -107,8 +138,8 @@ export const downloadSchedulePdf = async ({ filename, rows, workerName, periodLa
               (row) => `
                 <tr>
                   <td style="border-bottom: 1px solid #f1f5f9; padding: 8px;">${row.dayLabel}</td>
-                  <td style="border-bottom: 1px solid #f1f5f9; padding: 8px;">${row.startLabel}</td>
-                  <td style="border-bottom: 1px solid #f1f5f9; padding: 8px;">${row.endLabel}</td>
+                  <td style="border-bottom: 1px solid #f1f5f9; padding: 8px;">${row.morningLabel}</td>
+                  <td style="border-bottom: 1px solid #f1f5f9; padding: 8px;">${row.afternoonLabel}</td>
                   <td style="border-bottom: 1px solid #f1f5f9; padding: 8px;">${row.pauseLabel}</td>
                   <td style="border-bottom: 1px solid #f1f5f9; padding: 8px;">${row.totalLabel}</td>
                 </tr>

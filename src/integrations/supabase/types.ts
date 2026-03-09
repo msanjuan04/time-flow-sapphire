@@ -762,6 +762,8 @@ export type Database = {
           notes: string | null
           start_time: string | null
           end_time: string | null
+          morning_end_time: string | null
+          afternoon_start_time: string | null
           updated_at: string
           user_id: string
         }
@@ -775,6 +777,8 @@ export type Database = {
           notes?: string | null
           start_time?: string | null
           end_time?: string | null
+          morning_end_time?: string | null
+          afternoon_start_time?: string | null
           updated_at?: string
           user_id: string
         }
@@ -788,6 +792,8 @@ export type Database = {
           notes?: string | null
           start_time?: string | null
           end_time?: string | null
+          morning_end_time?: string | null
+          afternoon_start_time?: string | null
           updated_at?: string
           user_id?: string
         }

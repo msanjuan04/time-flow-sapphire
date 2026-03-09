@@ -99,8 +99,8 @@ const WorkerScheduleSection = ({ userId, companyId, workerName }: Props) => {
             <TableHeader className="bg-muted/50">
               <TableRow>
                 <TableHead>Día de la semana</TableHead>
-                <TableHead>Hora inicio</TableHead>
-                <TableHead>Hora fin</TableHead>
+                <TableHead>Mañana</TableHead>
+                <TableHead>Tarde</TableHead>
                 <TableHead>Pausa</TableHead>
                 <TableHead className="text-right">Total horas</TableHead>
               </TableRow>
@@ -109,8 +109,8 @@ const WorkerScheduleSection = ({ userId, companyId, workerName }: Props) => {
               {rows.map((row) => (
                 <TableRow key={row.isoDate}>
                   <TableCell className="font-medium">{row.dayLabel}</TableCell>
-                  <TableCell>{row.startLabel}</TableCell>
-                  <TableCell>{row.endLabel}</TableCell>
+                  <TableCell>{row.morningLabel}</TableCell>
+                  <TableCell>{row.afternoonLabel}</TableCell>
                   <TableCell>{row.pauseLabel}</TableCell>
                   <TableCell className="text-right">{row.totalLabel}</TableCell>
                 </TableRow>

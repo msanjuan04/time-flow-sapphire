@@ -194,7 +194,7 @@ const ScheduleHoursDialog = ({
 
         const { data: existingSchedules } = await supabase
           .from("scheduled_hours")
-          .select("date, start_time, end_time, expected_hours")
+          .select("date, start_time, end_time, morning_end_time, afternoon_start_time, expected_hours")
           .eq("user_id", employee.id)
           .eq("company_id", companyId)
           .gte("date", base.toISOString().split("T")[0])
@@ -219,13 +219,15 @@ const ScheduleHoursDialog = ({
               (d) => d.day === dayOfWeek
             );
             if (dayIndex === -1) return;
+            const isSplit = sh.morning_end_time && sh.afternoon_start_time;
+            const toHHmm = (t: string | null | undefined) => (t ? String(t).trim().slice(0, 5) : "");
             hydratedWeeks[weekIndex].days[dayIndex] = {
               ...hydratedWeeks[weekIndex].days[dayIndex],
               enabled: true,
-              morningStart: sh.start_time ?? "",
-              morningEnd: sh.end_time ?? "",
-              afternoonStart: "",
-              afternoonEnd: "",
+              morningStart: toHHmm(sh.start_time),
+              morningEnd: isSplit ? toHHmm(sh.morning_end_time) : toHHmm(sh.end_time),
+              afternoonStart: isSplit ? toHHmm(sh.afternoon_start_time) : "",
+              afternoonEnd: isSplit ? toHHmm(sh.end_time) : "",
             };
           });
 
@@ -379,11 +381,12 @@ const ScheduleHoursDialog = ({
           historyHours.push(expected_hours);
         }
 
-        const start_time =
-          dayTemplate.morningStart || dayTemplate.afternoonStart || "";
-
-        const end_time =
-          dayTemplate.afternoonEnd || dayTemplate.morningEnd || "";
+        const isSplit = !!(dayTemplate.afternoonStart && dayTemplate.afternoonEnd);
+        const toHHmm = (t: string) => (t ? t.slice(0, 5) : "");
+        const start_time = toHHmm(dayTemplate.morningStart || dayTemplate.afternoonStart || "");
+        const end_time = toHHmm(dayTemplate.afternoonEnd || dayTemplate.morningEnd || "");
+        const morning_end_time = isSplit ? toHHmm(dayTemplate.morningEnd || "") : null;
+        const afternoon_start_time = isSplit ? toHHmm(dayTemplate.afternoonStart || "") : null;
 
         const noteSegments = [
           `Semana ${weekIndex + 1}`,
@@ -406,6 +409,8 @@ const ScheduleHoursDialog = ({
           notes: `${reasonMetadata} | ${noteSegments}`,
           start_time,
           end_time,
+          morning_end_time,
+          afternoon_start_time,
         });
       }
 
@@ -418,6 +423,10 @@ const ScheduleHoursDialog = ({
             .insert(batch);
           if (insertResult.error) {
             console.error("Error inserting batch:", insertResult.error);
+            const msg = insertResult.error.message || "";
+            if (msg.includes("morning_end_time") || msg.includes("afternoon_start_time") || msg.includes("column")) {
+              toast.error("Faltan columnas en la base de datos. Ejecuta en Supabase SQL: ALTER TABLE scheduled_hours ADD COLUMN IF NOT EXISTS morning_end_time TEXT, ADD COLUMN IF NOT EXISTS afternoon_start_time TEXT;");
+            }
             throw insertResult.error;
           }
         }
@@ -466,6 +475,7 @@ const ScheduleHoursDialog = ({
         `✅ Jornada actualizada desde ${startIso} (${payload.length} días programados)`
       );
       setChangeReason("");
+      hydrateRef.current = true;
       await loadUpcomingEntries();
 
       setTimeout(() => {
