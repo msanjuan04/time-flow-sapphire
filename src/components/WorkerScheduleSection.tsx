@@ -53,20 +53,20 @@ const WorkerScheduleSection = ({ userId, companyId, workerName }: Props) => {
   };
 
   return (
-    <Card className="glass-card p-6 space-y-4">
+    <Card className="glass-card p-4 sm:p-6 space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold">Mi horario</h2>
           <p className="text-sm text-muted-foreground">Este es tu horario actual asignado por la empresa.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-center sm:justify-end gap-2 w-full sm:w-auto flex-wrap">
           <Button variant="outline" size="icon" onClick={goToPreviousWeek} disabled={loading}>
             <ChevronLeft className="w-4 h-4" />
           </Button>
-          <div className="text-sm font-semibold min-w-[170px] text-center flex items-center justify-center gap-2">
-            <CalendarRange className="w-4 h-4 text-primary" />
-            <span>{periodLabel}</span>
-            {loading && <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />}
+          <div className="text-xs sm:text-sm font-semibold min-w-0 max-w-[min(100%,14rem)] sm:max-w-none text-center flex items-center justify-center gap-2 px-1">
+            <CalendarRange className="w-4 h-4 shrink-0 text-primary" />
+            <span className="leading-snug">{periodLabel}</span>
+            {loading && <Loader2 className="w-4 h-4 shrink-0 animate-spin text-muted-foreground" />}
           </div>
           <Button variant="outline" size="icon" onClick={goToNextWeek} disabled={loading}>
             <ChevronRight className="w-4 h-4" />

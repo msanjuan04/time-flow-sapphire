@@ -697,8 +697,8 @@ const WorkerView = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
-      <div className="max-w-2xl mx-auto space-y-6 pt-8">
+    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-3 sm:p-4">
+      <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6 pt-4 sm:pt-8">
         {isOffline && (
           <Card className="border-amber-500 bg-amber-50 text-amber-800 p-4 flex flex-col gap-2">
             <div className="flex items-center gap-2">
@@ -748,29 +748,29 @@ const WorkerView = () => {
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex justify-between items-center"
+          className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
         >
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
-              <User className="w-6 h-6 text-primary-foreground" />
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 sm:w-12 sm:h-12 shrink-0 bg-primary rounded-xl flex items-center justify-center shadow-lg">
+              <User className="w-5 h-5 sm:w-6 sm:h-6 text-primary-foreground" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
                 {logoUrl ? (
                   <img
                     src={logoUrl}
                     alt={`Logo ${companyName}`}
-                    className="h-10 w-10 rounded object-contain border border-border/50 bg-white"
+                    className="h-9 w-9 sm:h-10 sm:w-10 rounded object-contain border border-border/50 bg-white shrink-0"
                   />
                 ) : null}
-                <h1 className="text-xl font-bold">
+                <h1 className="text-lg sm:text-xl font-bold break-words">
                   {companyName}
                 </h1>
               </div>
               <p className="text-sm text-muted-foreground">Control de fichaje</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
             {hasMultipleCompanies && <CompanySelector />}
             <NotificationBell />
             <Button variant="ghost" size="icon" onClick={signOut} className="hover-scale">
@@ -784,39 +784,39 @@ const WorkerView = () => {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="grid grid-cols-2 md:grid-cols-4 gap-4"
+          className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4"
         >
           <Button
             variant="outline"
-            className="h-20 flex-col hover-scale"
+            className="h-[4.5rem] sm:h-20 flex-col gap-1 py-2 hover-scale px-1"
             onClick={() => navigate("/worker-reports")}
           >
-            <BarChart3 className="w-6 h-6 mb-2" />
-            <span className="text-sm font-medium">Informes</span>
+            <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
+            <span className="text-xs sm:text-sm font-medium text-center leading-tight">Informes</span>
           </Button>
           <Button
             variant="outline"
-            className="h-20 flex-col hover-scale"
+            className="h-[4.5rem] sm:h-20 flex-col gap-1 py-2 hover-scale px-1"
             onClick={() => navigate("/calendar")}
           >
-            <Calendar className="w-6 h-6 mb-2" />
-            <span className="text-sm font-medium">Calendario</span>
+            <Calendar className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
+            <span className="text-xs sm:text-sm font-medium text-center leading-tight">Calendario</span>
           </Button>
           <Button
             variant="outline"
-            className="h-20 flex-col hover-scale"
+            className="h-[4.5rem] sm:h-20 flex-col gap-1 py-2 hover-scale px-1"
             onClick={() => navigate("/absences")}
           >
-            <MapPin className="w-6 h-6 mb-2" />
-            <span className="text-sm font-medium">Ausencias</span>
+            <MapPin className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
+            <span className="text-xs sm:text-sm font-medium text-center leading-tight">Ausencias</span>
           </Button>
           <Button
             variant="outline"
-            className="h-20 flex-col hover-scale"
+            className="h-[4.5rem] sm:h-20 flex-col gap-1 py-2 hover-scale px-1"
             onClick={() => navigate("/correction-requests")}
           >
-            <AlertCircle className="w-6 h-6 mb-2" />
-            <span className="text-sm font-medium">Correcciones</span>
+            <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
+            <span className="text-xs sm:text-sm font-medium text-center leading-tight">Correcciones</span>
           </Button>
         </motion.div>
 
@@ -826,7 +826,7 @@ const WorkerView = () => {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.1 }}
         >
-          <Card className="glass-card p-8 space-y-6 text-center">
+          <Card className="glass-card p-4 sm:p-8 space-y-4 sm:space-y-6 text-center">
             {/* Status Circle with Animation */}
             <div className="flex justify-center mb-4">
               <motion.div
@@ -841,9 +841,9 @@ const WorkerView = () => {
                 className="relative"
               >
                 <div
-                  className={`w-32 h-32 rounded-full ${getStatusBgColor()} shadow-lg flex items-center justify-center`}
+                  className={`w-24 h-24 sm:w-32 sm:h-32 rounded-full ${getStatusBgColor()} shadow-lg flex items-center justify-center`}
                 >
-                  <Clock className="w-16 h-16 text-white" />
+                  <Clock className="w-12 h-12 sm:w-16 sm:h-16 text-white" />
                 </div>
                 {status !== "out" && (
                   <motion.div
@@ -868,7 +868,7 @@ const WorkerView = () => {
                 key={formatCurrentTime()}
                 initial={{ opacity: 0.5 }}
                 animate={{ opacity: 1 }}
-                className="text-7xl font-bold tabular-nums bg-gradient-to-br from-primary to-primary/70 bg-clip-text text-transparent"
+                className="text-5xl sm:text-6xl md:text-7xl font-bold tabular-nums bg-gradient-to-br from-primary to-primary/70 bg-clip-text text-transparent tracking-tight"
               >
                 {formatCurrentTime()}
               </motion.div>
@@ -893,7 +893,7 @@ const WorkerView = () => {
                   className="space-y-2"
                 >
                   <div className="text-sm text-muted-foreground">Tiempo trabajado hoy</div>
-                  <div className="text-4xl font-bold tabular-nums text-primary">
+                  <div className="text-3xl sm:text-4xl font-bold tabular-nums text-primary">
                     {formatTime(elapsedTime)}
                   </div>
                 </motion.div>
@@ -1074,8 +1074,8 @@ const WorkerView = () => {
           transition={{ delay: 0.2 }}
         >
           <Card className="glass-card p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex items-center gap-3 min-w-0">
                 <motion.div
                   animate={{
                     scale: status !== "out" ? [1, 1.2, 1] : 1,
@@ -1084,7 +1084,7 @@ const WorkerView = () => {
                     duration: 1.5,
                     repeat: status !== "out" ? Infinity : 0,
                   }}
-                  className={`w-3 h-3 rounded-full ${
+                  className={`w-3 h-3 shrink-0 rounded-full ${
                     status === "in"
                       ? "bg-primary"
                       : status === "on_break"
@@ -1092,12 +1092,12 @@ const WorkerView = () => {
                       : "bg-muted-foreground"
                   }`}
                 />
-                <span className="text-sm text-muted-foreground">
+                <span className="text-sm text-muted-foreground break-words">
                   Estado actual: <span className="font-medium text-foreground">{getStatusMessage()}</span>
                 </span>
               </div>
               {activeSession && (
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-muted-foreground sm:text-right shrink-0">
                   Entrada: {new Date(activeSession.clock_in_time).toLocaleTimeString("es-ES")}
                 </span>
               )}
@@ -1113,7 +1113,7 @@ const WorkerView = () => {
                   <span className="text-sm font-medium">Horario asignado hoy</span>
                 </div>
               </div>
-              <div className="mt-3 grid grid-cols-3 gap-3">
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {todaySchedule.start_time && (
                   <div>
                     <p className="text-xs text-muted-foreground">Entrada</p>

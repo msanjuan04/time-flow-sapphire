@@ -43,6 +43,8 @@ const WorkerClockPage = lazy(() => import("./pages/WorkerClock"));
 const WorkerHistoryPage = lazy(() => import("./pages/WorkerHistory"));
 const IncidentsPage = lazy(() => import("./pages/Incidents"));
 const PrintViewPage = lazy(() => import("./pages/PrintView"));
+const NfcCardsPage = lazy(() => import("./pages/Owner/NfcCards"));
+const NfcClockPage = lazy(() => import("./pages/NfcClock"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -94,6 +96,7 @@ const ProtectedRoute = ({
 const RouteAwareThemeToggle = () => {
   const location = useLocation();
   if (location.pathname.startsWith("/fastclock")) return null;
+  if (location.pathname.startsWith("/nfc")) return null;
   return <ThemeToggle />;
 };
 
@@ -264,6 +267,15 @@ const App = () => (
             <Route path="/kiosk-free" element={<KioskFreePage />} />
             <Route path="/kiosk/employee/:token" element={<KioskEmployeePage />} />
             <Route path="/fastclock/:pointId" element={<FastClockPage />} />
+            <Route path="/nfc/:pointId" element={<NfcClockPage />} />
+            <Route
+              path="/owner/nfc-cards"
+              element={
+                <ProtectedRoute allowedRoles={["owner", "admin", "manager"]}>
+                  <NfcCardsPage />
+                </ProtectedRoute>
+              }
+            />
 
             <Route
               path="/admin"

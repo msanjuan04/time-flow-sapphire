@@ -499,15 +499,15 @@ const WorkerReports = () => {
   const progress = expectedHours > 0 ? Math.min(100, (totalHours / expectedHours) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
-      <div className="max-w-4xl mx-auto pt-8 space-y-6">
+    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-3 sm:p-4">
+      <div className="max-w-4xl mx-auto pt-4 sm:pt-8 space-y-4 sm:space-y-6">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex justify-between items-center"
+          className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <Button
               variant="ghost"
               size="icon"
@@ -519,27 +519,27 @@ const WorkerReports = () => {
             <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
               <Calendar className="w-6 h-6 text-primary-foreground" />
             </div>
-            <div>
-              <h1 className="text-2xl font-bold">Mis Informes</h1>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold">Mis Informes</h1>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
                 {membership?.company?.logo_url ? (
                   <img
                     src={membership.company.logo_url}
                     alt={`Logo ${membership.company.name ?? ""}`}
-                    className="h-10 w-10 rounded object-contain border border-border/50 bg-white"
+                    className="h-9 w-9 sm:h-10 sm:w-10 rounded object-contain border border-border/50 bg-white shrink-0"
                   />
                 ) : null}
-                <span>{membership?.company?.name ?? "Control de horas trabajadas"}</span>
+                <span className="break-words">{membership?.company?.name ?? "Control de horas trabajadas"}</span>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" className="hover-scale" onClick={handlePreviewPDF}>
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2 shrink-0">
+            <Button variant="outline" className="hover-scale w-full sm:w-auto" onClick={handlePreviewPDF}>
               <Download className="w-4 h-4 mr-2" /> Descargar PDF
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="hover-scale">
+                <Button variant="outline" className="hover-scale w-full sm:w-auto">
                   <Download className="w-4 h-4 mr-2" /> Exportar
                 </Button>
               </DropdownMenuTrigger>
@@ -552,30 +552,30 @@ const WorkerReports = () => {
           </div>
         </motion.div>
         <Card className="glass-card p-4 flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <h3 className="text-sm font-semibold flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
+            <h3 className="text-sm font-semibold flex items-center gap-2 shrink-0">
               <Download className="w-4 h-4" />
               Exportar por rango de fechas
             </h3>
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-muted-foreground">Desde</label>
+            <div className="flex items-center gap-2 flex-1 min-w-0 sm:flex-initial">
+              <label className="text-xs text-muted-foreground shrink-0">Desde</label>
               <Input
                 type="date"
                 value={customStartDate}
                 onChange={(e) => setCustomStartDate(e.target.value)}
-                className="w-[150px]"
+                className="min-w-0 flex-1 sm:w-[150px] sm:flex-none"
               />
             </div>
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-muted-foreground">Hasta</label>
+            <div className="flex items-center gap-2 flex-1 min-w-0 sm:flex-initial">
+              <label className="text-xs text-muted-foreground shrink-0">Hasta</label>
               <Input
                 type="date"
                 value={customEndDate}
                 onChange={(e) => setCustomEndDate(e.target.value)}
-                className="w-[150px]"
+                className="min-w-0 flex-1 sm:w-[150px] sm:flex-none"
               />
             </div>
-            <Button size="sm" onClick={exportCustomRangeCsv} disabled={exportingRange}>
+            <Button size="sm" className="w-full sm:w-auto shrink-0" onClick={exportCustomRangeCsv} disabled={exportingRange}>
               {exportingRange ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Download className="w-4 h-4 mr-2" />}
               Descargar CSV (rango)
             </Button>
@@ -586,24 +586,24 @@ const WorkerReports = () => {
         </Card>
         <div ref={reportRef} className="space-y-6">
         {/* Jornada asignada */}
-        <Card className="glass-card p-6 flex flex-col gap-2">
-          <div className="flex items-start justify-between gap-4">
-            <div className="flex items-center gap-2">
-              <Info className="w-5 h-5 text-primary" />
-              <div>
+        <Card className="glass-card p-4 sm:p-6 flex flex-col gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div className="flex items-center gap-2 min-w-0">
+              <Info className="w-5 h-5 text-primary shrink-0" />
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Jornada asignada</p>
-                <h2 className="text-xl font-semibold">
+                <h2 className="text-lg sm:text-xl font-semibold">
                   {currentSchedule ? `${currentSchedule.hours.toFixed(2)} h/día` : "Sin definir"}
                 </h2>
                 {currentSchedule?.startTime && currentSchedule?.endTime && (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-muted-foreground break-words">
                     Horario: {currentSchedule.startTime} – {currentSchedule.endTime}
                   </p>
                 )}
               </div>
             </div>
             {currentSchedule?.changedAt && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-muted-foreground sm:text-right shrink-0">
                 Actualizado el {new Date(currentSchedule.changedAt).toLocaleString("es-ES")}
               </p>
             )}
@@ -618,11 +618,11 @@ const WorkerReports = () => {
         </Card>
 
         {/* Period Selector */}
-        <Card className="glass-card p-6">
-          <div className="flex items-center justify-between">
+        <Card className="glass-card p-4 sm:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold">Período</h2>
             <Select value={period} onValueChange={(v) => setPeriod(v as "week" | "month")}>
-              <SelectTrigger className="w-40">
+              <SelectTrigger className="w-full sm:w-40">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -634,12 +634,12 @@ const WorkerReports = () => {
         </Card>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="glass-card p-6 hover-scale smooth-transition">
-            <div className="flex items-center justify-between">
-              <div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+          <Card className="glass-card p-4 sm:p-6 hover-scale smooth-transition">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Horas Trabajadas</p>
-                <p className="text-4xl font-bold mt-1 text-primary">
+                <p className="text-3xl sm:text-4xl font-bold mt-1 text-primary tabular-nums">
                   {totalHours.toFixed(1)}h
                 </p>
               </div>
@@ -649,11 +649,11 @@ const WorkerReports = () => {
             </div>
           </Card>
 
-          <Card className="glass-card p-6 hover-scale smooth-transition">
-            <div className="flex items-center justify-between">
-              <div>
+          <Card className="glass-card p-4 sm:p-6 hover-scale smooth-transition">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Horas Esperadas</p>
-                <p className="text-4xl font-bold mt-1">
+                <p className="text-3xl sm:text-4xl font-bold mt-1 tabular-nums">
                   {expectedHours}h
                 </p>
               </div>
@@ -663,11 +663,11 @@ const WorkerReports = () => {
             </div>
           </Card>
 
-          <Card className="glass-card p-6 hover-scale smooth-transition">
-            <div className="flex items-center justify-between">
-              <div>
+          <Card className="glass-card p-4 sm:p-6 hover-scale smooth-transition">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
                 <p className="text-sm text-muted-foreground">Horas Restantes</p>
-                <p className={`text-4xl font-bold mt-1 ${hoursRemaining === 0 ? 'text-green-600' : 'text-amber-600'}`}>
+                <p className={`text-3xl sm:text-4xl font-bold mt-1 tabular-nums ${hoursRemaining === 0 ? 'text-green-600' : 'text-amber-600'}`}>
                   {hoursRemaining.toFixed(1)}h
                 </p>
               </div>
@@ -679,9 +679,9 @@ const WorkerReports = () => {
         </div>
 
         {/* Progress Bar */}
-        <Card className="glass-card p-6">
+        <Card className="glass-card p-4 sm:p-6">
           <div className="space-y-2">
-            <div className="flex justify-between items-center">
+            <div className="flex justify-between items-center gap-2">
               <span className="text-sm font-medium">Progreso</span>
               <span className="text-sm text-muted-foreground">{progress.toFixed(0)}%</span>
             </div>
@@ -700,7 +700,7 @@ const WorkerReports = () => {
 
         {/* Sessions */}
         {period === "week" ? (
-          <Card className="glass-card p-6">
+          <Card className="glass-card p-4 sm:p-6">
             <h2 className="text-lg font-semibold mb-4">Fichajes de la semana</h2>
             <div className="space-y-3">
               {weeklyEntries.map((entry) => (
@@ -719,13 +719,13 @@ const WorkerReports = () => {
                       return (
                         <div
                           key={`${session.clock_in_time}-${index}`}
-                          className="flex items-center justify-between rounded-md bg-background/70 px-3 py-2 text-sm"
+                          className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between rounded-md bg-background/70 px-3 py-2 text-sm"
                         >
-                          <span>
+                          <span className="break-words">
                             {start.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}{" "}
                             {end && <>- {end.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}</>}
                           </span>
-                          <span className="font-semibold text-primary">
+                          <span className="font-semibold text-primary shrink-0 sm:text-right">
                             {duration ? `${duration}h` : "En curso"}
                           </span>
                         </div>
@@ -737,7 +737,7 @@ const WorkerReports = () => {
             </div>
           </Card>
         ) : (
-          <Card className="glass-card p-6">
+          <Card className="glass-card p-4 sm:p-6">
             <h2 className="text-lg font-semibold mb-4">Fichajes recientes</h2>
             <div className="space-y-3">
               {loading ? (
@@ -753,10 +753,10 @@ const WorkerReports = () => {
                   return (
                     <div
                       key={`${session.clock_in_time}-${index}`}
-                      className="flex justify-between items-center p-4 bg-secondary/5 rounded-lg hover:bg-secondary/10 smooth-transition"
+                      className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-center p-3 sm:p-4 bg-secondary/5 rounded-lg hover:bg-secondary/10 smooth-transition"
                     >
-                      <div>
-                        <p className="font-medium">
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm sm:text-base break-words">
                           {start.toLocaleDateString("es-ES", {
                             weekday: "long",
                             year: "numeric",
@@ -771,8 +771,8 @@ const WorkerReports = () => {
                           )}
                         </p>
                       </div>
-                      <div className="text-right">
-                        <p className="text-lg font-bold text-primary">{duration ? `${duration}h` : "En curso"}</p>
+                      <div className="text-left sm:text-right shrink-0">
+                        <p className="text-base sm:text-lg font-bold text-primary tabular-nums">{duration ? `${duration}h` : "En curso"}</p>
                       </div>
                     </div>
                   );
@@ -781,8 +781,8 @@ const WorkerReports = () => {
             </div>
           </Card>
         )}
-        <Card className="glass-card p-6 space-y-3">
-          <div className="flex items-center justify-between">
+        <Card className="glass-card p-4 sm:p-6 space-y-3">
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
             <h2 className="text-lg font-semibold">Ajustes de horario aprobados</h2>
             <span className="text-xs text-muted-foreground">
               {approvedAdjustments.length} ajuste{approvedAdjustments.length === 1 ? "" : "s"}
