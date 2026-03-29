@@ -560,12 +560,14 @@ const AdminView = () => {
         )}
 
         {membership?.role === "owner" && (
-          <Card className="glass-card p-4 sm:p-6 flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs uppercase tracking-[0.3em] text-muted-foreground">Mi jornada</p>
-                <h2 className="text-lg font-semibold">Fichaje rápido</h2>
-                <p className="text-sm text-muted-foreground">
+          <Card className="glass-card p-3 sm:p-6 flex flex-col gap-2.5 sm:gap-3">
+            <div className="flex items-start justify-between gap-3 min-w-0">
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] sm:text-xs uppercase tracking-[0.2em] sm:tracking-[0.3em] text-muted-foreground">
+                  Mi jornada
+                </p>
+                <h2 className="text-base sm:text-lg font-semibold leading-tight">Fichaje rápido</h2>
+                <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
                   {ownerClockStatus === "in"
                     ? "En jornada"
                     : ownerClockStatus === "break"
@@ -575,11 +577,12 @@ const AdminView = () => {
                     : "Fuera de jornada"}
                 </p>
               </div>
-              <Clock className="w-6 h-6 text-primary" />
+              <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-primary shrink-0 mt-0.5" aria-hidden />
             </div>
             <div className="flex flex-col sm:flex-row sm:items-center gap-2">
               <Button
                 variant="default"
+                className="w-full sm:w-auto"
                 onClick={() => handleOwnerClock("in")}
                 disabled={ownerClockPending || ownerClockStatus === "in"}
               >
@@ -588,6 +591,7 @@ const AdminView = () => {
               </Button>
               <Button
                 variant="outline"
+                className="w-full sm:w-auto"
                 onClick={() => handleOwnerClock("out")}
                 disabled={ownerClockPending || ownerClockStatus === "out"}
               >
@@ -596,6 +600,7 @@ const AdminView = () => {
               </Button>
               <Button
                 variant="secondary"
+                className="w-full sm:w-auto"
                 onClick={() => handleOwnerClock(ownerClockStatus === "break" ? "break_end" : "break_start")}
                 disabled={ownerClockPending || ownerClockStatus === "loading" || ownerClockStatus === "out"}
               >
@@ -657,22 +662,22 @@ const AdminView = () => {
         
         {/* Header */}
         <div className="flex flex-col gap-4 sm:gap-2 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-start sm:items-center gap-3">
-            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
-              <BarChart3 className="w-6 h-6 text-primary-foreground" />
+          <div className="flex items-start sm:items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 shrink-0 bg-primary rounded-xl flex items-center justify-center shadow-lg">
+              <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 text-primary-foreground" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 min-w-0">
                 {companyLogo ? (
                   <img
                     src={companyLogo}
                     alt={`Logo ${membership?.company?.name ?? ""}`}
-                    className="h-11 w-11 rounded object-contain border border-border/50 bg-white"
+                    className="h-9 w-9 sm:h-11 sm:w-11 rounded object-contain border border-border/50 bg-white shrink-0"
                   />
                 ) : null}
-                <div>
-                  <h1 className="text-2xl font-bold">Dashboard</h1>
-                  <p className="text-sm text-muted-foreground">
+                <div className="min-w-0">
+                  <h1 className="text-xl sm:text-2xl font-bold leading-tight">Dashboard</h1>
+                  <p className="text-xs sm:text-sm text-muted-foreground break-words">
                     {membership?.company?.name ?? "Empresa sin nombre"}
                   </p>
                 </div>
@@ -702,25 +707,25 @@ const AdminView = () => {
           {mobileStatsOpen && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
               <Card className="glass-card p-4 sm:p-6 hover-scale smooth-transition">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
                     <p className="text-sm text-muted-foreground">Trabajadores activos</p>
-                    <p className="text-3xl font-bold mt-1">{statsDisplay.activeUsers}</p>
+                    <p className="text-2xl sm:text-3xl font-bold mt-1 tabular-nums">{statsDisplay.activeUsers}</p>
                   </div>
-                  <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
-                    <Users className="w-6 h-6 text-primary" />
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-primary/10 rounded-xl flex items-center justify-center shrink-0">
+                    <Users className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
                   </div>
                 </div>
               </Card>
 
               <Card className="glass-card p-4 sm:p-6 hover-scale smooth-transition">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
                     <p className="text-sm text-muted-foreground">Fichajes de hoy</p>
-                    <p className="text-3xl font-bold mt-1">{statsDisplay.todayCheckIns}</p>
+                    <p className="text-2xl sm:text-3xl font-bold mt-1 tabular-nums">{statsDisplay.todayCheckIns}</p>
                   </div>
-                  <div className="w-12 h-12 bg-primary/10 rounded-xl flex items-center justify-center">
-                    <Calendar className="w-6 h-6 text-primary" />
+                  <div className="w-10 h-10 sm:w-12 sm:h-12 bg-primary/10 rounded-xl flex items-center justify-center shrink-0">
+                    <Calendar className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
                   </div>
                 </div>
               </Card>
@@ -758,11 +763,12 @@ const AdminView = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* Hours Chart */}
           <Card className="glass-card p-4 sm:p-6">
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-primary" />
-              Horas trabajadas - Última semana
+            <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center gap-2 flex-wrap">
+              <BarChart3 className="w-5 h-5 shrink-0 text-primary" />
+              <span className="leading-snug">Horas trabajadas - Última semana</span>
             </h2>
-            <ResponsiveContainer width="100%" height={250}>
+            <div className="h-[200px] w-full sm:h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
               <BarChart data={weeklyChartData}>
                 <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                 <XAxis
@@ -783,16 +789,18 @@ const AdminView = () => {
                   radius={[8, 8, 0, 0]}
                 />
               </BarChart>
-            </ResponsiveContainer>
+              </ResponsiveContainer>
+            </div>
           </Card>
 
           {/* Check-ins Chart */}
           <Card className="glass-card p-4 sm:p-6">
-            <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-primary" />
-              Fichajes - Última semana
+            <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center gap-2 flex-wrap">
+              <TrendingUp className="w-5 h-5 shrink-0 text-primary" />
+              <span className="leading-snug">Fichajes - Última semana</span>
             </h2>
-            <ResponsiveContainer width="100%" height={250}>
+            <div className="h-[200px] w-full sm:h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
               <LineChart data={weeklyCheckInChartData}>
                 <CartesianGrid strokeDasharray="3 3" className="opacity-30" />
                 <XAxis
@@ -815,14 +823,15 @@ const AdminView = () => {
                   dot={{ fill: "hsl(var(--primary))" }}
                 />
               </LineChart>
-            </ResponsiveContainer>
+              </ResponsiveContainer>
+            </div>
           </Card>
         </div>
 
         {/* Recent Events */}
         <Card className="glass-card p-4 sm:p-6">
-          <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-primary" />
+          <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4 flex items-center gap-2">
+            <Clock className="w-5 h-5 shrink-0 text-primary" />
             Fichajes recientes
           </h2>
           <div className="space-y-3">
@@ -834,23 +843,23 @@ const AdminView = () => {
               recentEvents.map((event, index) => (
                 <div
                   key={event.id}
-                  className="flex items-center justify-between p-4 rounded-xl bg-secondary/50 smooth-transition hover:bg-secondary animate-fade-in"
+                  className="flex items-center justify-between gap-2 p-3 sm:p-4 rounded-xl bg-secondary/50 smooth-transition hover:bg-secondary animate-fade-in"
                   style={{ animationDelay: `${index * 50}ms` }}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                  <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 shrink-0 bg-primary/10 rounded-full flex items-center justify-center">
                       {getEventIcon(event.event_type)}
                     </div>
-                    <div>
-                      <p className="font-medium">
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm sm:text-base break-words">
                         {event.profile?.full_name || event.profile?.email}
                       </p>
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-xs sm:text-sm text-muted-foreground">
                         {formatEventType(event.event_type)}
                       </p>
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-right shrink-0">
                     <p className="font-medium">{formatTime(event.event_time)}</p>
                     <p className="text-xs text-muted-foreground">
                       {new Date(event.event_time).toLocaleDateString("es-ES")}
@@ -864,31 +873,31 @@ const AdminView = () => {
 
         {/* Weekly Summary */}
         <Card className="glass-card p-4 sm:p-6">
-          <h2 className="text-xl font-semibold mb-4">Resumen semanal</h2>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <div className="text-center p-4 rounded-xl bg-primary/5">
-              <p className="text-2xl font-bold text-primary">
+          <h2 className="text-lg sm:text-xl font-semibold mb-3 sm:mb-4">Resumen semanal</h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4">
+            <div className="text-center p-3 sm:p-4 rounded-xl bg-primary/5">
+              <p className="text-xl sm:text-2xl font-bold text-primary tabular-nums">
                 {safeTotalHoursWeek.toFixed(1)}h
               </p>
-              <p className="text-sm text-muted-foreground mt-1">Horas totales</p>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">Horas totales</p>
             </div>
-            <div className="text-center p-4 rounded-xl bg-primary/5">
-              <p className="text-2xl font-bold text-primary">
+            <div className="text-center p-3 sm:p-4 rounded-xl bg-primary/5">
+              <p className="text-xl sm:text-2xl font-bold text-primary tabular-nums">
                 {weeklyCheckInChartData.reduce((sum, day) => sum + day.checkIns, 0)}
               </p>
-              <p className="text-sm text-muted-foreground mt-1">Fichajes</p>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">Fichajes</p>
             </div>
-            <div className="text-center p-4 rounded-xl bg-primary/5">
-              <p className="text-2xl font-bold text-primary">
+            <div className="text-center p-3 sm:p-4 rounded-xl bg-primary/5">
+              <p className="text-xl sm:text-2xl font-bold text-primary tabular-nums">
                 {statsDisplay.activeUsers}
               </p>
-              <p className="text-sm text-muted-foreground mt-1">Activos ahora</p>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">Activos ahora</p>
             </div>
-            <div className="text-center p-4 rounded-xl bg-amber-500/10">
-              <p className="text-2xl font-bold text-amber-600">
+            <div className="text-center p-3 sm:p-4 rounded-xl bg-amber-500/10">
+              <p className="text-xl sm:text-2xl font-bold text-amber-600 tabular-nums">
                 {statsDisplay.pendingIncidents}
               </p>
-              <p className="text-sm text-muted-foreground mt-1">Incidencias</p>
+              <p className="text-xs sm:text-sm text-muted-foreground mt-1">Incidencias</p>
             </div>
           </div>
         </Card>

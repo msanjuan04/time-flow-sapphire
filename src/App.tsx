@@ -45,6 +45,7 @@ const IncidentsPage = lazy(() => import("./pages/Incidents"));
 const PrintViewPage = lazy(() => import("./pages/PrintView"));
 const NfcCardsPage = lazy(() => import("./pages/Owner/NfcCards"));
 const NfcClockPage = lazy(() => import("./pages/NfcClock"));
+const ClockCompanyNfcPage = lazy(() => import("./pages/ClockCompanyNfc"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -97,6 +98,7 @@ const RouteAwareThemeToggle = () => {
   const location = useLocation();
   if (location.pathname.startsWith("/fastclock")) return null;
   if (location.pathname.startsWith("/nfc")) return null;
+  if (location.pathname.startsWith("/clock")) return null;
   return <ThemeToggle />;
 };
 
@@ -267,6 +269,7 @@ const App = () => (
             <Route path="/kiosk-free" element={<KioskFreePage />} />
             <Route path="/kiosk/employee/:token" element={<KioskEmployeePage />} />
             <Route path="/fastclock/:pointId" element={<FastClockPage />} />
+            <Route path="/clock/:companyId/nfc" element={<ClockCompanyNfcPage />} />
             <Route path="/nfc/:pointId" element={<NfcClockPage />} />
             <Route
               path="/owner/nfc-cards"
