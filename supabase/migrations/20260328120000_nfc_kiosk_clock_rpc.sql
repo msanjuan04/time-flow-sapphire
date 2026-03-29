@@ -30,7 +30,13 @@ BEGIN
       ADD COLUMN IF NOT EXISTS uid text;
 
     ALTER TABLE public.nfc_cards
+      ADD COLUMN IF NOT EXISTS card_uid text;
+
+    ALTER TABLE public.nfc_cards
       ADD COLUMN IF NOT EXISTS empleado_id uuid REFERENCES public.profiles (id) ON DELETE CASCADE;
+
+    ALTER TABLE public.nfc_cards
+      ADD COLUMN IF NOT EXISTS card_uid_normalized text;
   END IF;
 END
 $$;
@@ -47,7 +53,9 @@ DECLARE
   v_name text;
   v_ok boolean;
   v_has_session boolean;
-  v_next public.event_type;
+  v_session_id uuid;
+  v_next text;
+  v_now timestamptz;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.companies c WHERE c.id = p_company_id) THEN
     RETURN jsonb_build_object('ok', false, 'error', 'company_not_found');
@@ -71,12 +79,13 @@ BEGIN
   v_name := NULL;
   v_ok := false;
 
-  -- 1) Tarjetas con company_id (panel actual): user_id + card_uid / uid
+  -- 1) Tarjetas con company_id (panel actual): user_id + uid / card_uid / card_uid_normalized
+  --    coalesce(uid,'') no basta: '' es no NULL y oculta card_uid; is_active NULL en profile también bloqueaba antes
   SELECT
     nc.user_id,
     coalesce(nullif(trim(tr.nombre_completo), ''), p.full_name, 'Trabajador'),
-    (p.is_active IS NOT FALSE)
-    AND (tr.id IS NULL OR tr.activo = true)
+    (p.is_active IS DISTINCT FROM false)
+    AND (tr.id IS NULL OR tr.activo IS DISTINCT FROM false)
   INTO v_emp, v_name, v_ok
   FROM public.nfc_cards nc
   JOIN public.profiles p ON p.id = nc.user_id
@@ -85,7 +94,19 @@ BEGIN
    AND tr.company_id = p_company_id
   WHERE nc.company_id = p_company_id
     AND (
-      lower(regexp_replace(coalesce(nc.uid, nc.card_uid, ''), '[^a-zA-Z0-9]', '', 'g')) = v_norm
+      lower(
+        regexp_replace(
+          coalesce(
+            nullif(trim(nc.uid), ''),
+            nullif(trim(nc.card_uid), ''),
+            nullif(trim(nc.card_uid_normalized), ''),
+            ''
+          ),
+          '[^a-zA-Z0-9]',
+          '',
+          'g'
+        )
+      ) = v_norm
     )
     AND (nc.active IS NULL OR nc.active = true)
   LIMIT 1;
@@ -95,15 +116,27 @@ BEGIN
     SELECT
       nc.empleado_id,
       coalesce(nullif(trim(tr.nombre_completo), ''), p.full_name, 'Trabajador'),
-      tr.activo = true
-      AND (p.is_active IS NOT FALSE)
+      (tr.activo IS DISTINCT FROM false)
+      AND (p.is_active IS DISTINCT FROM false)
     INTO v_emp, v_name, v_ok
     FROM public.nfc_cards nc
     JOIN public.trabajadores_rows tr
       ON tr.id = nc.empleado_id
      AND tr.company_id = p_company_id
     JOIN public.profiles p ON p.id = nc.empleado_id
-    WHERE lower(regexp_replace(coalesce(nc.uid, nc.card_uid, ''), '[^a-zA-Z0-9]', '', 'g')) = v_norm
+    WHERE lower(
+        regexp_replace(
+          coalesce(
+            nullif(trim(nc.uid), ''),
+            nullif(trim(nc.card_uid), ''),
+            nullif(trim(nc.card_uid_normalized), ''),
+            ''
+          ),
+          '[^a-zA-Z0-9]',
+          '',
+          'g'
+        )
+      ) = v_norm
       AND nc.empleado_id IS NOT NULL
       AND (nc.active IS NULL OR nc.active = true)
     LIMIT 1;
@@ -113,20 +146,24 @@ BEGIN
     RETURN jsonb_build_object('ok', false, 'error', 'unknown_card');
   END IF;
 
-  SELECT EXISTS (
-    SELECT 1
-    FROM public.work_sessions ws
-    WHERE ws.user_id = v_emp
-      AND ws.company_id = p_company_id
-      AND ws.is_active = true
-  )
-  INTO v_has_session;
+  SELECT ws.id
+  INTO v_session_id
+  FROM public.work_sessions ws
+  WHERE ws.user_id = v_emp
+    AND ws.company_id = p_company_id
+    AND ws.is_active = true
+  ORDER BY ws.clock_in_time DESC
+  LIMIT 1;
+
+  v_has_session := v_session_id IS NOT NULL;
 
   IF v_has_session THEN
     v_next := 'clock_out';
   ELSE
     v_next := 'clock_in';
   END IF;
+
+  v_now := now();
 
   INSERT INTO public.time_events (
     user_id,
@@ -139,11 +176,38 @@ BEGIN
   VALUES (
     v_emp,
     p_company_id,
-    v_next,
-    now(),
+    v_next::public.time_event_type,
+    v_now,
     'nfc',
     jsonb_build_object('tipo', 'nfc', 'card_uid', v_norm)
   );
+
+  -- Sesión de trabajo: entrada abre jornada, salida la cierra (informes, backups, cumplimiento)
+  IF v_next = 'clock_out' AND v_session_id IS NOT NULL THEN
+    UPDATE public.work_sessions ws
+    SET
+      clock_out_time = v_now,
+      is_active = false,
+      status = 'closed',
+      total_work_duration = v_now - ws.clock_in_time,
+      updated_at = v_now
+    WHERE ws.id = v_session_id;
+  ELSIF v_next = 'clock_in' THEN
+    INSERT INTO public.work_sessions (
+      user_id,
+      company_id,
+      clock_in_time,
+      is_active,
+      status
+    )
+    VALUES (
+      v_emp,
+      p_company_id,
+      v_now,
+      true,
+      'open'
+    );
+  END IF;
 
   RETURN jsonb_build_object(
     'ok',

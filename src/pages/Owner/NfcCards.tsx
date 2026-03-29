@@ -187,6 +187,8 @@ const NfcCardsPage = () => {
         company_id: companyId,
         user_id: selectedUserId,
         card_uid,
+        card_uid_normalized: card_uid,
+        uid: card_uid,
         label: label.trim() || null,
         active: true,
       });
