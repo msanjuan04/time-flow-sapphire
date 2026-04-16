@@ -18,14 +18,10 @@ const items = [
 ];
 
 const OwnerQuickNav = () => {
-  const { signOut } = useAuth();
-  const { role } = useMembership();
-  const navigate = useNavigate();
-  const { pathname } = useLocation();
-  const [mobileOpen, setMobileOpen] = useState(false);
+  // Navegación gestionada por AppLayout (sidebar + bottom nav)
+  return null;
 
-  if (role !== "owner") return null;
-
+  // eslint-disable-next-line no-unreachable
   return (
     <div className="flex flex-col gap-2">
       <div className="hidden lg:flex items-center gap-2">

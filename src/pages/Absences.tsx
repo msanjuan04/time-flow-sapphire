@@ -1,3 +1,6 @@
+import { AppLayout } from "@/components/AppLayout";
+import { PageHeader } from "@/components/PageHeader";
+import { EmptyState } from "@/components/EmptyState";
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,7 +10,6 @@ import { Calendar, Send, CheckCircle, XCircle, Clock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { Badge } from "@/components/ui/badge";
@@ -27,7 +29,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ABSENCE_REASONS, DEFAULT_ABSENCE_REASON } from "@/data/absenceReasons";
-import OwnerQuickNav from "@/components/OwnerQuickNav";
 
 interface AbsencePayload {
   type: "absence";
@@ -48,8 +49,7 @@ interface Absence {
 const Absences = () => {
   const { user } = useAuth();
   const { companyId } = useMembership();
-  const navigate = useNavigate();
-  
+
   const [loading, setLoading] = useState(false);
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [startDate, setStartDate] = useState("");
@@ -70,7 +70,7 @@ const Absences = () => {
     try {
       const { data, error } = await supabase
         .from("correction_requests")
-        .select("*")
+        .select("id, reason, status, created_at, payload")
         .eq("user_id", user?.id)
         .eq("company_id", companyId)
         .order("created_at", { ascending: false });
@@ -161,143 +161,131 @@ const Absences = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
-      <div className="max-w-4xl mx-auto space-y-6 pt-8">
+    <AppLayout>
+      <div className="max-w-4xl mx-auto pt-4 sm:pt-8 space-y-4 sm:space-y-6">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex justify-between items-center"
-        >
-          <div className="flex items-center gap-3">
-            <BackButton to="/" />
-            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
-              <Calendar className="w-6 h-6 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">Mis Ausencias</h1>
-              <p className="text-sm text-muted-foreground">Solicitudes de vacaciones y permisos</p>
-            </div>
-          </div>
-
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="hover-scale">
-                <Send className="w-4 h-4 mr-2" />
-                Nueva Solicitud
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Nueva Solicitud de Ausencia</DialogTitle>
-                <DialogDescription>
-                  Solicita vacaciones o un permiso especial
-                </DialogDescription>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="startDate">Fecha de inicio (opcional)</Label>
-                    <Input
-                      id="startDate"
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                    />
+        <PageHeader
+          icon={Calendar}
+          title="Mis Ausencias"
+          description="Solicitudes de vacaciones y permisos"
+          actions={
+            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+              <DialogTrigger asChild>
+                <Button>
+                  <Send className="w-4 h-4" />
+                  Nueva Solicitud
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Nueva Solicitud de Ausencia</DialogTitle>
+                  <DialogDescription>
+                    Solicita vacaciones o un permiso especial
+                  </DialogDescription>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="startDate">Fecha de inicio (opcional)</Label>
+                      <Input
+                        id="startDate"
+                        type="date"
+                        value={startDate}
+                        onChange={(e) => setStartDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="startTime">Hora inicio (opcional)</Label>
+                      <Input
+                        id="startTime"
+                        type="time"
+                        value={startTime}
+                        onChange={(e) => setStartTime(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="endDate">Fecha de fin (opcional)</Label>
+                      <Input
+                        id="endDate"
+                        type="date"
+                        value={endDate}
+                        onChange={(e) => setEndDate(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="endTime">Hora fin (opcional)</Label>
+                      <Input
+                        id="endTime"
+                        type="time"
+                        value={endTime}
+                        onChange={(e) => setEndTime(e.target.value)}
+                      />
+                    </div>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="startTime">Hora inicio (opcional)</Label>
-                    <Input
-                      id="startTime"
-                      type="time"
-                      value={startTime}
-                      onChange={(e) => setStartTime(e.target.value)}
-                    />
+                    <Label htmlFor="absence-reason">Motivo</Label>
+                    <Select
+                      value={selectedReason}
+                      onValueChange={setSelectedReason}
+                    >
+                      <SelectTrigger id="absence-reason">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ABSENCE_REASONS.map((item) => (
+                          <SelectItem key={item.value} value={item.value}>
+                            {item.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="endDate">Fecha de fin (opcional)</Label>
-                    <Input
-                      id="endDate"
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                    />
+                  {selectedReason === "otro" && (
+                    <div className="space-y-2">
+                      <Label htmlFor="absence-other">Describe el motivo</Label>
+                      <Input
+                        id="absence-other"
+                        value={otherReason}
+                        onChange={(e) => setOtherReason(e.target.value)}
+                        placeholder="Explica el motivo de la ausencia"
+                        required
+                      />
+                    </div>
+                  )}
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setDialogOpen(false)}
+                    >
+                      Cancelar
+                    </Button>
+                    <Button type="submit" disabled={loading}>
+                      {loading ? "Enviando..." : "Enviar Solicitud"}
+                    </Button>
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="endTime">Hora fin (opcional)</Label>
-                    <Input
-                      id="endTime"
-                      type="time"
-                      value={endTime}
-                      onChange={(e) => setEndTime(e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="absence-reason">Motivo</Label>
-                  <Select
-                    value={selectedReason}
-                    onValueChange={setSelectedReason}
-                  >
-                    <SelectTrigger id="absence-reason">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ABSENCE_REASONS.map((item) => (
-                        <SelectItem key={item.value} value={item.value}>
-                          {item.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {selectedReason === "otro" && (
-                  <div className="space-y-2">
-                    <Label htmlFor="absence-other">Describe el motivo</Label>
-                    <Input
-                      id="absence-other"
-                      value={otherReason}
-                      onChange={(e) => setOtherReason(e.target.value)}
-                      placeholder="Explica el motivo de la ausencia"
-                      required
-                    />
-                  </div>
-                )}
-                <div className="flex gap-2 justify-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setDialogOpen(false)}
-                  >
-                    Cancelar
-                  </Button>
-                  <Button type="submit" disabled={loading}>
-                    {loading ? "Enviando..." : "Enviar Solicitud"}
-                  </Button>
-                </div>
-              </form>
-            </DialogContent>
-          </Dialog>
-        </motion.div>
-
-        <OwnerQuickNav />
+                </form>
+              </DialogContent>
+            </Dialog>
+          }
+        />
 
         {/* Absences List */}
         <div className="space-y-4">
           {absences.length === 0 ? (
-            <Card className="glass-card p-12 text-center">
-              <Calendar className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-xl font-semibold mb-2">No hay solicitudes de ausencia</h3>
-              <p className="text-muted-foreground mb-6">
-                Comienza solicitando tu primera ausencia o vacaciones
-              </p>
-              <Button onClick={() => setDialogOpen(true)}>
-                <Send className="w-4 h-4 mr-2" />
-                Nueva Solicitud
-              </Button>
-            </Card>
+            <EmptyState
+              icon={Calendar}
+              title="No hay solicitudes de ausencia"
+              description="Comienza solicitando tu primera ausencia o vacaciones"
+              action={
+                <Button onClick={() => setDialogOpen(true)}>
+                  <Send className="w-4 h-4" />
+                  Nueva Solicitud
+                </Button>
+              }
+            />
           ) : (
             absences.map((absence) => {
               const startDateValue = absence.payload.start_date ? new Date(absence.payload.start_date) : null;
@@ -355,9 +343,8 @@ const Absences = () => {
           )}
         </div>
       </div>
-    </div>
+    </AppLayout>
   );
 };
 
 export default Absences;
-import { BackButton } from "@/components/BackButton";

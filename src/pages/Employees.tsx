@@ -34,7 +34,7 @@ import InviteUserDialog from "@/components/InviteUserDialog";
 import EditUserDialog from "@/components/EditUserDialog";
 import { motion } from "framer-motion";
 import { useSuperadmin } from "@/hooks/useSuperadmin";
-import { BackButton } from "@/components/BackButton";
+import { PageHeader } from "@/components/PageHeader";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -51,7 +51,7 @@ import { DEMO_COMPANY_IDS, DEMO_SHOWCASE_HEADCOUNT } from "@/config/demo";
 import { FunctionsHttpError } from "@supabase/functions-js";
 import ScheduleHoursDialog from "@/components/ScheduleHoursDialog";
 import EmployeeInsights from "@/components/EmployeeInsights";
-import OwnerQuickNav from "@/components/OwnerQuickNav";
+import { AppLayout } from "@/components/AppLayout";
 import VacationAssignment from "@/components/admin/VacationAssignment";
 
 /* --------------------------- utilidades locales --------------------------- */
@@ -374,18 +374,17 @@ const Employees = () => {
   };
   /* --------------------------------------------------------------------------- */
 
+  // Auth guard (solo navegación, sin fetch)
   useEffect(() => {
     if (!user) return void navigate("/auth");
-
     const isAllowedRole = role === "owner" || role === "admin" || role === "manager";
     if (!isSuperadmin && role && !isAllowedRole) return void navigate("/");
-
-    if (companyId) fetchEmployees();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [companyId, role, user, isSuperadmin]);
+  }, [role, user, isSuperadmin]);
 
   useEffect(() => setPage(1), [searchQuery, roleFilter]);
 
+  // Data fetch (una sola vez por combinación de filtros)
   useEffect(() => {
     if (companyId) fetchEmployees();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -575,42 +574,46 @@ const Employees = () => {
         new Set((profileRows || []).map((p) => p.team_id).filter((id): id is string => Boolean(id)))
       );
 
+      // ── Parallelise centers, teams AND last-events in a single batch ──
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      const [centersResult, teamsResult, latestEventsResult] = await Promise.all([
+        centerIds.length > 0
+          ? supabase.from("centers").select("id, name").in("id", centerIds)
+          : Promise.resolve({ data: [] as { id: string; name: string | null }[] }),
+        teamIds.length > 0
+          ? supabase.from("teams").select("id, name").in("id", teamIds)
+          : Promise.resolve({ data: [] as { id: string; name: string | null }[] }),
+        // 1 query en vez de N: batch fetch últimos eventos
+        supabase
+          .from("time_events")
+          .select("user_id, event_type, event_time")
+          .in("user_id", userIds)
+          .eq("company_id", companyId)
+          .gte("event_time", sevenDaysAgo.toISOString())
+          .order("event_time", { ascending: false }),
+      ]);
+
       const centerMap: Record<string, string | null> = {};
-      if (centerIds.length > 0) {
-        const { data: centers } = await supabase
-          .from("centers")
-          .select("id, name")
-          .in("id", centerIds);
-        centers?.forEach((c) => {
-          centerMap[c.id] = c.name || null;
-        });
-      }
+      (centersResult.data || []).forEach((c) => { centerMap[c.id] = c.name || null; });
 
       const teamMap: Record<string, string | null> = {};
-      if (teamIds.length > 0) {
-        const { data: teams } = await supabase
-          .from("teams")
-          .select("id, name")
-          .in("id", teamIds);
-        teams?.forEach((t) => {
-          teamMap[t.id] = t.name || null;
-        });
+      (teamsResult.data || []).forEach((t) => { teamMap[t.id] = t.name || null; });
+
+      // Map: userId → último evento (primera aparición en resultados desc = el más reciente)
+      const lastEventMap = new Map<string, { event_type: string; event_time: string }>();
+      for (const evt of latestEventsResult.data || []) {
+        if (!lastEventMap.has(evt.user_id)) {
+          lastEventMap.set(evt.user_id, { event_type: evt.event_type, event_time: evt.event_time });
+        }
       }
 
-      const employeesWithEvents = await Promise.all(
-        membershipRows.map(async (m) => {
+      const validEmployees = membershipRows
+        .map((m) => {
           const profile = profileMap.get(m.user_id);
           if (!profile) return null;
-
-          const { data: lastEvent } = await supabase
-            .from("time_events")
-            .select("event_type, event_time")
-            .eq("user_id", profile.id)
-            .eq("company_id", companyId)
-            .order("event_time", { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
+          const lastEvent = lastEventMap.get(profile.id);
           return {
             id: profile.id,
             email: profile.email,
@@ -625,9 +628,7 @@ const Employees = () => {
             last_event_time: lastEvent?.event_time || null,
           } as Employee | null;
         })
-      );
-
-      const validEmployees = employeesWithEvents.filter((employee): employee is Employee => Boolean(employee));
+        .filter((e): e is Employee => Boolean(e));
 
       setEmployees(validEmployees);
       setFilteredEmployees(validEmployees);
@@ -904,22 +905,14 @@ const getFunctionErrorMessage = async (error: unknown) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
+    <AppLayout>
       <div className="max-w-7xl mx-auto space-y-6 pt-8 animate-fade-in">
         {/* Header */}
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <BackButton to="/" />
-            <div>
-              <h1 className="text-2xl font-bold">Gestión de Empleados</h1>
-              <p className="text-sm text-muted-foreground">
-                {displayHeadcount} empleados en total
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <OwnerQuickNav />
+        <PageHeader
+          icon={UsersIcon}
+          title="Gestión de Empleados"
+          description={`${displayHeadcount} empleados en total`}
+        />
 
         {role === "owner" && user?.id && companyId && (
           <VacationAssignment companyId={companyId} ownerId={user.id} />
@@ -1736,7 +1729,7 @@ const getFunctionErrorMessage = async (error: unknown) => {
           })()}
         </DialogContent>
       </Dialog>
-    </div>
+    </AppLayout>
   );
 };
 

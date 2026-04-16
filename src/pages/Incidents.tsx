@@ -1,3 +1,6 @@
+import { AppLayout } from "@/components/AppLayout";
+import { PageHeader } from "@/components/PageHeader";
+import { EmptyState } from "@/components/EmptyState";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useLocation } from "react-router-dom";
 import { Card } from "@/components/ui/card";
@@ -38,11 +41,13 @@ interface IncidentRecord {
   resolved_at: string | null;
   created_at: string;
   updated_at: string;
-  profiles: {
-    full_name: string | null;
-    email: string | null;
-  } | null;
+  profiles: IncidentProfile | null;
 }
+
+type IncidentProfile = {
+  full_name: string | null;
+  email: string | null;
+};
 
 const STATUS_LABELS: Record<IncidentStatus, string> = {
   pending: "Pendiente",
@@ -92,15 +97,38 @@ const Incidents = () => {
     try {
       const { data, error } = await supabase
         .from("incidents")
-        .select(`
-          *,
-          profiles:profiles!incidents_user_id_fkey(full_name, email)
-        `)
+        .select("id, user_id, company_id, incident_type, incident_date, status, description, resolved_by, resolved_at, created_at, updated_at")
         .eq("company_id", companyId)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setIncidents((data as IncidentRecord[]) ?? []);
+
+      const incidentRows = (data ?? []) as Omit<IncidentRecord, "profiles">[];
+      const userIds = Array.from(new Set(incidentRows.map((incident) => incident.user_id).filter(Boolean)));
+      const profilesMap: Record<string, IncidentProfile> = {};
+
+      if (userIds.length > 0) {
+        const { data: profileRows, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id, full_name, email")
+          .in("id", userIds);
+
+        if (profilesError) throw profilesError;
+
+        (profileRows || []).forEach((profile) => {
+          profilesMap[profile.id] = {
+            full_name: profile.full_name,
+            email: profile.email,
+          };
+        });
+      }
+
+      setIncidents(
+        incidentRows.map((incident) => ({
+          ...incident,
+          profiles: profilesMap[incident.user_id] ?? null,
+        }))
+      );
     } catch (err) {
       console.error("Error fetching incidents:", err);
       toast.error("No pudimos cargar las incidencias");
@@ -175,37 +203,35 @@ const Incidents = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
-      <div className="max-w-6xl mx-auto space-y-6 pt-8 animate-fade-in">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold">Incidencias</h1>
-            <p className="text-sm text-muted-foreground">
-              Seguimiento de fichajes problemáticos y alertas automáticas.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as any)}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Estado" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos los estados</SelectItem>
-                <SelectItem value="pending">Pendientes</SelectItem>
-                <SelectItem value="resolved">Resueltas</SelectItem>
-                <SelectItem value="dismissed">Descartadas</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button variant="outline" onClick={fetchIncidents}>
-              {refreshing ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <RefreshCcw className="w-4 h-4 mr-2" />
-              )}
-              Actualizar
-            </Button>
-          </div>
-        </div>
+    <AppLayout>
+      <div className="max-w-7xl mx-auto space-y-6 pt-8 animate-fade-in">
+        <PageHeader
+          icon={AlertTriangle}
+          title="Incidencias"
+          description="Seguimiento de fichajes problemáticos y alertas automáticas."
+          actions={
+            <div className="flex items-center gap-2">
+              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value as any)}>
+                <SelectTrigger className="w-[160px]">
+                  <SelectValue placeholder="Estado" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los estados</SelectItem>
+                  <SelectItem value="pending">Pendientes</SelectItem>
+                  <SelectItem value="resolved">Resueltas</SelectItem>
+                  <SelectItem value="dismissed">Descartadas</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="icon" onClick={fetchIncidents}>
+                {refreshing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCcw className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
+          }
+        />
 
         <Card className="glass-card p-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
@@ -235,10 +261,11 @@ const Incidents = () => {
                 <Loader2 className="w-6 h-6 animate-spin text-primary" />
               </div>
             ) : filteredIncidents.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
-                <Clock className="w-8 h-8" />
-                <p>No hay incidencias con este filtro.</p>
-              </div>
+              <EmptyState
+                icon={Clock}
+                title="Sin incidencias"
+                description="No hay incidencias con el filtro seleccionado."
+              />
             ) : (
               <div className="divide-y divide-border">
                 {filteredIncidents.map((incident) => (
@@ -297,7 +324,7 @@ const Incidents = () => {
           </ScrollArea>
         </Card>
       </div>
-    </div>
+    </AppLayout>
   );
 };
 

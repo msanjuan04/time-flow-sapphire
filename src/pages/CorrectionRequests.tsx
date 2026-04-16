@@ -1,3 +1,5 @@
+import { AppLayout } from "@/components/AppLayout";
+import { PageHeader } from "@/components/PageHeader";
 import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,7 +38,6 @@ import { useMembership } from "@/hooks/useMembership";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
-import { BackButton } from "@/components/BackButton";
 import {
   getApprovedAbsenceTypeLabel,
   extractDateFromTimestamp,
@@ -103,7 +104,7 @@ const CorrectionRequests = () => {
     try {
       let query = supabase
         .from("correction_requests")
-        .select("*")
+        .select("id, user_id, submitted_by, payload, status, reason, created_at, updated_at, manager_id")
         .eq("company_id", companyId)
         .order("created_at", { ascending: false });
 
@@ -337,109 +338,98 @@ const CorrectionRequests = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
-      <div className="max-w-7xl mx-auto space-y-6 pt-8">
+    <AppLayout>
+      <div className="max-w-4xl mx-auto pt-4 sm:pt-8 space-y-4 sm:space-y-6">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex justify-between items-center"
-        >
-          <div className="flex items-center gap-3">
-            <BackButton to="/" />
-            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
-              <AlertCircle className="w-6 h-6 text-primary-foreground" />
-            </div>
-            <div>
-            <h1 className="text-2xl font-bold">Avisos/Solicitudes</h1>
-            <p className="text-sm text-muted-foreground">
-              {isWorker ? "Mis avisos y solicitudes" : "Gestionar avisos y solicitudes"}
-            </p>
-            </div>
-          </div>
-          {isWorker && (
-            <Dialog open={showNewRequest} onOpenChange={setShowNewRequest}>
-              <DialogTrigger asChild>
-                <Button className="hover-scale">
-                  <FileText className="w-4 h-4 mr-2" />
-                  Nueva Solicitud
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px]">
-                <form onSubmit={handleSubmitRequest}>
-                  <DialogHeader>
-                    <DialogTitle>Nueva Solicitud de Corrección</DialogTitle>
-                    <DialogDescription>
-                      Solicita la corrección de un fichaje perdido u olvidado
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="date">Fecha</Label>
-                        <Input
-                          id="date"
-                          type="date"
-                          value={requestDate}
-                          onChange={(e) => setRequestDate(e.target.value)}
-                          required
-                          max={new Date().toISOString().split("T")[0]}
-                        />
+        <PageHeader
+          icon={AlertCircle}
+          title="Avisos/Solicitudes"
+          description={isWorker ? "Mis avisos y solicitudes" : "Gestionar avisos y solicitudes"}
+          actions={
+            isWorker ? (
+              <Dialog open={showNewRequest} onOpenChange={setShowNewRequest}>
+                <DialogTrigger asChild>
+                  <Button>
+                    <FileText className="w-4 h-4" />
+                    Nueva Solicitud
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[500px]">
+                  <form onSubmit={handleSubmitRequest}>
+                    <DialogHeader>
+                      <DialogTitle>Nueva Solicitud de Corrección</DialogTitle>
+                      <DialogDescription>
+                        Solicita la corrección de un fichaje perdido u olvidado
+                      </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="date">Fecha</Label>
+                          <Input
+                            id="date"
+                            type="date"
+                            value={requestDate}
+                            onChange={(e) => setRequestDate(e.target.value)}
+                            required
+                            max={new Date().toISOString().split("T")[0]}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="time">Hora</Label>
+                          <Input
+                            id="time"
+                            type="time"
+                            value={requestTime}
+                            onChange={(e) => setRequestTime(e.target.value)}
+                            required
+                          />
+                        </div>
                       </div>
                       <div>
-                        <Label htmlFor="time">Hora</Label>
-                        <Input
-                          id="time"
-                          type="time"
-                          value={requestTime}
-                          onChange={(e) => setRequestTime(e.target.value)}
+                        <Label htmlFor="eventType">Tipo de evento</Label>
+                        <Select value={eventType} onValueChange={setEventType}>
+                          <SelectTrigger id="eventType">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="clock_in">Entrada</SelectItem>
+                            <SelectItem value="clock_out">Salida</SelectItem>
+                            <SelectItem value="pause_start">Inicio pausa</SelectItem>
+                            <SelectItem value="pause_end">Fin pausa</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label htmlFor="reason">Motivo</Label>
+                        <Textarea
+                          id="reason"
+                          placeholder="Explica por qué necesitas esta corrección..."
+                          value={requestReason}
+                          onChange={(e) => setRequestReason(e.target.value)}
                           required
+                          rows={4}
                         />
                       </div>
                     </div>
-                    <div>
-                      <Label htmlFor="eventType">Tipo de evento</Label>
-                      <Select value={eventType} onValueChange={setEventType}>
-                        <SelectTrigger id="eventType">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="clock_in">Entrada</SelectItem>
-                          <SelectItem value="clock_out">Salida</SelectItem>
-                          <SelectItem value="pause_start">Inicio pausa</SelectItem>
-                          <SelectItem value="pause_end">Fin pausa</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label htmlFor="reason">Motivo</Label>
-                      <Textarea
-                        id="reason"
-                        placeholder="Explica por qué necesitas esta corrección..."
-                        value={requestReason}
-                        onChange={(e) => setRequestReason(e.target.value)}
-                        required
-                        rows={4}
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => setShowNewRequest(false)}
-                    >
-                      Cancelar
-                    </Button>
-                    <Button type="submit" disabled={loading}>
-                      {loading ? "Enviando..." : "Enviar Solicitud"}
-                    </Button>
-                  </DialogFooter>
-                </form>
-              </DialogContent>
-            </Dialog>
-          )}
-        </motion.div>
+                    <DialogFooter>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setShowNewRequest(false)}
+                      >
+                        Cancelar
+                      </Button>
+                      <Button type="submit" disabled={loading}>
+                        {loading ? "Enviando..." : "Enviar Solicitud"}
+                      </Button>
+                    </DialogFooter>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            ) : undefined
+          }
+        />
 
         {/* Stats */}
         {canManage && (
@@ -713,7 +703,7 @@ const CorrectionRequests = () => {
           </div>
         </Card>
       </div>
-    </div>
+    </AppLayout>
   );
 };
 

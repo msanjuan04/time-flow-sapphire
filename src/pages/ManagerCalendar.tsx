@@ -1,11 +1,12 @@
+import { AppLayout } from "@/components/AppLayout";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useMembership } from "@/hooks/useMembership";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
-import { Calendar as CalendarIcon, Clock, Users, Plus, AlertCircle, Trash2, Pencil, Loader2 } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, Users, Plus, AlertCircle, Trash2, Pencil, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
-import { format, parseISO, startOfMonth, endOfMonth, isSameDay } from "date-fns";
+import { format, parseISO, startOfMonth, endOfMonth, isSameDay, addMonths, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
 import type { DayContentProps } from "react-day-picker";
 import { toast } from "sonner";
@@ -29,14 +30,15 @@ import {
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { BackButton } from "@/components/BackButton";
+import { PageHeader } from "@/components/PageHeader";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { SPANISH_HOLIDAYS } from "@/data/spainHolidays";
 import { ABSENCE_REASONS, DEFAULT_ABSENCE_REASON } from "@/data/absenceReasons";
 import CalendarDayIndicators, { DayStatusKey } from "@/components/CalendarDayIndicators";
-import OwnerQuickNav from "@/components/OwnerQuickNav";
+import { QuickSchedulePanel } from "@/components/schedule/QuickSchedulePanel";
+import ScheduleHoursDialog from "@/components/ScheduleHoursDialog";
 import {
   Accordion,
   AccordionContent,
@@ -93,13 +95,14 @@ const ManagerCalendar = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [date, setDate] = useState<Date | undefined>(new Date());
+  const [displayMonth, setDisplayMonth] = useState<Date>(new Date());
   const [searchParams] = useSearchParams();
   const [noticeDialogOpen, setNoticeDialogOpen] = useState(false);
   const [noticeText, setNoticeText] = useState("");
   const [noticeProcessing, setNoticeProcessing] = useState(false);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [selectedEmployee, setSelectedEmployee] = useState<string>("");
-  const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [isAbsenceDialogOpen, setIsAbsenceDialogOpen] = useState(false);
   const [timeEvents, setTimeEvents] = useState<ManagerTimeEvent[]>([]);
   const [scheduledHours, setScheduledHours] = useState<ScheduledHour[]>([]);
@@ -113,18 +116,11 @@ const ManagerCalendar = () => {
   const [editingEvent, setEditingEvent] = useState<ManagerTimeEvent | null>(null);
   const [editEventType, setEditEventType] = useState<string>("clock_in");
   const [editEventTime, setEditEventTime] = useState<string>("");
-  const [quickHours, setQuickHours] = useState("8");
-  const [quickNote, setQuickNote] = useState("Jornada completa");
   const [teamDayOverview, setTeamDayOverview] = useState<Record<string, DayOverview>>({});
   const holidaySet = useMemo(
     () => new Set(SPANISH_HOLIDAYS.map((holiday) => holiday.date)),
     []
   );
-
-  // Schedule hours form
-  const [scheduleDate, setScheduleDate] = useState("");
-  const [expectedHours, setExpectedHours] = useState("8");
-  const [scheduleNotes, setScheduleNotes] = useState("");
 
   // Absence form
   const [absenceType, setAbsenceType] = useState("vacation");
@@ -203,10 +199,11 @@ const ManagerCalendar = () => {
   };
 
   const fetchCalendarData = useCallback(async () => {
-    if (!membership || !selectedEmployee || !date) return;
+    if (!membership || !selectedEmployee) return;
 
-    const monthStart = startOfMonth(date);
-    const monthEnd = endOfMonth(date);
+    // Usar displayMonth para los límites del mes (no date)
+    const monthStart = startOfMonth(displayMonth);
+    const monthEnd = endOfMonth(displayMonth);
 
     const { data, error } = await supabase
       .from("time_events")
@@ -217,9 +214,7 @@ const ManagerCalendar = () => {
       .lte("event_time", monthEnd.toISOString())
       .order("event_time", { ascending: true });
     if (!error) {
-      const events = (data as ManagerTimeEvent[]) || [];
-      setTimeEvents(events);
-      setSelectedDayEvents(events.filter((event) => isSameDay(parseISO(event.event_time), date!)));
+      setTimeEvents((data as ManagerTimeEvent[]) || []);
     }
     // Fetch scheduled hours for the month
     const { data: sh } = await supabase
@@ -252,12 +247,21 @@ const ManagerCalendar = () => {
     } else {
       setWorkSessions((sessionsData as WorkSession[]) || []);
     }
-  }, [membership, selectedEmployee, date]);
+  }, [membership, selectedEmployee, displayMonth]);
 
-  // Load month events for selected employee
+  // Load month events when employee or month changes
   useEffect(() => {
     fetchCalendarData();
   }, [fetchCalendarData]);
+
+  // Filtrar eventos del día seleccionado (client-side, 0 queries)
+  useEffect(() => {
+    if (date && timeEvents.length > 0) {
+      setSelectedDayEvents(timeEvents.filter((e) => isSameDay(parseISO(e.event_time), date)));
+    } else {
+      setSelectedDayEvents([]);
+    }
+  }, [date, timeEvents]);
 
   const fetchTeamDayOverview = useCallback(async () => {
     if (!membership || !date) {
@@ -450,44 +454,7 @@ const ManagerCalendar = () => {
     if (error) throw error;
   };
 
-  const handleScheduleHours = async () => {
-    if (!membership || !selectedEmployee || !scheduleDate) {
-      toast.error("Por favor completa todos los campos requeridos");
-      return;
-    }
-
-    try {
-      const hoursValue = Number(expectedHours) || 0;
-      await persistScheduledHours(selectedEmployee, scheduleDate, hoursValue, scheduleNotes || undefined);
-      toast.success("Horas programadas correctamente");
-      setIsScheduleDialogOpen(false);
-      setScheduleDate("");
-      setExpectedHours("8");
-      setScheduleNotes("");
-      await fetchCalendarData();
-      await fetchTeamDayOverview();
-    } catch (error) {
-      toast.error("Error al programar horas");
-      console.error(error);
-    }
-  };
-
-  const handleQuickSchedule = async (hours: number, note?: string) => {
-    if (!membership || !selectedEmployee || !date) {
-      toast.error("Selecciona un empleado y una fecha primero");
-      return;
-    }
-    const dateStr = format(date, "yyyy-MM-dd");
-    try {
-      await persistScheduledHours(selectedEmployee, dateStr, hours, note);
-      toast.success("Horario actualizado rápidamente");
-      await fetchCalendarData();
-      await fetchTeamDayOverview();
-    } catch (error) {
-      toast.error("No se pudo aplicar el horario rápido");
-      console.error(error);
-    }
-  };
+  // handleQuickSchedule removido → sustituido por QuickSchedulePanel con presets
 
   const updateWeekSchedule = (weekIndex: number, patch: Partial<WeekSchedule>) => {
     setWeeklySchedules((prev) =>
@@ -610,12 +577,7 @@ const ManagerCalendar = () => {
 
   const openScheduleForEmployee = (employeeId: string) => {
     setSelectedEmployee(employeeId);
-    if (!date) return;
-    const dateStr = format(date, "yyyy-MM-dd");
-    setScheduleDate(dateStr);
-    setExpectedHours("8");
-    setScheduleNotes("Jornada completa");
-    setIsScheduleDialogOpen(true);
+    setScheduleDialogOpen(true);
   };
 
   const openAbsenceForEmployee = (employeeId: string) => {
@@ -817,44 +779,29 @@ const ManagerCalendar = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
-      <div className="max-w-7xl mx-auto space-y-6 pt-8 animate-fade-in">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-6">
-          <div className="flex items-start md:items-center gap-3">
-            <BackButton />
-            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
-              <CalendarIcon className="h-6 w-6 text-primary-foreground" />
+    <AppLayout>
+      <div className="max-w-7xl mx-auto pt-4 sm:pt-8 pb-8 space-y-5">
+        <PageHeader
+          icon={CalendarIcon}
+          title="Calendario de Equipo"
+          description="Gestiona las horas y ausencias de tu equipo"
+          actions={
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setNoticeText(generateNotice());
+                  setNoticeDialogOpen(true);
+                }}
+              >
+                Redactar aviso
+              </Button>
+              <Button variant="secondary" onClick={handleCompanyHoliday}>
+                Marcar festivo
+              </Button>
             </div>
-            <div>
-              <h1 className="text-2xl font-bold">Calendario de Equipo</h1>
-              <p className="text-sm text-muted-foreground">
-                Gestiona las horas y ausencias de tu equipo
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 w-full md:w-auto justify-start md:justify-end">
-            <Button
-              variant="outline"
-              className="hover-scale w-full sm:w-auto"
-              onClick={() => {
-                setNoticeText(generateNotice());
-                setNoticeDialogOpen(true);
-              }}
-            >
-              Redactar aviso
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={handleCompanyHoliday}
-              className="hover-scale w-full sm:w-auto"
-            >
-              Marcar festivo de empresa
-            </Button>
-          </div>
-        </div>
-
-        <OwnerQuickNav />
-      </div>
+          }
+        />
 
       {/* Diálogo de edición de evento */}
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
@@ -918,9 +865,9 @@ const ManagerCalendar = () => {
         </DialogContent>
       </Dialog>
 
-      <div className="grid md:grid-cols-[minmax(220px,0.7fr)_minmax(760px,3fr)_minmax(260px,0.8fr)] gap-6">
+        <div className="grid gap-5 lg:grid-cols-[220px_1fr_290px]">
         {/* Sidebar empleados */}
-        <Card className="glass-card p-6 h-full w-full max-w-[280px] mx-auto">
+        <Card className="glass-card p-5 h-fit">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-10 h-10 bg-primary/10 rounded-xl flex items-center justify-center">
               <Users className="h-5 w-5 text-primary" />
@@ -933,57 +880,53 @@ const ManagerCalendar = () => {
             onChange={(e) => setSearch(e.target.value)}
             className="mb-4"
           />
-          <div className="max-h-[600px] overflow-auto space-y-2 pr-2">
-            {filteredEmployeesList.map((e) => (
-              <Button
-                key={e.id}
-                variant={selectedEmployee === e.id ? "default" : "outline"}
-                className={cn(
-                  "w-full justify-start smooth-transition",
-                  selectedEmployee === e.id && "hover-scale"
-                )}
-                onClick={() => setSelectedEmployee(e.id)}
-              >
-                {e.full_name || e.email}
-              </Button>
-            ))}
+          <div className="max-h-[560px] overflow-y-auto space-y-1 pr-1 -mr-1">
+            {filteredEmployeesList.map((e) => {
+              const isSelected = selectedEmployee === e.id;
+              const label = e.full_name || e.email;
+              return (
+                <button
+                  key={e.id}
+                  type="button"
+                  onClick={() => setSelectedEmployee(e.id)}
+                  title={label}
+                  className={cn(
+                    "w-full text-left px-3 py-2 rounded-xl text-sm font-medium leading-snug break-words transition-all duration-200",
+                    isSelected
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:bg-muted/70 hover:text-foreground border border-border/40"
+                  )}
+                >
+                  {label}
+                </button>
+              );
+            })}
           </div>
         </Card>
 
         {/* Contenido principal */}
-        <div className="md:col-span-2 space-y-5 flex flex-col">
+        <div className="space-y-5 min-w-0">
+          {/* Quick Schedule Panel — reemplaza "Programar Horas" y "Horas rápidas" */}
+          {selectedEmployee && membership && user && (
+            <QuickSchedulePanel
+              employeeId={selectedEmployee}
+              employeeName={
+                employees.find((e) => e.id === selectedEmployee)?.full_name ||
+                employees.find((e) => e.id === selectedEmployee)?.email ||
+                selectedEmployee
+              }
+              companyId={membership.company_id}
+              userId={user.id}
+              selectedDate={date ?? new Date()}
+              onScheduleApplied={() => { fetchCalendarData(); fetchTeamDayOverview(); }}
+              onOpenFullEditor={() => setScheduleDialogOpen(true)}
+            />
+          )}
+
           {/* Acciones generales */}
           <div className="flex flex-wrap gap-2">
             {selectedEmployee && (
               <>
-                <Dialog open={isScheduleDialogOpen} onOpenChange={setIsScheduleDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button className="hover-scale">
-                      <Clock className="mr-2 h-4 w-4" /> Programar Horas
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Programar Horas de Trabajo</DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4 py-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="schedule-date">Fecha</Label>
-                        <Input id="schedule-date" type="date" value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="expected-hours">Horas Esperadas</Label>
-                        <Input id="expected-hours" type="number" step="0.5" min="0" max="24" value={expectedHours} onChange={(e) => setExpectedHours(e.target.value)} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="schedule-notes">Notas (opcional)</Label>
-                        <Textarea id="schedule-notes" value={scheduleNotes} onChange={(e) => setScheduleNotes(e.target.value)} placeholder="Añade notas sobre este turno..." />
-                      </div>
-                      <Button onClick={handleScheduleHours} className="w-full">Guardar</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-
                 <Dialog open={isAbsenceDialogOpen} onOpenChange={setIsAbsenceDialogOpen}>
                   <DialogTrigger asChild>
                     <Button variant="outline" className="hover-scale">
@@ -1051,116 +994,37 @@ const ManagerCalendar = () => {
             )}
           </div>
 
-          {selectedEmployee && date && (
-            <>
-              {/* Mobile accordion */}
-              <div className="sm:hidden">
-                <Accordion type="single" collapsible defaultValue="quick-actions">
-                  <AccordionItem value="quick-actions">
-                    <AccordionTrigger className="text-left">Gestión rápida del día</AccordionTrigger>
-                    <AccordionContent className="pt-2">
-                      <Card className="glass-card p-4 space-y-3">
-                        <div className="flex flex-col gap-3">
-                          <div className="flex flex-col">
-                            <Label>Horas rápidas</Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              step="0.5"
-                              value={quickHours}
-                              onChange={(e) => setQuickHours(e.target.value)}
-                              className="w-full"
-                            />
-                          </div>
-                          <div className="flex flex-col">
-                            <Label>Nota</Label>
-                            <Input
-                              placeholder="Ej. Jornada completa"
-                              value={quickNote}
-                              onChange={(e) => setQuickNote(e.target.value)}
-                            />
-                          </div>
-                          <div className="flex flex-col gap-2">
-                            <Button size="sm" onClick={() => handleQuickSchedule(8, "8h estándar")} className="hover-scale w-full">
-                              Asignar 8h estándar
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => handleQuickSchedule(Number(quickHours) || 8, quickNote)}
-                              className="hover-scale w-full"
-                            >
-                              Configurar jornada completa
-                            </Button>
-                          </div>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Esta acción crea o actualiza las <code>scheduled_hours</code> para el día seleccionado.
-                        </p>
-                      </Card>
-                    </AccordionContent>
-                  </AccordionItem>
-                </Accordion>
-              </div>
-
-              {/* Desktop / tablet block */}
-              <Card className="hidden sm:block glass-card p-6 space-y-3">
-                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-                  <div className="flex flex-col sm:min-w-[100px]">
-                    <Label>Horas rápidas</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="0.5"
-                      value={quickHours}
-                      onChange={(e) => setQuickHours(e.target.value)}
-                      className="w-24"
-                    />
-                  </div>
-                  <div className="flex-1 flex flex-col min-w-[220px]">
-                    <Label>Nota</Label>
-                    <Input
-                      placeholder="Ej. Jornada completa"
-                      value={quickNote}
-                      onChange={(e) => setQuickNote(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
-                    <Button size="sm" onClick={() => handleQuickSchedule(8, "8h estándar")} className="hover-scale w-full sm:w-auto">
-                      Asignar 8h estándar
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => handleQuickSchedule(Number(quickHours) || 8, quickNote)}
-                      className="hover-scale w-full sm:w-auto"
-                    >
-                      Configurar jornada completa
-                    </Button>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Esta acción crea o actualiza las <code>scheduled_hours</code> para el día seleccionado.
-                </p>
-              </Card>
-            </>
-          )}
-
-          {/* Calendario + gestión del día */}
-          <div className="grid gap-6 md:grid-cols-[minmax(540px,1.7fr)_minmax(260px,0.8fr)] items-start">
-            <div className="space-y-6 flex-1">
-              <Card className="glass-card p-6 space-y-5 w-full flex-1">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">
+          {/* Calendario mensual */}
+          <Card className="glass-card p-5 sm:p-6 space-y-5 w-full">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-1">
                       Calendario mensual
                     </p>
-                    <h2 className="text-2xl font-semibold">
-                      {format(date ?? new Date(), "MMMM yyyy", { locale: es })}
-                    </h2>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDisplayMonth((m) => subMonths(m, 1))}
+                        className="h-8 w-8 rounded-lg border border-border/60 bg-background/80 hover:bg-muted flex items-center justify-center transition-colors"
+                        aria-label="Mes anterior"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                      </button>
+                      <h2 className="text-xl sm:text-2xl font-semibold capitalize min-w-[160px] text-center">
+                        {format(displayMonth, "MMMM yyyy", { locale: es })}
+                      </h2>
+                      <button
+                        type="button"
+                        onClick={() => setDisplayMonth((m) => addMonths(m, 1))}
+                        className="h-8 w-8 rounded-lg border border-border/60 bg-background/80 hover:bg-muted flex items-center justify-center transition-colors"
+                        aria-label="Mes siguiente"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                   <div className="text-left sm:text-right">
-                    <p className="text-xs text-muted-foreground">Día seleccionado</p>
+                    <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Día seleccionado</p>
                     <p className="text-sm font-medium">
                       {date ? format(date, "PP", { locale: es }) : "Sin seleccionar"}
                     </p>
@@ -1169,6 +1033,8 @@ const ManagerCalendar = () => {
                 <div className="rounded-2xl border bg-muted/30 p-2 calendar-expanded">
                   <Calendar
                     mode="single"
+                    month={displayMonth}
+                    onMonthChange={setDisplayMonth}
                     selected={date}
                     onSelect={(d) => {
                       setDate(d);
@@ -1181,45 +1047,24 @@ const ManagerCalendar = () => {
                     locale={es}
                     modifiers={calendarModifiers}
                     components={{ DayContent: renderDayContent }}
+                    classNames={{ caption: "hidden", nav: "hidden" }}
                     className="w-full pointer-events-auto"
                   />
                 </div>
-                <div className="pt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-                  <div className="calendar-legend-item">
-                    <span className="calendar-indicator-pill calendar-indicator-pill-work" />
-                    <div>
-                      <p className="text-sm font-medium">Día trabajado</p>
-                      <p className="text-xs text-muted-foreground">Fichajes registrados</p>
+                {/* Leyenda compacta */}
+                <div className="pt-2 flex flex-wrap gap-2">
+                  {[
+                    { cls: "calendar-indicator-pill-work", label: "Trabajado" },
+                    { cls: "calendar-indicator-pill-vacation", label: "Vacaciones" },
+                    { cls: "calendar-indicator-pill-incomplete", label: "Incompleto" },
+                    { cls: "calendar-indicator-pill-absence", label: "Ausencia" },
+                    { cls: "calendar-indicator-pill-holiday", label: "Festivo" },
+                  ].map((item) => (
+                    <div key={item.label} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/50 border border-border/40 text-xs text-muted-foreground">
+                      <span className={`calendar-indicator-pill ${item.cls}`} />
+                      {item.label}
                     </div>
-                  </div>
-                  <div className="calendar-legend-item">
-                    <span className="calendar-indicator-pill calendar-indicator-pill-vacation" />
-                    <div>
-                      <p className="text-sm font-medium">Vacaciones</p>
-                      <p className="text-xs text-muted-foreground">Vacaciones aprobadas</p>
-                    </div>
-                  </div>
-                  <div className="calendar-legend-item">
-                    <span className="calendar-indicator-pill calendar-indicator-pill-incomplete" />
-                    <div>
-                      <p className="text-sm font-medium">Horas incompletas</p>
-                      <p className="text-xs text-muted-foreground">Faltan horas programadas</p>
-                    </div>
-                  </div>
-                  <div className="calendar-legend-item">
-                    <span className="calendar-indicator-pill calendar-indicator-pill-absence" />
-                    <div>
-                      <p className="text-sm font-medium">Ausencia</p>
-                      <p className="text-xs text-muted-foreground">Bajas o permisos</p>
-                    </div>
-                  </div>
-                  <div className="calendar-legend-item">
-                    <span className="calendar-indicator-pill calendar-indicator-pill-holiday" />
-                    <div>
-                      <p className="text-sm font-medium">Festivo nacional</p>
-                      <p className="text-xs text-muted-foreground">Día no laborable oficial</p>
-                    </div>
-                  </div>
+                  ))}
                 </div>
               </Card>
 
@@ -1326,97 +1171,106 @@ const ManagerCalendar = () => {
                   </p>
                 )}
               </Card>
-            </div>
+          </div>{/* /col-2 */}
 
-            <Card className="hidden sm:block glass-card p-6 space-y-4">
-              <h3 className="text-lg font-semibold flex items-center gap-2">
-                <div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
-                  <AlertCircle className="w-4 h-4 text-primary" />
-                </div>
-                Gestión del día seleccionado
-              </h3>
+          {/* Col 3: Day management */}
+          <div className="space-y-4">
+            <Card className="hidden lg:block glass-card p-4 space-y-3">
+              <p className="text-xs uppercase tracking-widest text-muted-foreground">
+                {date ? format(date, "EEEE d MMM", { locale: es }) : "Día"}
+              </p>
+              <h3 className="text-base font-semibold">Gestión del día</h3>
+
               {!selectedEmployee || !date ? (
-                <p className="text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground py-2">
                   Selecciona un empleado y un día del calendario.
                 </p>
               ) : (
                 <>
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-                    <div className="flex-1 min-w-[180px]">
-                      <Label>Tipo de evento</Label>
-                      <Select value={eventType} onValueChange={setEventType}>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="clock_in">Entrada</SelectItem>
-                          <SelectItem value="clock_out">Salida</SelectItem>
-                          <SelectItem value="pause_start">Inicio pausa</SelectItem>
-                          <SelectItem value="pause_end">Fin pausa</SelectItem>
-                        </SelectContent>
-                      </Select>
+                  {/* Añadir evento — inputs apilados */}
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <Label className="text-xs">Tipo</Label>
+                        <Select value={eventType} onValueChange={setEventType}>
+                          <SelectTrigger className="h-9 text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="clock_in">Entrada</SelectItem>
+                            <SelectItem value="clock_out">Salida</SelectItem>
+                            <SelectItem value="pause_start">Inicio pausa</SelectItem>
+                            <SelectItem value="pause_end">Fin pausa</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Hora</Label>
+                        <Input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} className="h-9 text-xs" />
+                      </div>
                     </div>
-                    <div className="w-full sm:w-40">
-                      <Label>Hora</Label>
-                      <Input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} />
-                    </div>
-                    <Button onClick={handleAddEvent} className="hover-scale w-full sm:w-auto">Añadir</Button>
+                    <Button onClick={handleAddEvent} size="sm" className="w-full">Añadir evento</Button>
                   </div>
 
-                  <div className="pt-2">
-                    <h4 className="font-medium mb-3">Eventos del día</h4>
+                  {/* Lista de eventos — compacta */}
+                  <div className="pt-1">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">
+                      Eventos ({selectedDayEvents.length})
+                    </p>
                     {selectedDayEvents.length === 0 ? (
-                      <p className="text-sm text-muted-foreground py-4 text-center">No hay eventos.</p>
+                      <p className="text-xs text-muted-foreground py-3 text-center">Sin eventos este día.</p>
                     ) : (
-                      <ul className="space-y-2">
-                        {selectedDayEvents.map((e) => (
-                          <li key={e.id} className="rounded-lg bg-muted/50 p-3 smooth-transition hover:bg-muted/70">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-sm font-medium">
-                                {e.event_type === "clock_in"
-                                  ? "Entrada"
-                                  : e.event_type === "clock_out"
-                                  ? "Salida"
-                                  : e.event_type === "pause_start"
-                                  ? "Inicio pausa"
-                                  : "Fin pausa"}
-                                {" • "}
-                                {format(parseISO(e.event_time), "HH:mm")}
-                              </span>
-                              <div className="flex items-center gap-2">
-                                {renderSourceBadge(e)}
-                                <Button size="icon" variant="ghost" onClick={() => openEdit(e)} title="Editar" className="hover-scale">
-                                  <Pencil className="w-4 h-4" />
-                                </Button>
-                                <Button size="icon" variant="ghost" onClick={() => handleDeleteEvent(e.id)} title="Eliminar" className="hover-scale">
-                                  <Trash2 className="w-4 h-4" />
-                                </Button>
+                      <ul className="space-y-1.5">
+                        {selectedDayEvents.map((e) => {
+                          const eventLabel = e.event_type === "clock_in"
+                            ? "Entrada" : e.event_type === "clock_out"
+                            ? "Salida" : e.event_type === "pause_start"
+                            ? "Inicio pausa" : "Fin pausa";
+                          const hasGeo = !!(e.latitude && e.longitude);
+                          return (
+                            <li key={e.id} className="rounded-lg bg-muted/40 px-3 py-2 space-y-1.5">
+                              <div className="flex items-center justify-between gap-1">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-sm font-semibold tabular-nums">
+                                    {format(parseISO(e.event_time), "HH:mm")}
+                                  </span>
+                                  <span className="text-xs text-muted-foreground truncate">{eventLabel}</span>
+                                  {renderSourceBadge(e)}
+                                </div>
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                  <Button size="icon" variant="ghost" onClick={() => openEdit(e)} title="Editar" className="h-7 w-7">
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button size="icon" variant="ghost" onClick={() => handleDeleteEvent(e.id)} title="Eliminar" className="h-7 w-7">
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
                               </div>
-                            </div>
-                            {e.latitude && e.longitude ? (
-                              <div className="mt-2 overflow-hidden rounded-md border bg-white">
-                                <iframe
-                                  title={`Mapa ${e.id}`}
-                                  src={mapSrc(Number(e.latitude), Number(e.longitude), 16)}
-                                  width="100%"
-                                  height="140"
-                                  loading="lazy"
-                                  referrerPolicy="no-referrer-when-downgrade"
-                                  className="border-0"
-                                />
-                              </div>
-                            ) : null}
-                            {e.notes ? <p className="mt-2 text-xs text-muted-foreground">{e.notes}</p> : null}
-                          </li>
-                        ))}
+                              {/* Mapa colapsable — solo link, sin iframe por defecto */}
+                              {hasGeo && (
+                                <a
+                                  href={`https://maps.google.com/?q=${e.latitude},${e.longitude}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline"
+                                >
+                                  📍 Ver ubicación
+                                </a>
+                              )}
+                              {e.notes && <p className="text-[11px] text-muted-foreground">{e.notes}</p>}
+                            </li>
+                          );
+                        })}
                       </ul>
                     )}
                   </div>
 
-                  <div className="pt-4 border-t flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <span className="text-sm text-muted-foreground">Otras acciones</span>
+                  {/* Acción secundaria */}
+                  <div className="pt-2 border-t border-border/50">
                     <Button
-                      variant="outline"
+                      variant="ghost"
+                      size="sm"
+                      className="w-full text-xs"
                       onClick={() => {
                         if (!date) return;
                         setAbsenceType("other");
@@ -1426,7 +1280,6 @@ const ManagerCalendar = () => {
                         setAbsenceReason("Festivo");
                         setIsAbsenceDialogOpen(true);
                       }}
-                      className="hover-scale w-full sm:w-auto"
                     >
                       Marcar festivo
                     </Button>
@@ -1435,94 +1288,91 @@ const ManagerCalendar = () => {
               )}
             </Card>
 
-            {/* Mobile accordion for day management */}
-            <div className="sm:hidden">
+            {/* Mobile/tablet accordion for day management */}
+            <div className="lg:hidden">
               <Accordion type="single" collapsible defaultValue="day-management">
                 <AccordionItem value="day-management">
-                  <AccordionTrigger className="text-left">Gestión del día seleccionado</AccordionTrigger>
+                  <AccordionTrigger className="text-left text-sm">
+                    Gestión del día {date ? format(date, "d MMM", { locale: es }) : ""}
+                  </AccordionTrigger>
                   <AccordionContent className="pt-2">
                     {!selectedEmployee || !date ? (
                       <p className="text-sm text-muted-foreground">
                         Selecciona un empleado y un día del calendario.
                       </p>
                     ) : (
-                      <Card className="glass-card p-4 space-y-4">
-                        <div className="flex flex-col gap-3">
-                          <div className="flex flex-col">
-                            <Label>Tipo de evento</Label>
-                            <Select value={eventType} onValueChange={setEventType}>
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="clock_in">Entrada</SelectItem>
-                                <SelectItem value="clock_out">Salida</SelectItem>
-                                <SelectItem value="pause_start">Inicio pausa</SelectItem>
-                                <SelectItem value="pause_end">Fin pausa</SelectItem>
-                              </SelectContent>
-                            </Select>
+                      <Card className="glass-card p-4 space-y-3">
+                        {/* Añadir evento */}
+                        <div className="space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <Label className="text-xs">Tipo</Label>
+                              <Select value={eventType} onValueChange={setEventType}>
+                                <SelectTrigger className="h-9 text-xs"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="clock_in">Entrada</SelectItem>
+                                  <SelectItem value="clock_out">Salida</SelectItem>
+                                  <SelectItem value="pause_start">Inicio pausa</SelectItem>
+                                  <SelectItem value="pause_end">Fin pausa</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div>
+                              <Label className="text-xs">Hora</Label>
+                              <Input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} className="h-9 text-xs" />
+                            </div>
                           </div>
-                          <div className="flex flex-col">
-                            <Label>Hora</Label>
-                            <Input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} />
-                          </div>
-                          <Button onClick={handleAddEvent} className="hover-scale w-full">Añadir</Button>
+                          <Button onClick={handleAddEvent} size="sm" className="w-full">Añadir evento</Button>
                         </div>
 
-                        <div className="pt-2">
-                          <h4 className="font-medium mb-3">Eventos del día</h4>
+                        {/* Eventos compactos */}
+                        <div className="pt-1">
+                          <p className="text-xs font-medium text-muted-foreground mb-2">Eventos ({selectedDayEvents.length})</p>
                           {selectedDayEvents.length === 0 ? (
-                            <p className="text-sm text-muted-foreground py-4 text-center">No hay eventos.</p>
+                            <p className="text-xs text-muted-foreground py-3 text-center">Sin eventos.</p>
                           ) : (
-                            <ul className="space-y-2">
-                            {selectedDayEvents.map((e) => (
-                                <li key={e.id} className="rounded-lg bg-muted/50 p-3 smooth-transition hover:bg-muted/70">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-sm font-medium">
-                                      {e.event_type === "clock_in"
-                                        ? "Entrada"
-                                        : e.event_type === "clock_out"
-                                        ? "Salida"
-                                        : e.event_type === "pause_start"
-                                        ? "Inicio pausa"
-                                        : "Fin pausa"}
-                                      {" • "}
-                                      {format(parseISO(e.event_time), "HH:mm")}
-                                    </span>
-                                    <div className="flex items-center gap-2">
-                                      {renderSourceBadge(e)}
-                                      <Button size="icon" variant="ghost" onClick={() => openEdit(e)} title="Editar" className="hover-scale">
-                                        <Pencil className="w-4 h-4" />
-                                      </Button>
-                                      <Button size="icon" variant="ghost" onClick={() => handleDeleteEvent(e.id)} title="Eliminar" className="hover-scale">
-                                        <Trash2 className="w-4 h-4" />
-                                      </Button>
+                            <ul className="space-y-1.5">
+                              {selectedDayEvents.map((e) => {
+                                const eventLabel = e.event_type === "clock_in"
+                                  ? "Entrada" : e.event_type === "clock_out"
+                                  ? "Salida" : e.event_type === "pause_start"
+                                  ? "Inicio pausa" : "Fin pausa";
+                                const hasGeo = !!(e.latitude && e.longitude);
+                                return (
+                                  <li key={e.id} className="rounded-lg bg-muted/40 px-3 py-2 space-y-1">
+                                    <div className="flex items-center justify-between gap-1">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className="text-sm font-semibold tabular-nums">{format(parseISO(e.event_time), "HH:mm")}</span>
+                                        <span className="text-xs text-muted-foreground truncate">{eventLabel}</span>
+                                        {renderSourceBadge(e)}
+                                      </div>
+                                      <div className="flex items-center gap-0.5 shrink-0">
+                                        <Button size="icon" variant="ghost" onClick={() => openEdit(e)} title="Editar" className="h-7 w-7">
+                                          <Pencil className="w-3.5 h-3.5" />
+                                        </Button>
+                                        <Button size="icon" variant="ghost" onClick={() => handleDeleteEvent(e.id)} title="Eliminar" className="h-7 w-7">
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </Button>
+                                      </div>
                                     </div>
-                                  </div>
-                                  {e.latitude && e.longitude ? (
-                                    <div className="mt-2 overflow-hidden rounded-md border bg-white">
-                                      <iframe
-                                        title={`Mapa ${e.id}`}
-                                        src={mapSrc(Number(e.latitude), Number(e.longitude), 16)}
-                                        width="100%"
-                                        height="140"
-                                        loading="lazy"
-                                        referrerPolicy="no-referrer-when-downgrade"
-                                        className="border-0"
-                                      />
-                                    </div>
-                                  ) : null}
-                                  {e.notes ? <p className="mt-2 text-xs text-muted-foreground">{e.notes}</p> : null}
-                                </li>
-                              ))}
+                                    {hasGeo && (
+                                      <a href={`https://maps.google.com/?q=${e.latitude},${e.longitude}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[11px] text-primary hover:underline">
+                                        📍 Ver ubicación
+                                      </a>
+                                    )}
+                                    {e.notes && <p className="text-[11px] text-muted-foreground">{e.notes}</p>}
+                                  </li>
+                                );
+                              })}
                             </ul>
                           )}
                         </div>
 
-                        <div className="pt-4 border-t flex flex-col gap-3">
-                          <span className="text-sm text-muted-foreground">Otras acciones</span>
+                        <div className="pt-2 border-t border-border/50">
                           <Button
-                            variant="outline"
+                            variant="ghost"
+                            size="sm"
+                            className="w-full text-xs"
                             onClick={() => {
                               if (!date) return;
                               setAbsenceType("other");
@@ -1532,7 +1382,6 @@ const ManagerCalendar = () => {
                               setAbsenceReason("Festivo");
                               setIsAbsenceDialogOpen(true);
                             }}
-                            className="hover-scale w-full"
                           >
                             Marcar festivo
                           </Button>
@@ -1544,9 +1393,23 @@ const ManagerCalendar = () => {
               </Accordion>
             </div>
           </div>
-        </div>
-      </div>
-    </div>
+        </div>{/* /outer-grid */}
+
+        {/* ScheduleHoursDialog — editor completo de jornada */}
+        {selectedEmployee && (
+          <ScheduleHoursDialog
+            key={selectedEmployee}
+            open={scheduleDialogOpen}
+            onOpenChange={setScheduleDialogOpen}
+            employee={{
+              id: selectedEmployee,
+              full_name: employees.find((e) => e.id === selectedEmployee)?.full_name ?? null,
+              email: employees.find((e) => e.id === selectedEmployee)?.email ?? "",
+            }}
+          />
+        )}
+      </div>{/* /max-w-7xl */}
+    </AppLayout>
   );
 };
 

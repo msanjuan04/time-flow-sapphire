@@ -13,10 +13,10 @@ export const PendingReviewAlert = () => {
   const storageKey = companyId ? `pendingReviewDismissed_${companyId}` : null;
 
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | undefined;
+    if (!companyId || !["owner", "admin", "manager"].includes(role ?? "")) return;
 
+    // Check una sola vez al montar (no polling)
     const check = async () => {
-      if (!companyId || !["owner", "admin", "manager"].includes(role ?? "")) return;
       const dismissed = storageKey ? localStorage.getItem(storageKey) === "true" : false;
       const { data: rows, error } = await supabase
         .from("work_sessions")
@@ -32,9 +32,24 @@ export const PendingReviewAlert = () => {
       }
     };
     check();
-    timer = setInterval(check, 30000);
+
+    // Real-time en vez de polling cada 30s
+    const channel = supabase
+      .channel(`pending-review-${companyId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "work_sessions",
+          filter: `company_id=eq.${companyId}`,
+        },
+        () => { check(); }
+      )
+      .subscribe();
+
     return () => {
-      if (timer) clearInterval(timer);
+      supabase.removeChannel(channel);
     };
   }, [companyId, role]);
 

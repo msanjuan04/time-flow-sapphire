@@ -337,7 +337,7 @@ const ManagerView = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
+    <div className="p-4">
       <div className="max-w-7xl mx-auto space-y-6 pt-8 animate-fade-in">
         {/* Header */}
         <div className="flex justify-between items-center">
@@ -356,45 +356,6 @@ const ManagerView = () => {
           </div>
           <div className="flex items-center gap-2">
             <NotificationBell />
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate("/location-report")}
-              className="hover-scale"
-              title="Ubicaciones"
-            >
-              <MapPin className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate("/manager-calendar")}
-              className="hover-scale"
-              title="Calendario"
-            >
-              <Calendar className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate("/correction-requests")}
-              className="hover-scale"
-              title="Correcciones"
-            >
-              <AlertCircle className="w-5 h-5" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => navigate("/reports")}
-              className="hover-scale"
-              title="Reportes"
-            >
-              <BarChart3 className="w-5 h-5" />
-            </Button>
-            <Button variant="ghost" size="icon" onClick={signOut} className="hover-scale">
-              <LogOut className="w-5 h-5" />
-            </Button>
           </div>
         </div>
 

@@ -143,52 +143,49 @@ const AdminView = () => {
     const todayIso = startOfToday.toISOString();
     const weekIso = startOfWeek.toISOString();
 
-    const { count: activeCount, error: activeError } = await supabase
-      .from("work_sessions")
-      .select("*", { count: "exact", head: true })
-      .eq("company_id", companyId)
-      .eq("is_active", true);
-    if (activeError) throw activeError;
+    // ── 4 queries en paralelo (antes eran 5 secuenciales) ──
+    const [activeResult, checkInsResult, incidentsResult, weekSessionsResult] = await Promise.all([
+      supabase
+        .from("work_sessions")
+        .select("*", { count: "exact", head: true })
+        .eq("company_id", companyId)
+        .eq("is_active", true),
+      supabase
+        .from("time_events")
+        .select("*", { count: "exact", head: true })
+        .eq("company_id", companyId)
+        .eq("event_type", "clock_in")
+        .gte("event_time", todayIso),
+      supabase
+        .from("incidents")
+        .select("*", { count: "exact", head: true })
+        .eq("company_id", companyId)
+        .gte("created_at", weekIso),
+      // Week sessions: today es un subconjunto → 1 query basta para ambos
+      supabase
+        .from("work_sessions")
+        .select("clock_in_time, clock_out_time, total_pause_duration")
+        .eq("company_id", companyId)
+        .gte("clock_in_time", weekIso),
+    ]);
 
-    const { count: checkInsCount, error: checkInsError } = await supabase
-      .from("time_events")
-      .select("*", { count: "exact", head: true })
-      .eq("company_id", companyId)
-      .eq("event_type", "clock_in")
-      .gte("event_time", todayIso);
-    if (checkInsError) throw checkInsError;
+    if (activeResult.error) throw activeResult.error;
+    if (checkInsResult.error) throw checkInsResult.error;
+    if (incidentsResult.error) throw incidentsResult.error;
+    if (weekSessionsResult.error) throw weekSessionsResult.error;
 
-    const { count: incidentsCount, error: incidentsError } = await supabase
-      .from("incidents")
-      .select("*", { count: "exact", head: true })
-      .eq("company_id", companyId)
-      .gte("created_at", weekIso);
-    if (incidentsError) throw incidentsError;
-
-    const { data: todaySessions, error: todaySessionsError } = await supabase
-      .from("work_sessions")
-      .select("clock_in_time, clock_out_time, total_pause_duration")
-      .eq("company_id", companyId)
-      .gte("clock_in_time", todayIso);
-    if (todaySessionsError) throw todaySessionsError;
-
-    const totalHoursToday = calculateTotalHours((todaySessions || []) as WorkSessionRecord[]);
-
-    const { data: weekSessions, error: weekSessionsError } = await supabase
-      .from("work_sessions")
-      .select("clock_in_time, clock_out_time, total_pause_duration")
-      .eq("company_id", companyId)
-      .gte("clock_in_time", weekIso);
-    if (weekSessionsError) throw weekSessionsError;
-
-    const totalHoursWeek = calculateTotalHours((weekSessions || []) as WorkSessionRecord[]);
+    const weekSessions = (weekSessionsResult.data || []) as WorkSessionRecord[];
+    // Filtrar today del subconjunto de la semana (0 queries extra)
+    const todaySessions = weekSessions.filter(
+      (s) => s.clock_in_time && new Date(s.clock_in_time) >= startOfToday
+    );
 
     setStats({
-      activeUsers: activeCount || 0,
-      todayCheckIns: checkInsCount || 0,
-      pendingIncidents: incidentsCount || 0,
-      totalHoursToday,
-      totalHoursWeek,
+      activeUsers: activeResult.count || 0,
+      todayCheckIns: checkInsResult.count || 0,
+      pendingIncidents: incidentsResult.count || 0,
+      totalHoursToday: calculateTotalHours(todaySessions),
+      totalHoursWeek: calculateTotalHours(weekSessions),
     });
   }, [companyId]);
 
@@ -199,37 +196,61 @@ const AdminView = () => {
     startOfWeek.setDate(today.getDate() - 6);
     startOfWeek.setHours(0, 0, 0, 0);
 
-    const dailyData: DailyStats[] = [];
+    const endOfRange = new Date(today);
+    endOfRange.setDate(today.getDate() + 1);
+    endOfRange.setHours(0, 0, 0, 0);
 
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(startOfWeek);
-      date.setDate(startOfWeek.getDate() + i);
-      const nextDay = new Date(date);
-      nextDay.setDate(date.getDate() + 1);
+    const weekIso = startOfWeek.toISOString();
+    const endIso = endOfRange.toISOString();
 
-      const { data: sessions, error: sessionsError } = await supabase
+    // ── 2 queries en paralelo (antes eran 14 secuenciales) ──
+    const [sessionsResult, checkInsResult] = await Promise.all([
+      supabase
         .from("work_sessions")
         .select("clock_in_time, clock_out_time, total_pause_duration")
         .eq("company_id", companyId)
-        .gte("clock_in_time", date.toISOString())
-        .lt("clock_in_time", nextDay.toISOString());
-      if (sessionsError) throw sessionsError;
-
-      const { count: checkInsCount, error: checkInsError } = await supabase
+        .gte("clock_in_time", weekIso)
+        .lt("clock_in_time", endIso),
+      supabase
         .from("time_events")
-        .select("*", { count: "exact", head: true })
+        .select("event_time")
         .eq("company_id", companyId)
         .eq("event_type", "clock_in")
-        .gte("event_time", date.toISOString())
-        .lt("event_time", nextDay.toISOString());
-      if (checkInsError) throw checkInsError;
+        .gte("event_time", weekIso)
+        .lt("event_time", endIso),
+    ]);
 
-      const hours = calculateTotalHours((sessions || []) as WorkSessionRecord[]);
+    if (sessionsResult.error) throw sessionsResult.error;
+    if (checkInsResult.error) throw checkInsResult.error;
+
+    const allSessions = (sessionsResult.data || []) as WorkSessionRecord[];
+    const allCheckIns = checkInsResult.data || [];
+
+    // Agrupar por día en cliente (0 queries extra)
+    const dailyData: DailyStats[] = [];
+    for (let i = 0; i < 7; i++) {
+      const dayStart = new Date(startOfWeek);
+      dayStart.setDate(startOfWeek.getDate() + i);
+      const dayEnd = new Date(dayStart);
+      dayEnd.setDate(dayStart.getDate() + 1);
+      const dayStartMs = dayStart.getTime();
+      const dayEndMs = dayEnd.getTime();
+
+      const daySessions = allSessions.filter((s) => {
+        if (!s.clock_in_time) return false;
+        const t = new Date(s.clock_in_time).getTime();
+        return t >= dayStartMs && t < dayEndMs;
+      });
+
+      const dayCheckIns = allCheckIns.filter((e) => {
+        const t = new Date(e.event_time).getTime();
+        return t >= dayStartMs && t < dayEndMs;
+      });
 
       dailyData.push({
-        date: date.toLocaleDateString("es-ES", { weekday: "short" }),
-        hours: Math.round(hours * 10) / 10,
-        checkIns: checkInsCount || 0,
+        date: dayStart.toLocaleDateString("es-ES", { weekday: "short" }),
+        hours: Math.round(calculateTotalHours(daySessions) * 10) / 10,
+        checkIns: dayCheckIns.length,
       });
     }
 
@@ -540,7 +561,7 @@ const AdminView = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 px-3 sm:px-4 py-4">
+    <div className="px-3 sm:px-4 py-4">
       <div className="max-w-7xl mx-auto space-y-5 sm:space-y-6 pt-6 sm:pt-8 animate-fade-in">
         <OwnerQuickNav />
         <PendingReviewAlert />

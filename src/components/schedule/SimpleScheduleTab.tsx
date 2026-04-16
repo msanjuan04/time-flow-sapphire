@@ -1,14 +1,13 @@
 import { useState, useCallback } from "react";
-import { addDays, format } from "date-fns";
-import { es } from "date-fns/locale";
+import { format } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Loader2, Sun } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
-import { WEEKDAYS, parseDateOnlyUtc, hoursBetween } from "@/lib/schedule/templates";
+import { WEEKDAYS, hoursBetween } from "@/lib/schedule/templates";
+import { applyWeeklyPattern, type DayPattern } from "@/lib/schedule/applyWeeklyPattern";
 
 const DEFAULT_WEEKS = 52;
 
@@ -109,59 +108,29 @@ const SimpleScheduleTab = ({
 
     setSaving(true);
     try {
-      const base = parseDateOnlyUtc(startDate);
-      const payload: {
-        user_id: string;
-        company_id: string;
-        date: string;
-        expected_hours: number;
-        start_time: string;
-        end_time: string;
-        created_by: string | null;
-        notes: string;
-      }[] = [];
-      const totalDays = weeksToGenerate * 7;
+      // Convertir daysSchedule a DayPattern[] para la utilidad compartida
+      const dayPatterns: DayPattern[] = enabledDaysWithValidHours.map(({ day }) => {
+        const schedule = daysSchedule[day];
+        return {
+          dayOfWeek: day,
+          startTime: toTimeString(schedule.startTime),
+          endTime: toTimeString(schedule.endTime),
+          expectedHours: getHoursForDay(day) ?? undefined,
+        };
+      });
+
       const reasonNote = reason.trim() ? `Horario simple | ${reason.trim()}` : "Horario simple";
 
-      for (let i = 0; i < totalDays; i++) {
-        const date = addDays(base, i);
-        const dayOfWeek = date.getUTCDay();
-        const schedule = daysSchedule[dayOfWeek];
-        if (!schedule?.enabled || !schedule.startTime || !schedule.endTime) continue;
-        const hours = getHoursForDay(dayOfWeek);
-        if (!Number.isFinite(hours) || hours <= 0) continue;
+      await applyWeeklyPattern({
+        employeeId,
+        companyId,
+        createdBy,
+        startDate,
+        weeksToGenerate,
+        dayPatterns,
+        reason: reasonNote,
+      });
 
-        payload.push({
-          user_id: employeeId,
-          company_id: companyId,
-          date: format(date, "yyyy-MM-dd"),
-          expected_hours: Number(hours.toFixed(2)),
-          start_time: toTimeString(schedule.startTime),
-          end_time: toTimeString(schedule.endTime),
-          created_by: createdBy,
-          notes: reasonNote,
-        });
-      }
-
-      if (payload.length === 0) {
-        toast.error("No hay días válidos con horario configurado.");
-        setSaving(false);
-        return;
-      }
-
-      const batchSize = 100;
-      for (let i = 0; i < payload.length; i += batchSize) {
-        const batch = payload.slice(i, i + batchSize);
-        const { error } = await supabase.from("scheduled_hours").upsert(batch, {
-          onConflict: "user_id,date",
-          ignoreDuplicates: false,
-        });
-        if (error) throw error;
-      }
-
-      toast.success(
-        `Horario simple guardado: ${payload.length} días desde ${format(base, "d MMM yyyy", { locale: es })}`
-      );
       onSaved?.();
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Error al guardar";

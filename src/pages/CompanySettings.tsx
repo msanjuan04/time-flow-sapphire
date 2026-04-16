@@ -1,3 +1,4 @@
+import { AppLayout } from "@/components/AppLayout";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMembership } from "@/hooks/useMembership";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
@@ -611,8 +612,8 @@ const CompanySettings = () => {
   };
 
   return (
-    <>
-      <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
+    <AppLayout>
+      <div>
         <div className="max-w-5xl mx-auto space-y-6 pt-8">
         <div className="flex items-center gap-3">
           <BackButton />
@@ -1288,7 +1289,7 @@ const CompanySettings = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </AppLayout>
   );
 };
 

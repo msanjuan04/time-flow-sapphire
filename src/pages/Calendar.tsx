@@ -1,19 +1,20 @@
 // src/pages/Calendar.tsx
+import { AppLayout } from "@/components/AppLayout";
 import { useState, useEffect, useMemo } from "react";
 import { useMembership } from "@/hooks/useMembership";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 
 import { Card } from "@/components/ui/card";
-import { Calendar as CalendarIcon, Clock, AlertCircle, MapPin, ExternalLink } from "lucide-react";
+import { Calendar as CalendarIcon, Clock, AlertCircle, MapPin, ExternalLink, ChevronLeft, ChevronRight } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import CalendarDayIndicators, { DayStatusKey } from "@/components/CalendarDayIndicators";
 import { SPANISH_HOLIDAYS } from "@/data/spainHolidays";
-import { format, startOfMonth, endOfMonth, parse, parseISO, isSameDay } from "date-fns";
+import { format, startOfMonth, endOfMonth, parse, parseISO, isSameDay, addMonths, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
-import { BackButton } from "@/components/BackButton";
+import { PageHeader } from "@/components/PageHeader";
 import { HoverCard, HoverCardTrigger, HoverCardContent } from "@/components/ui/hover-card";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -71,6 +72,7 @@ const WorkerCalendar = () => {
   const { user } = useAuth();
 
   const [date, setDate] = useState<Date | undefined>(new Date());
+  const [displayMonth, setDisplayMonth] = useState<Date>(new Date());
   const [workSessions, setWorkSessions] = useState<WorkSession[]>([]);
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [scheduledHours, setScheduledHours] = useState<ScheduledHours[]>([]);
@@ -113,12 +115,13 @@ const WorkerCalendar = () => {
   const mapSrc = (lat: number, lng: number, z = 15) =>
     `https://maps.google.com/maps?q=${lat},${lng}&z=${z}&output=embed`;
 
+  // Fetch solo al cambiar de MES (no de día) — evita 5 queries innecesarias por click
   useEffect(() => {
-    if (membership && date) {
+    if (membership) {
       fetchCalendarData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [membership, date]);
+  }, [membership, displayMonth]);
 
   // Subscribe to scheduled_hours changes in real-time
   useEffect(() => {
@@ -174,8 +177,8 @@ const WorkerCalendar = () => {
   const fetchCalendarData = async () => {
     if (!membership || !user) return;
 
-    const monthStart = startOfMonth(date || new Date());
-    const monthEnd = endOfMonth(date || new Date());
+    const monthStart = startOfMonth(displayMonth);
+    const monthEnd = endOfMonth(displayMonth);
 
     try {
       // Work sessions
@@ -192,7 +195,7 @@ const WorkerCalendar = () => {
       // Absences
       const { data: absencesData, error: absencesError } = await supabase
         .from("absences")
-        .select("*")
+        .select("id, absence_type, start_date, end_date, status, reason")
         .eq("user_id", user.id)
         .or(
           `and(start_date.lte.${format(monthEnd, "yyyy-MM-dd")},end_date.gte.${format(
@@ -206,7 +209,7 @@ const WorkerCalendar = () => {
       // Scheduled hours
       const { data: scheduled, error: scheduledError } = await supabase
         .from("scheduled_hours")
-        .select("*")
+        .select("id, date, expected_hours, start_time, end_time")
         .eq("user_id", user.id)
         .gte("date", format(monthStart, "yyyy-MM-dd"))
         .lte("date", format(monthEnd, "yyyy-MM-dd"));
@@ -388,80 +391,75 @@ const WorkerCalendar = () => {
   }
 
   return (
-    <div className="container mx-auto p-4 space-y-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
-          <BackButton />
-          <CalendarIcon className="h-8 w-8 text-primary" />
-          <div>
-            <h1 className="text-3xl font-bold">Mi Calendario</h1>
-            <p className="text-muted-foreground">Consulta tus horas trabajadas y programadas</p>
-          </div>
-        </div>
-      </div>
+    <AppLayout>
+    <div className="max-w-4xl mx-auto pt-4 sm:pt-8 space-y-4 sm:space-y-6">
+      <PageHeader
+        icon={CalendarIcon}
+        title="Mi Calendario"
+        description="Consulta tus horas trabajadas y programadas"
+      />
 
       <div className="grid md:grid-cols-2 gap-6">
         <Card className="glass-card border-none shadow-none p-6 space-y-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">Calendario mensual</p>
-              <h2 className="text-2xl font-semibold">
-                {format(date ?? new Date(), "MMMM yyyy", { locale: es })}
-              </h2>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] uppercase tracking-widest text-muted-foreground mb-1">Calendario mensual</p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDisplayMonth((m) => subMonths(m, 1))}
+                  className="h-8 w-8 rounded-lg border border-border/60 bg-background/80 hover:bg-muted flex items-center justify-center transition-colors"
+                  aria-label="Mes anterior"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <h2 className="text-xl sm:text-2xl font-semibold capitalize min-w-[160px] text-center">
+                  {format(displayMonth, "MMMM yyyy", { locale: es })}
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setDisplayMonth((m) => addMonths(m, 1))}
+                  className="h-8 w-8 rounded-lg border border-border/60 bg-background/80 hover:bg-muted flex items-center justify-center transition-colors"
+                  aria-label="Mes siguiente"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            <div className="text-right">
-              <p className="text-xs text-muted-foreground">Selecciona un día</p>
+            <div className="text-left sm:text-right">
+              <p className="text-[11px] uppercase tracking-widest text-muted-foreground">Día seleccionado</p>
               <p className="text-sm font-medium">{format(date ?? new Date(), "PP", { locale: es })}</p>
             </div>
           </div>
           <div className="rounded-2xl border bg-muted/30 p-2 calendar-expanded">
             <Calendar
               mode="single"
+              month={displayMonth}
+              onMonthChange={setDisplayMonth}
               selected={date}
               onSelect={handleDateSelect}
               locale={es}
               modifiers={modifiers}
               components={{ DayContent: dayContent }}
+              classNames={{ caption: "hidden", nav: "hidden" }}
               className="w-full pointer-events-auto"
             />
           </div>
 
-          <div className="pt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-            <div className="calendar-legend-item">
-              <span className="calendar-indicator-pill calendar-indicator-pill-work" />
-              <div>
-                <p className="text-sm font-medium">Día trabajado</p>
-                <p className="text-xs text-muted-foreground">Horas registradas</p>
+          {/* Leyenda compacta */}
+          <div className="pt-2 flex flex-wrap gap-2">
+            {[
+              { cls: "calendar-indicator-pill-work", label: "Trabajado" },
+              { cls: "calendar-indicator-pill-vacation", label: "Vacaciones" },
+              { cls: "calendar-indicator-pill-incomplete", label: "Incompleto" },
+              { cls: "calendar-indicator-pill-absence", label: "Ausencia" },
+              { cls: "calendar-indicator-pill-holiday", label: "Festivo" },
+            ].map((item) => (
+              <div key={item.label} className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-muted/50 border border-border/40 text-xs text-muted-foreground">
+                <span className={`calendar-indicator-pill ${item.cls}`} />
+                {item.label}
               </div>
-            </div>
-            <div className="calendar-legend-item">
-              <span className="calendar-indicator-pill calendar-indicator-pill-vacation" />
-              <div>
-                <p className="text-sm font-medium">Vacaciones</p>
-                <p className="text-xs text-muted-foreground">Períodos aprobados</p>
-              </div>
-            </div>
-            <div className="calendar-legend-item">
-              <span className="calendar-indicator-pill calendar-indicator-pill-incomplete" />
-              <div>
-                <p className="text-sm font-medium">Horas incompletas</p>
-                <p className="text-xs text-muted-foreground">Faltan horas esperadas</p>
-              </div>
-            </div>
-            <div className="calendar-legend-item">
-              <span className="calendar-indicator-pill calendar-indicator-pill-absence" />
-              <div>
-                <p className="text-sm font-medium">Ausencia</p>
-                <p className="text-xs text-muted-foreground">Bajas o permisos</p>
-              </div>
-            </div>
-            <div className="calendar-legend-item">
-              <span className="calendar-indicator-pill calendar-indicator-pill-holiday" />
-              <div>
-                <p className="text-sm font-medium">Festivo nacional</p>
-                <p className="text-xs text-muted-foreground">Día no laborable oficial</p>
-              </div>
-            </div>
+            ))}
           </div>
       </Card>
 
@@ -665,6 +663,7 @@ const WorkerCalendar = () => {
         )}
       </div>
     </div>
+    </AppLayout>
   );
 };
 

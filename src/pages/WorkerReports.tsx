@@ -1,12 +1,13 @@
+import { AppLayout } from "@/components/AppLayout";
+import { PageHeader } from "@/components/PageHeader";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Download, Calendar, Clock, TrendingUp, Info, Loader2 } from "lucide-react";
+import { Download, Calendar, Clock, TrendingUp, Info, Loader2, BarChart3 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
-import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -72,8 +73,7 @@ const isWeekday = (date: Date) => {
 const WorkerReports = () => {
   const { user } = useAuth();
   const { companyId, membership } = useMembership();
-  const navigate = useNavigate();
-  
+
   const [loading, setLoading] = useState(false);
   const [period, setPeriod] = useState<"week" | "month">("week");
   const [totalHours, setTotalHours] = useState(0);
@@ -499,58 +499,33 @@ const WorkerReports = () => {
   const progress = expectedHours > 0 ? Math.min(100, (totalHours / expectedHours) * 100) : 0;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-3 sm:p-4">
+    <AppLayout>
       <div className="max-w-4xl mx-auto pt-4 sm:pt-8 space-y-4 sm:space-y-6">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
-        >
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("/")}
-              className="hover-scale"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
-              <Calendar className="w-6 h-6 text-primary-foreground" />
+        <PageHeader
+          icon={BarChart3}
+          title="Mis Informes"
+          description={membership?.company?.name ?? "Control de horas trabajadas"}
+          actions={
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={handlePreviewPDF}>
+                <Download className="w-4 h-4" /> PDF
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline">
+                    <Download className="w-4 h-4" /> CSV
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={exportCSVLocal}>
+                    <Download className="w-4 h-4 mr-2" /> Exportar CSV
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-            <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold">Mis Informes</h1>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap">
-                {membership?.company?.logo_url ? (
-                  <img
-                    src={membership.company.logo_url}
-                    alt={`Logo ${membership.company.name ?? ""}`}
-                    className="h-9 w-9 sm:h-10 sm:w-10 rounded object-contain border border-border/50 bg-white shrink-0"
-                  />
-                ) : null}
-                <span className="break-words">{membership?.company?.name ?? "Control de horas trabajadas"}</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2 shrink-0">
-            <Button variant="outline" className="hover-scale w-full sm:w-auto" onClick={handlePreviewPDF}>
-              <Download className="w-4 h-4 mr-2" /> Descargar PDF
-            </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="hover-scale w-full sm:w-auto">
-                  <Download className="w-4 h-4 mr-2" /> Exportar
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={exportCSVLocal}>
-                  <Download className="w-4 h-4 mr-2" /> CSV
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        </motion.div>
+          }
+        />
         <Card className="glass-card p-4 flex flex-col gap-3">
           <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
             <h3 className="text-sm font-semibold flex items-center gap-2 shrink-0">
@@ -843,7 +818,7 @@ const WorkerReports = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppLayout>
   );
 };
 

@@ -1,3 +1,5 @@
+import { AppLayout } from "@/components/AppLayout";
+import { PageHeader } from "@/components/PageHeader";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -27,7 +29,6 @@ import {
   TrendingUp,
   Clock,
   Users,
-  ArrowLeft,
   MapPin,
   CalendarClock,
   ListChecks,
@@ -43,7 +44,6 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { motion } from "framer-motion";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { exportCSV } from "@/lib/exports";
@@ -1734,47 +1734,20 @@ const Reports = () => {
   }, [selectedCenter, centers]);
 
   return (
-    <>
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-4">
+    <AppLayout>
+    <div>
       <div className="max-w-7xl mx-auto pt-8">
         <div className="space-y-6">
         {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
-        >
-          <div className="flex items-start md:items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("/")}
-              className="hover-scale"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </Button>
-            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg">
-              <BarChart3 className="w-6 h-6 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">Reportes y Métricas</h1>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                {membership?.company?.logo_url ? (
-                  <img
-                    src={membership.company.logo_url}
-                    alt={`Logo ${membership.company.name ?? ""}`}
-                    className="h-10 w-10 rounded object-contain border border-border/50 bg-white"
-                  />
-                ) : null}
-                <span>{membership?.company?.name}</span>
-              </div>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2 w-full md:w-auto justify-start md:justify-end">
+        <PageHeader
+          icon={BarChart3}
+          title="Reportes y Métricas"
+          description={membership?.company?.name}
+          actions={
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="outline" className="hover-scale w-full sm:w-auto">
-                  <Download className="w-4 h-4 mr-2" /> Exportar CSV
+                <Button variant="outline">
+                  <Download className="w-4 h-4" /> Exportar
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
@@ -1783,12 +1756,12 @@ const Reports = () => {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={openMonthlyModal}>
-                  <FileText className="w-4 h-4 mr-2" /> Paquete legal mensual (CSV)
+                  <FileText className="w-4 h-4 mr-2" /> Paquete legal mensual
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-          </div>
-        </motion.div>
+          }
+        />
 
         {showScheduleReminder && (
           <Alert className="glass-card border-primary/30 bg-primary/5">
@@ -2362,7 +2335,7 @@ const Reports = () => {
         </DialogFooter>
       </DialogContent>
     </Dialog>
-    </>
+    </AppLayout>
   );
 };
 

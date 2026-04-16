@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import WorkerScheduleSection from "@/components/WorkerScheduleSection";
 
 type WorkerStatus = "out" | "in" | "on_break";
+type TimeEventType = "clock_in" | "clock_out" | "pause_start" | "pause_end";
 
 interface GeolocationCoords {
   latitude: number;
@@ -32,7 +33,66 @@ interface ActiveWorkSession {
   status?: string | null;
 }
 
+interface WorkerSchedule {
+  date: string;
+  start_time: string | null;
+  end_time: string | null;
+  expected_hours: number;
+}
+
+interface SessionEvent {
+  event_type: TimeEventType;
+  event_time: string;
+}
+
 type ClockAction = "in" | "out" | "break_start" | "break_end";
+
+const RING_CIRCUMFERENCE = 389.6;
+
+const formatLocalDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const calculateWorkedSeconds = (clockInTime: string, events: SessionEvent[], nowMs = Date.now()) => {
+  const clockInMs = new Date(clockInTime).getTime();
+  if (!Number.isFinite(clockInMs)) return 0;
+
+  let workedMs = 0;
+  let segmentStartMs = clockInMs;
+  let paused = false;
+
+  events.forEach((event) => {
+    const eventMs = new Date(event.event_time).getTime();
+    if (!Number.isFinite(eventMs) || eventMs < clockInMs) return;
+
+    if (event.event_type === "pause_start" && !paused) {
+      workedMs += Math.max(0, eventMs - segmentStartMs);
+      paused = true;
+      segmentStartMs = eventMs;
+    }
+
+    if (event.event_type === "pause_end" && paused) {
+      paused = false;
+      segmentStartMs = eventMs;
+    }
+  });
+
+  if (!paused) {
+    workedMs += Math.max(0, nowMs - segmentStartMs);
+  }
+
+  return Math.max(0, Math.floor(workedMs / 1000));
+};
+
+const formatTargetHours = (hours: number) => {
+  const totalMinutes = Math.round(hours * 60);
+  const h = Math.floor(totalMinutes / 60);
+  const m = totalMinutes % 60;
+  return m === 0 ? `${h}h` : `${h}h ${String(m).padStart(2, "0")}m`;
+};
 
 const WorkerView = () => {
   const { user, signOut, memberships: authMemberships, company: authCompany } = useAuth();
@@ -57,7 +117,8 @@ const WorkerView = () => {
   const [gpsWarningShown, setGpsWarningShown] = useState(false);
   const [lastEvent, setLastEvent] = useState<{ type: ClockAction; timestamp: string } | null>(null);
   const [isOffline, setIsOffline] = useState(typeof navigator !== "undefined" ? !navigator.onLine : false);
-  const [todaySchedule, setTodaySchedule] = useState<{ start_time: string | null; end_time: string | null; expected_hours: number } | null>(null);
+  const [todaySchedule, setTodaySchedule] = useState<WorkerSchedule | null>(null);
+  const [activeSessionEvents, setActiveSessionEvents] = useState<SessionEvent[]>([]);
   const [companyLocation, setCompanyLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [pausesEnabled, setPausesEnabled] = useState<boolean>(true);
   const [outsideConfirm, setOutsideConfirm] = useState<{
@@ -91,19 +152,20 @@ const WorkerView = () => {
     return () => clearInterval(timer);
   }, []);
 
-  async function fetchTodaySchedule() {
+  const fetchTodaySchedule = useCallback(async (referenceDate: Date | string = new Date()) => {
     if (!user?.id || !companyId) return;
-    const today = new Date().toISOString().split("T")[0];
+    const date = formatLocalDate(new Date(referenceDate));
     const { data } = await supabase
       .from("scheduled_hours")
-      .select("start_time, end_time, expected_hours")
+      .select("date, start_time, end_time, expected_hours")
       .eq("user_id", user.id)
       .eq("company_id", companyId)
-      .eq("date", today)
+      .eq("date", date)
       .maybeSingle();
 
     if (data) {
       setTodaySchedule({
+        date: data.date,
         start_time: data.start_time,
         end_time: data.end_time,
         expected_hours: Number(data.expected_hours || 0),
@@ -111,7 +173,7 @@ const WorkerView = () => {
     } else {
       setTodaySchedule(null);
     }
-  }
+  }, [companyId, user?.id]);
 
   const fetchStatus = useCallback(async () => {
     if (!user?.id || !companyId) return;
@@ -126,16 +188,22 @@ const WorkerView = () => {
     if (session) {
       setActiveSession(session as ActiveWorkSession);
 
-      const { data: lastEvent } = await supabase
+      const { data: sessionEvents } = await supabase
         .from("time_events")
-        .select("event_type")
+        .select("event_type, event_time")
         .eq("user_id", user.id)
         .eq("company_id", companyId)
-        .order("event_time", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .gte("event_time", session.clock_in_time)
+        .order("event_time", { ascending: true });
 
-      if (lastEvent?.event_type === "pause_start") {
+      const events = ((sessionEvents || []) as SessionEvent[]).filter((event) =>
+        ["clock_in", "clock_out", "pause_start", "pause_end"].includes(event.event_type)
+      );
+      const latestEvent = events[events.length - 1];
+      setActiveSessionEvents(events);
+      await fetchTodaySchedule(session.clock_in_time);
+
+      if (latestEvent?.event_type === "pause_start") {
         setStatus("on_break");
       } else {
         setStatus("in");
@@ -143,8 +211,11 @@ const WorkerView = () => {
     } else {
       setStatus("out");
       setActiveSession(null);
+      setActiveSessionEvents([]);
+      setElapsedTime(0);
+      await fetchTodaySchedule();
     }
-  }, [companyId, user?.id]);
+  }, [companyId, fetchTodaySchedule, user?.id]);
 
   // Fallback para logo si no vino en el membership
   useEffect(() => {
@@ -170,7 +241,6 @@ const WorkerView = () => {
   useEffect(() => {
     if (user && companyId) {
       fetchStatus();
-      fetchTodaySchedule();
     }
   }, [user, companyId, fetchStatus]);
 
@@ -230,7 +300,7 @@ const WorkerView = () => {
         },
         () => {
           console.log("🔄 Scheduled hours updated, refreshing worker view...");
-          fetchTodaySchedule();
+          fetchTodaySchedule(activeSession?.clock_in_time ?? new Date());
         }
       )
       .subscribe();
@@ -238,7 +308,7 @@ const WorkerView = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user?.id, companyId]);
+  }, [activeSession?.clock_in_time, companyId, fetchTodaySchedule, user?.id]);
 
   // Request GPS location on mount
   useEffect(() => {
@@ -284,16 +354,19 @@ const WorkerView = () => {
   }, [fetchStatus]);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
-    if (activeSession && status === "in") {
-      interval = setInterval(() => {
-        const startTime = new Date(activeSession.clock_in_time).getTime();
-        const now = Date.now();
-        setElapsedTime(Math.floor((now - startTime) / 1000));
-      }, 1000);
+    if (!activeSession) {
+      setElapsedTime(0);
+      return;
     }
+
+    const updateElapsedTime = () => {
+      setElapsedTime(calculateWorkedSeconds(activeSession.clock_in_time, activeSessionEvents));
+    };
+
+    updateElapsedTime();
+    const interval = setInterval(updateElapsedTime, 1000);
     return () => clearInterval(interval);
-  }, [activeSession, status]);
+  }, [activeSession, activeSessionEvents]);
 
   const getFreshLocation = async (): Promise<{latitude?: number; longitude?: number}> => {
     if ("geolocation" in navigator) {
@@ -613,6 +686,21 @@ const WorkerView = () => {
   const forceNewEntry = blockClockOut && status === "in";
 
   const isActionDisabled = loading || isOffline;
+  const scheduleTargetHours =
+    todaySchedule && Number.isFinite(todaySchedule.expected_hours) && todaySchedule.expected_hours > 0
+      ? todaySchedule.expected_hours
+      : null;
+  const progressRatio =
+    status !== "out" && scheduleTargetHours
+      ? Math.min(1, elapsedTime / (scheduleTargetHours * 3600))
+      : 0;
+  const progressStrokeOffset = RING_CIRCUMFERENCE * (1 - progressRatio);
+  const scheduleDateLabel = todaySchedule?.date
+    ? new Date(`${todaySchedule.date}T00:00:00`).toLocaleDateString("es-ES", {
+        day: "2-digit",
+        month: "short",
+      })
+    : null;
 
   const attemptAction = async (action: ClockAction) => {
     if (blockClockOut && action === "out") {
@@ -697,7 +785,7 @@ const WorkerView = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 p-3 sm:p-4">
+    <div className="p-3 sm:p-4">
       <div className="max-w-2xl mx-auto space-y-4 sm:space-y-6 pt-4 sm:pt-8">
         {isOffline && (
           <Card className="border-amber-500 bg-amber-50 text-amber-800 p-4 flex flex-col gap-2">
@@ -779,145 +867,134 @@ const WorkerView = () => {
           </div>
         </motion.div>
 
-        {/* Navigation Buttons */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-4"
-        >
-          <Button
-            variant="outline"
-            className="h-[4.5rem] sm:h-20 flex-col gap-1 py-2 hover-scale px-1"
-            onClick={() => navigate("/worker-reports")}
-          >
-            <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-            <span className="text-xs sm:text-sm font-medium text-center leading-tight">Informes</span>
-          </Button>
-          <Button
-            variant="outline"
-            className="h-[4.5rem] sm:h-20 flex-col gap-1 py-2 hover-scale px-1"
-            onClick={() => navigate("/calendar")}
-          >
-            <Calendar className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-            <span className="text-xs sm:text-sm font-medium text-center leading-tight">Calendario</span>
-          </Button>
-          <Button
-            variant="outline"
-            className="h-[4.5rem] sm:h-20 flex-col gap-1 py-2 hover-scale px-1"
-            onClick={() => navigate("/absences")}
-          >
-            <MapPin className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-            <span className="text-xs sm:text-sm font-medium text-center leading-tight">Ausencias</span>
-          </Button>
-          <Button
-            variant="outline"
-            className="h-[4.5rem] sm:h-20 flex-col gap-1 py-2 hover-scale px-1"
-            onClick={() => navigate("/correction-requests")}
-          >
-            <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6 shrink-0" />
-            <span className="text-xs sm:text-sm font-medium text-center leading-tight">Correcciones</span>
-          </Button>
-        </motion.div>
-
         {/* Main Clock Card */}
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ delay: 0.1 }}
         >
-          <Card className="glass-card p-4 sm:p-8 space-y-4 sm:space-y-6 text-center">
-            {/* Status Circle with Animation */}
-            <div className="flex justify-center mb-4">
-              <motion.div
-                animate={{
-                  scale: status !== "out" ? [1, 1.1, 1] : 1,
-                }}
-                transition={{
-                  duration: 2,
-                  repeat: status !== "out" ? Infinity : 0,
-                  ease: "easeInOut",
-                }}
-                className="relative"
-              >
-                <div
-                  className={`w-24 h-24 sm:w-32 sm:h-32 rounded-full ${getStatusBgColor()} shadow-lg flex items-center justify-center`}
-                >
-                  <Clock className="w-12 h-12 sm:w-16 sm:h-16 text-white" />
-                </div>
+          <Card className="glass-card p-4 sm:p-8 space-y-5 sm:space-y-7 text-center">
+
+            {/* ── #03 Progress ring + estado central ─────────── */}
+            <div className="flex flex-col items-center gap-4">
+              {/* Ring SVG */}
+              <div className="relative flex items-center justify-center">
+                {/* Glow de fondo cuando está activo */}
                 {status !== "out" && (
                   <motion.div
-                    animate={{
-                      scale: [1, 1.5, 1],
-                      opacity: [0.5, 0, 0.5],
-                    }}
-                    transition={{
-                      duration: 2,
-                      repeat: Infinity,
-                      ease: "easeOut",
-                    }}
-                    className={`absolute inset-0 rounded-full ${getStatusBgColor()} opacity-50`}
+                    animate={{ scale: [1, 1.15, 1], opacity: [0.3, 0, 0.3] }}
+                    transition={{ duration: 3, repeat: Infinity, ease: "easeOut" }}
+                    className={`absolute inset-0 rounded-full blur-xl ${
+                      status === "in" ? "bg-primary/40" : "bg-amber-400/40"
+                    }`}
                   />
                 )}
-              </motion.div>
-            </div>
 
-            {/* Current Time */}
-            <div className="space-y-2">
-              <motion.div
-                key={formatCurrentTime()}
-                initial={{ opacity: 0.5 }}
-                animate={{ opacity: 1 }}
-                className="text-5xl sm:text-6xl md:text-7xl font-bold tabular-nums bg-gradient-to-br from-primary to-primary/70 bg-clip-text text-transparent tracking-tight"
-              >
-                {formatCurrentTime()}
-              </motion.div>
-              <div className={`text-lg font-medium ${getStatusColor()}`}>
-                {getStatusMessage()}
-              </div>
-              {gpsEnabled && (
-                <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
-                  <MapPin className="w-3 h-3" />
-                  <span>GPS activado</span>
-                </div>
-              )}
-            </div>
-
-            {/* Elapsed Time (if working) */}
-            <AnimatePresence>
-              {status === "in" && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: "auto" }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="space-y-2"
+                {/* SVG ring */}
+                <svg
+                  width="148"
+                  height="148"
+                  viewBox="0 0 148 148"
+                  className="-rotate-90"
+                  aria-hidden="true"
                 >
-                  <div className="text-sm text-muted-foreground">Tiempo trabajado hoy</div>
-                  <div className="text-3xl sm:text-4xl font-bold tabular-nums text-primary">
-                    {formatTime(elapsedTime)}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  {/* Track */}
+                  <circle
+                    cx="74" cy="74" r="62"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="6"
+                    className="text-muted/30"
+                  />
+                  {/* Progress */}
+                  <motion.circle
+                    cx="74" cy="74" r="62"
+                    fill="none"
+                    strokeWidth="6"
+                    strokeLinecap="round"
+                    stroke={status === "on_break" ? "#f59e0b" : "hsl(219,100%,55%)"}
+                    strokeDasharray={RING_CIRCUMFERENCE}
+                    animate={{
+                      strokeDashoffset: progressStrokeOffset,
+                    }}
+                    transition={{ duration: 1, ease: "easeOut" }}
+                  />
+                </svg>
 
-            {/* Action Buttons */}
-            <div className="grid grid-cols-1 gap-4 pt-4">
+                {/* Contenido central */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  {status === "out" ? (
+                    <Clock className="w-10 h-10 text-muted-foreground/50" strokeWidth={1.5} />
+                  ) : status === "on_break" ? (
+                    <div className="flex flex-col items-center">
+                      <motion.div
+                        animate={{ opacity: [1, 0.4, 1] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                      >
+                        <Coffee className="w-8 h-8 text-amber-500" strokeWidth={1.5} />
+                      </motion.div>
+                      <span className="text-[11px] text-muted-foreground mt-1 font-medium">
+                        {formatTime(elapsedTime)}
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center">
+                      <span className="text-2xl font-bold tabular-nums text-primary leading-none">
+                        {formatTime(elapsedTime)}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground mt-1 font-medium">
+                        trabajado
+                      </span>
+                      {scheduleTargetHours && (
+                        <span className="text-[10px] text-muted-foreground leading-tight">
+                          de {formatTargetHours(scheduleTargetHours)}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Hora actual + estado */}
+              <div className="space-y-1.5">
+                <motion.p
+                  key={formatCurrentTime()}
+                  initial={{ opacity: 0.6 }}
+                  animate={{ opacity: 1 }}
+                  className="text-4xl sm:text-5xl font-bold tabular-nums tracking-tight bg-gradient-to-br from-foreground to-foreground/70 bg-clip-text text-transparent"
+                >
+                  {formatCurrentTime()}
+                </motion.p>
+                <p className={`text-sm font-medium ${getStatusColor()}`}>
+                  {getStatusMessage()}
+                </p>
+                {gpsEnabled && (
+                  <div className="flex items-center justify-center gap-1 text-xs text-muted-foreground">
+                    <MapPin className="w-3 h-3" />
+                    <span>GPS activo</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Action Buttons — todos h-16 ──────────────────── */}
+            <div className="grid grid-cols-1 gap-3 pt-2">
               {(status === "out" || forceNewEntry) && (
                 <motion.div
-                  initial={{ scale: 0.8, opacity: 0 }}
+                  initial={{ scale: 0.92, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.8, opacity: 0 }}
+                  exit={{ scale: 0.92, opacity: 0 }}
                 >
                   <Button
                     onClick={handleClockIn}
                     disabled={isActionDisabled}
                     size="lg"
-                    className="w-full h-20 text-xl rounded-2xl shadow-lg hover:shadow-xl smooth-transition bg-gradient-to-r from-primary to-primary/80"
+                    className="w-full h-16 text-base font-semibold rounded-2xl"
                   >
                     {actionPending === "in" ? (
-                      <Loader2 className="w-6 h-6 mr-3 animate-spin" />
+                      <Loader2 className="w-5 h-5 animate-spin" />
                     ) : (
-                      <LogIn className="w-8 h-8 mr-3" />
+                      <LogIn className="w-5 h-5" />
                     )}
                     Fichar Entrada
                   </Button>
@@ -926,7 +1003,7 @@ const WorkerView = () => {
 
               {status === "in" && !forceNewEntry && pausesEnabled && (
                 <motion.div
-                  initial={{ scale: 0.8, opacity: 0 }}
+                  initial={{ scale: 0.92, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   className="space-y-3"
                 >
@@ -935,12 +1012,12 @@ const WorkerView = () => {
                     disabled={isActionDisabled}
                     size="lg"
                     variant="secondary"
-                    className="w-full h-16 text-lg rounded-2xl shadow-md hover:shadow-lg smooth-transition"
+                    className="w-full h-16 text-base font-semibold rounded-2xl"
                   >
                     {actionPending === "break_start" ? (
-                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      <Loader2 className="w-5 h-5 animate-spin" />
                     ) : (
-                      <Coffee className="w-6 h-6 mr-2" />
+                      <Coffee className="w-5 h-5" />
                     )}
                     Iniciar Pausa
                   </Button>
@@ -949,12 +1026,12 @@ const WorkerView = () => {
                     disabled={isActionDisabled || blockClockOut}
                     size="lg"
                     variant="destructive"
-                    className="w-full h-16 text-lg rounded-2xl shadow-md hover:shadow-lg smooth-transition"
+                    className="w-full h-16 text-base font-semibold rounded-2xl"
                   >
                     {actionPending === "out" ? (
-                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      <Loader2 className="w-5 h-5 animate-spin" />
                     ) : (
-                      <LogOut className="w-6 h-6 mr-2" />
+                      <LogOut className="w-5 h-5" />
                     )}
                     Fichar Salida
                   </Button>
@@ -963,7 +1040,7 @@ const WorkerView = () => {
 
               {status === "in" && !forceNewEntry && !pausesEnabled && (
                 <motion.div
-                  initial={{ scale: 0.8, opacity: 0 }}
+                  initial={{ scale: 0.92, opacity: 0 }}
                   animate={{ scale: 1, opacity: 1 }}
                   className="space-y-3"
                 >
@@ -972,12 +1049,12 @@ const WorkerView = () => {
                     disabled={isActionDisabled || blockClockOut}
                     size="lg"
                     variant="destructive"
-                    className="w-full h-16 text-lg rounded-2xl shadow-md hover:shadow-lg smooth-transition"
+                    className="w-full h-16 text-base font-semibold rounded-2xl"
                   >
                     {actionPending === "out" ? (
-                      <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                      <Loader2 className="w-5 h-5 animate-spin" />
                     ) : (
-                      <LogOut className="w-6 h-6 mr-2" />
+                      <LogOut className="w-5 h-5" />
                     )}
                     Fichar Salida
                   </Button>
@@ -999,7 +1076,7 @@ const WorkerView = () => {
                     disabled={isActionDisabled || blockClockOut}
                     size="lg"
                     variant="destructive"
-                    className="w-full h-16 text-lg rounded-2xl shadow-md hover:shadow-lg smooth-transition"
+                    className="w-full h-16 text-base font-semibold rounded-2xl"
                   >
                     {actionPending === "out" ? (
                       <Loader2 className="w-5 h-5 mr-2 animate-spin" />
@@ -1025,7 +1102,7 @@ const WorkerView = () => {
                     onClick={handleBreakEnd}
                     disabled={isActionDisabled}
                     size="lg"
-                    className="w-full h-16 text-lg rounded-2xl shadow-md hover:shadow-lg smooth-transition"
+                    className="w-full h-16 text-base font-semibold rounded-2xl"
                   >
                     {actionPending === "break_end" ? (
                       <Loader2 className="w-5 h-5 mr-2 animate-spin" />
@@ -1039,7 +1116,7 @@ const WorkerView = () => {
                     disabled={isActionDisabled || blockClockOut}
                     size="lg"
                     variant="outline"
-                    className="w-full h-16 text-lg rounded-2xl shadow-md hover:shadow-lg smooth-transition"
+                    className="w-full h-16 text-base font-semibold rounded-2xl"
                   >
                     {actionPending === "out" ? (
                       <Loader2 className="w-5 h-5 mr-2 animate-spin" />
@@ -1110,7 +1187,9 @@ const WorkerView = () => {
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-primary" />
-                  <span className="text-sm font-medium">Horario asignado hoy</span>
+                  <span className="text-sm font-medium">
+                    Horario asignado{scheduleDateLabel ? ` ${scheduleDateLabel}` : ""}
+                  </span>
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
