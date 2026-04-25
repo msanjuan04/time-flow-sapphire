@@ -3,7 +3,6 @@ export type CompanyPlanId = "basic" | "empresa" | "pro" | "advanced" | "custom";
 export interface CompanyPlanDefinition {
   id: CompanyPlanId;
   label: string;
-  price: string;
   maxEmployees: number | null; // null = sin límite
   description: string;
   features: string[];
@@ -21,7 +20,6 @@ export const COMPANY_PLANS: Record<CompanyPlanId, CompanyPlanDefinition> = {
   basic: {
     id: "basic",
     label: "Básico",
-    price: "€119/año",
     maxEmployees: 5,
     description: "Incluye todas las funcionalidades para equipos de hasta 5 empleados.",
     features: UNIVERSAL_PLAN_FEATURES,
@@ -29,7 +27,6 @@ export const COMPANY_PLANS: Record<CompanyPlanId, CompanyPlanDefinition> = {
   empresa: {
     id: "empresa",
     label: "Empresa",
-    price: "€189/año",
     maxEmployees: 10,
     description: "Todas las funcionalidades con un límite de hasta 10 empleados.",
     features: UNIVERSAL_PLAN_FEATURES,
@@ -38,7 +35,6 @@ export const COMPANY_PLANS: Record<CompanyPlanId, CompanyPlanDefinition> = {
   pro: {
     id: "pro",
     label: "Pro",
-    price: "€289/año",
     maxEmployees: 20,
     description: "Pensado para equipos medianos de hasta 20 empleados.",
     features: UNIVERSAL_PLAN_FEATURES,
@@ -46,7 +42,6 @@ export const COMPANY_PLANS: Record<CompanyPlanId, CompanyPlanDefinition> = {
   advanced: {
     id: "advanced",
     label: "Avanzado",
-    price: "€499/año",
     maxEmployees: 50,
     description: "Para organizaciones que necesitan hasta 50 empleados.",
     features: UNIVERSAL_PLAN_FEATURES,
@@ -54,7 +49,6 @@ export const COMPANY_PLANS: Record<CompanyPlanId, CompanyPlanDefinition> = {
   custom: {
     id: "custom",
     label: "Plan Custom",
-    price: "Contactar",
     maxEmployees: null,
     description: "Solución personalizada para más de 50 empleados.",
     features: UNIVERSAL_PLAN_FEATURES,

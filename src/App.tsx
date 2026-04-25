@@ -46,6 +46,8 @@ const PrintViewPage = lazy(() => import("./pages/PrintView"));
 const NfcCardsPage = lazy(() => import("./pages/Owner/NfcCards"));
 const NfcClockPage = lazy(() => import("./pages/NfcClock"));
 const ClockCompanyNfcPage = lazy(() => import("./pages/ClockCompanyNfc"));
+const NotificationsPage = lazy(() => import("./pages/Notifications"));
+const LegalDocumentsPage = lazy(() => import("./pages/Owner/LegalDocuments"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -226,6 +228,14 @@ const App = () => (
               }
             />
             <Route
+              path="/notifications"
+              element={
+                <ProtectedRoute>
+                  <NotificationsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/review-sessions"
               element={
                 <ProtectedRoute allowedRoles={["owner", "admin", "manager"]}>
@@ -271,6 +281,14 @@ const App = () => (
             <Route path="/fastclock/:pointId" element={<FastClockPage />} />
             <Route path="/clock/:companyId/nfc" element={<ClockCompanyNfcPage />} />
             <Route path="/nfc/:pointId" element={<NfcClockPage />} />
+            <Route
+              path="/owner/legal-documents"
+              element={
+                <ProtectedRoute allowedRoles={["owner", "admin"]}>
+                  <LegalDocumentsPage />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/owner/nfc-cards"
               element={

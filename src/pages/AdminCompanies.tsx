@@ -463,7 +463,7 @@ const AdminCompanies = () => {
                       ))}
                     </div>
                     <p className="mt-3 text-xs text-muted-foreground">
-                      El precio solo varía según la cantidad máxima de empleados permitidos.
+                      La capacidad varía según la cantidad máxima de empleados permitidos.
                     </p>
                   </div>
                   <PlanSelectionGrid

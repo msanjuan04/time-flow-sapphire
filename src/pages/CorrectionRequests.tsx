@@ -38,6 +38,7 @@ import { useMembership } from "@/hooks/useMembership";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
+import { notifyManagers } from "@/lib/notifyManagers";
 import {
   getApprovedAbsenceTypeLabel,
   extractDateFromTimestamp,
@@ -188,6 +189,16 @@ const CorrectionRequests = () => {
           .catch((notifyError) => {
             console.error("Failed to notify owner:", notifyError);
           });
+
+        void notifyManagers({
+          companyId,
+          title: "Nueva solicitud de corrección",
+          message: `${user?.email ?? "Un trabajador"} pidió corregir un fichaje (${eventType}) del ${new Date(`${requestDate}T${requestTime}`).toLocaleString("es-ES")}.`,
+          type: "info",
+          entityType: "correction_request",
+          entityId: insertedRequest.id,
+          excludeUserId: user?.id,
+        });
       }
 
       toast.success("Solicitud enviada correctamente");

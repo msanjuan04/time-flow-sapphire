@@ -136,6 +136,12 @@ const NotificationBell = () => {
     if (notification.entity_type === "anomaly" && notification.entity_id) {
       navigate(`/people?user=${notification.entity_id}`);
     }
+    if (notification.entity_type === "correction_request" && notification.entity_id) {
+      navigate(`/correction-requests?focus=${notification.entity_id}`);
+    }
+    if (notification.entity_type === "absence_request" && notification.entity_id) {
+      navigate(`/correction-requests?focus=${notification.entity_id}`);
+    }
   };
 
   const getIcon = (type: string) => {
@@ -259,6 +265,12 @@ const NotificationBell = () => {
                             ⚠️ Anomalía detectada · revisar empleado
                           </p>
                         )}
+                        {(notification.entity_type === "correction_request" ||
+                          notification.entity_type === "absence_request") && (
+                          <p className="text-[11px] text-primary font-medium mt-1">
+                            Solicitud pendiente · pulsa para gestionar
+                          </p>
+                        )}
                       </div>
                       {!notification.read && (
                         <div className="flex-shrink-0">
@@ -272,6 +284,19 @@ const NotificationBell = () => {
             )}
           </div>
         </ScrollArea>
+        <div className="border-t px-4 py-2 flex justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs h-7"
+            onClick={() => {
+              setOpen(false);
+              navigate("/notifications");
+            }}
+          >
+            Ver todas
+          </Button>
+        </div>
       </PopoverContent>
     </Popover>
   );

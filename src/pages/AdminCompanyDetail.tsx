@@ -419,7 +419,7 @@ const AdminCompanyDetail = () => {
             <div>
               <p className="text-sm text-muted-foreground">Plan</p>
               <p className="font-medium">
-                {planInfo.label} · {planInfo.price}
+                {planInfo.label}
               </p>
               {planInfo.maxEmployees !== null && (
                 <p className="text-xs text-muted-foreground">
@@ -474,7 +474,6 @@ const AdminCompanyDetail = () => {
               <Card className="p-3 bg-muted/50 border-dashed">
                 <p className="font-semibold">{planDialogInfo.label}</p>
                 <p className="text-sm text-muted-foreground">{planDialogInfo.description}</p>
-                <p className="text-sm mt-1">Precio: {planDialogInfo.price}</p>
                 {planDialogInfo.maxEmployees !== null ? (
                   <p className="text-xs text-muted-foreground">Máx. {planDialogInfo.maxEmployees} empleados</p>
                 ) : (

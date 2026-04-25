@@ -30,6 +30,10 @@ interface ClockRequest {
   user_id?: string; // For kiosk mode
   company_id?: string; // Active company
   notes?: string;
+  // ISO timestamp from the client. If provided and not too far in the future,
+  // it overrides the server's "now" for the time_event row. Used by the offline
+  // kiosk queue so deferred fichajes keep the real time they happened.
+  client_event_time?: string;
 }
 
 interface MembershipResult {
@@ -85,8 +89,19 @@ Deno.serve(async (req) => {
       company_id,
       notes,
       point_id,
+      client_event_time,
     } = body;
-    const now = new Date();
+    const serverNow = new Date();
+    // Accept a client-provided event time only if it's a valid ISO date and
+    // not in the future by more than 2 minutes (allow small clock skew). Older
+    // timestamps are accepted (offline queue may flush hours later).
+    const parsedClientTime = client_event_time ? new Date(client_event_time) : null;
+    const clientTimeIsValid =
+      parsedClientTime !== null &&
+      !Number.isNaN(parsedClientTime.getTime()) &&
+      parsedClientTime.getTime() <= serverNow.getTime() + 2 * 60 * 1000;
+    const eventTime = clientTimeIsValid ? parsedClientTime! : serverNow;
+    const now = serverNow;
     const pad2 = (n: number) => String(n).padStart(2, '0');
     const formatLocalDate = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
     const todayLocal = formatLocalDate(now);
@@ -984,7 +999,7 @@ Deno.serve(async (req) => {
           is_within_geofence: isWithinGeofence,
           photo_url: photo_url || null,
           notes: notes || null,
-          event_time: new Date().toISOString(),
+          event_time: eventTime.toISOString(),
         })
         .select('id')
         .single();
@@ -1130,7 +1145,7 @@ Deno.serve(async (req) => {
       const { error: sessionError } = await supabaseAdmin.from('work_sessions').insert({
         user_id: currentUserId,
         company_id: companyId,
-        clock_in_time: new Date().toISOString(),
+        clock_in_time: eventTime.toISOString(),
         is_active: true,
         point_id: pointIdForEvent,
         status: 'open',
@@ -1154,7 +1169,7 @@ Deno.serve(async (req) => {
       const { error: updateError } = await supabaseAdmin
         .from('work_sessions')
         .update({
-          clock_out_time: new Date().toISOString(),
+          clock_out_time: eventTime.toISOString(),
           is_active: false,
           status: 'closed',
         })

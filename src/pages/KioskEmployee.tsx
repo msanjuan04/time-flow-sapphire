@@ -2,10 +2,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Clock, Coffee, LogIn, LogOut, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { motion } from "framer-motion";
+import { invokeClockWithQueue } from "@/lib/offlineClockQueue";
+import { OfflineClockIndicator } from "@/components/OfflineClockIndicator";
 
 type Status = "off" | "on" | "break";
 
@@ -35,6 +43,23 @@ const KioskEmployee = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [confirmation, setConfirmation] = useState<string | null>(null);
+  const [logoutCountdown, setLogoutCountdown] = useState<number | null>(null);
+
+  const goBackToKiosk = () => {
+    const target = devicePin ? `/kiosk-free?pin=${devicePin}` : "/kiosk-free";
+    navigate(target, { replace: true });
+  };
+
+  useEffect(() => {
+    if (logoutCountdown === null) return;
+    if (logoutCountdown <= 0) {
+      goBackToKiosk();
+      return;
+    }
+    const t = setTimeout(() => setLogoutCountdown((c) => (c ?? 0) - 1), 1000);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logoutCountdown]);
 
   const fetchProfile = async () => {
     if (!token) {
@@ -152,8 +177,8 @@ const KioskEmployee = () => {
     }
     setSubmitting(true);
     try {
-      const response = await supabase.functions.invoke("clock", {
-        body: {
+      const result = await invokeClockWithQueue({
+        payload: {
           action,
           user_id: profile.id,
           device_id: device?.id,
@@ -162,7 +187,7 @@ const KioskEmployee = () => {
         },
       });
 
-      if (response.error) throw response.error;
+      if (!result.ok) throw result.error;
 
       const labels: Record<typeof action, string> = {
         in: "Entrada registrada",
@@ -171,11 +196,10 @@ const KioskEmployee = () => {
         break_end: "Pausa finalizada",
       };
 
-      setConfirmation(labels[action]);
-      setTimeout(() => {
-        const target = devicePin ? `/kiosk-free?pin=${devicePin}` : "/kiosk-free";
-        navigate(target, { replace: true });
-      }, 2000);
+      setConfirmation(
+        result.queued ? `${labels[action]} (en cola, sin conexión)` : labels[action]
+      );
+      setLogoutCountdown(5);
     } catch (err) {
       console.error("Error al fichar:", err);
       toast.error("No pudimos registrar el fichaje");
@@ -207,7 +231,7 @@ const KioskEmployee = () => {
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="hover-scale">
             <ArrowLeft className="w-5 h-5" />
           </Button>
-          <div>
+          <div className="flex-1">
             <p className="text-xs uppercase tracking-widest text-muted-foreground mb-1">
               Kiosko libre
             </p>
@@ -216,6 +240,7 @@ const KioskEmployee = () => {
               {device?.name ? `Dispositivo: ${device.name}` : "Dispositivo no vinculado"}
             </p>
           </div>
+          <OfflineClockIndicator />
         </div>
 
         <Card className="glass-card p-6 space-y-4">
@@ -248,14 +273,48 @@ const KioskEmployee = () => {
               ))}
           </div>
 
-          {confirmation && (
-            <div className="flex items-center gap-2 text-sm text-primary mt-2">
-              <CheckCircle2 className="w-4 h-4" />
-              {confirmation} · Volviendo al kiosko...
-            </div>
-          )}
         </Card>
       </div>
+
+      <Dialog
+        open={logoutCountdown !== null}
+        onOpenChange={(open) => {
+          if (!open) goBackToKiosk();
+        }}
+      >
+        <DialogContent className="max-w-sm text-center">
+          <DialogHeader>
+            <DialogTitle className="sr-only">Fichaje registrado</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4 py-2">
+            <motion.div
+              initial={{ scale: 0.5, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ type: "spring", stiffness: 220, damping: 18 }}
+              className="w-20 h-20 rounded-full bg-primary/10 border-2 border-primary/30 flex items-center justify-center"
+            >
+              <CheckCircle2 className="w-10 h-10 text-primary" />
+            </motion.div>
+            <div className="space-y-1">
+              <p className="text-2xl font-bold">{confirmation}</p>
+              <p className="text-sm text-muted-foreground">
+                {profile.full_name || profile.email}
+              </p>
+            </div>
+            <div className="text-sm text-muted-foreground">
+              Cerrando sesión en{" "}
+              <span className="font-bold text-foreground tabular-nums">
+                {logoutCountdown ?? 0}s
+              </span>{" "}
+              para el siguiente compañero.
+            </div>
+            <Button onClick={goBackToKiosk} className="w-full" size="lg">
+              <LogOut className="w-4 h-4 mr-2" />
+              Cerrar sesión ahora
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

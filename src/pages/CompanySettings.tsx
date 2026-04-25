@@ -31,6 +31,7 @@ import { Copy, Loader2, MapPin, Nfc, Save, Shield, Timer } from "lucide-react";
 import { GEOFENCE_RADIUS_METERS } from "@/config/geofence";
 import { BackButton } from "@/components/BackButton";
 import OwnerQuickNav from "@/components/OwnerQuickNav";
+import CompanyLegalInfoCard from "@/components/owner/CompanyLegalInfoCard";
 import { getComplianceSettings, updateComplianceSettings } from "@/lib/compliance";
 import {
   getCompanyDayRules,
@@ -675,6 +676,8 @@ const CompanySettings = () => {
             </div>
           </div>
         </Card>
+
+        {companyId && <CompanyLegalInfoCard companyId={companyId} canEdit={canEdit} />}
 
         {companyId && (
           <Card className="glass-card p-6 space-y-4">

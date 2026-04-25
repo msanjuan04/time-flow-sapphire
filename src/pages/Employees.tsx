@@ -922,12 +922,9 @@ const getFunctionErrorMessage = async (error: unknown) => {
           <Card className="glass-card p-5 space-y-4">
             <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Plan actual</p>
+                <p className="text-sm text-muted-foreground">Configuración actual</p>
                 <div className="flex items-center gap-2">
                   <h2 className="text-xl font-semibold">{planInfo.label}</h2>
-                  {planInfo.price !== "Contactar" && (
-                    <span className="text-sm text-muted-foreground">{planInfo.price}</span>
-                  )}
                 </div>
                 <p className="text-sm text-muted-foreground">{planInfo.description}</p>
                 <p className="text-xs text-muted-foreground">
@@ -979,8 +976,8 @@ const getFunctionErrorMessage = async (error: unknown) => {
                 }`}
               >
                 {displayPlanLimitReached
-                  ? "Has alcanzado el máximo de empleados de tu plan. Contacta con soporte o amplía tu plan para añadir más personas."
-                  : `Puedes invitar a ${displayRemainingSlots} empleado${displayRemainingSlots === 1 ? "" : "s"} más dentro del plan ${planInfo.label}.`}
+                  ? "Has alcanzado el máximo de empleados permitidos para tu empresa. Contacta con soporte para ampliar capacidad."
+                  : `Puedes invitar a ${displayRemainingSlots} empleado${displayRemainingSlots === 1 ? "" : "s"} más.`}
               </div>
             )}
           </Card>
@@ -1042,7 +1039,7 @@ const getFunctionErrorMessage = async (error: unknown) => {
                   onClick={() => setInviteDialogOpen(true)}
                   className="hover-scale"
                   disabled={inviteDisabled}
-                  title={inviteDisabled ? "Has alcanzado el máximo de empleados de tu plan" : undefined}
+                  title={inviteDisabled ? "Has alcanzado el máximo de empleados permitidos" : undefined}
                 >
                   <UserPlus className="w-4 h-4 mr-2" />
                   Invitar

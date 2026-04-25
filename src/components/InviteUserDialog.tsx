@@ -210,7 +210,7 @@ const InviteUserDialog = ({
     }
 
     if (!isSuperadmin && limitReached) {
-      toast.error("Has alcanzado el máximo de empleados permitidos por tu plan.");
+      toast.error("Has alcanzado el máximo de empleados permitidos.");
       return;
     }
 
@@ -297,8 +297,8 @@ const InviteUserDialog = ({
       
       // Handle plan limit error
       if (message?.includes("límite") || message?.includes("limit")) {
-        toast.error("Límite de plan alcanzado", {
-          description: message || "Has alcanzado el límite de miembros de tu plan actual",
+        toast.error("Límite de capacidad alcanzado", {
+          description: message || "Has alcanzado el límite de miembros permitido para tu empresa",
         });
       } else if (status === 409) {
         toast.error("Ya existe una invitación o email registrado");
@@ -326,11 +326,11 @@ const InviteUserDialog = ({
           <div className="rounded-2xl border border-dashed p-3 text-sm">
             <p className="font-semibold">Capacidad disponible</p>
             <p className="text-muted-foreground">
-              Puedes activar {Math.max(slotsAvailable ?? 0, 0)} de {planLimit} empleados con tu plan.
+              Puedes activar {Math.max(slotsAvailable ?? 0, 0)} de {planLimit} empleados.
             </p>
             {limitReached && !isSuperadmin && (
               <p className="text-destructive text-xs mt-1">
-                Has alcanzado el límite. Amplía tu plan para invitar a más personas.
+                Has alcanzado el límite. Contacta con soporte para ampliar capacidad.
               </p>
             )}
           </div>

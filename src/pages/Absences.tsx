@@ -28,7 +28,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ABSENCE_REASONS, DEFAULT_ABSENCE_REASON } from "@/data/absenceReasons";
+import {
+  ABSENCE_REASONS,
+  DEFAULT_ABSENCE_REASON,
+  ABSENCE_CATEGORY_META,
+  getAbsenceCategoryFromLabelOrValue,
+} from "@/data/absenceReasons";
+import { notifyManagers } from "@/lib/notifyManagers";
 
 interface AbsencePayload {
   type: "absence";
@@ -109,7 +115,7 @@ const Absences = () => {
 
     setLoading(true);
     try {
-      const { error } = await supabase
+      const { data: insertedRequest, error } = await supabase
         .from("correction_requests")
         .insert({
           user_id: user?.id,
@@ -127,9 +133,29 @@ const Absences = () => {
         description: `${finalReason}${startTime ? ` desde las ${startTime}` : ""}${
           endTime ? ` hasta las ${endTime}` : ""
         }`,
-        });
+        })
+        .select("id")
+        .single();
 
       if (error) throw error;
+
+      if (insertedRequest && companyId) {
+        const dateRange =
+          startDate && endDate
+            ? `del ${new Date(startDate).toLocaleDateString("es-ES")} al ${new Date(endDate).toLocaleDateString("es-ES")}`
+            : startDate
+              ? `el ${new Date(startDate).toLocaleDateString("es-ES")}`
+              : "fechas por concretar";
+        void notifyManagers({
+          companyId,
+          title: "Nueva solicitud de ausencia",
+          message: `${user?.email ?? "Un trabajador"} ha solicitado ${finalReason} (${dateRange}).`,
+          type: "info",
+          entityType: "absence_request",
+          entityId: insertedRequest.id,
+          excludeUserId: user?.id,
+        });
+      }
 
       toast.success("Solicitud de ausencia enviada correctamente");
       setStartDate("");
@@ -330,7 +356,14 @@ const Absences = () => {
                       </div>
                     </div>
                     <div className="bg-secondary/10 p-4 rounded-lg">
-                      <p className="text-sm font-medium mb-1">Motivo:</p>
+                      <div className="flex items-center gap-2 mb-2">
+                        <p className="text-sm font-medium">Motivo:</p>
+                        {(() => {
+                          const cat = getAbsenceCategoryFromLabelOrValue(absence.reason);
+                          const meta = ABSENCE_CATEGORY_META[cat];
+                          return <Badge className={meta.badgeClass}>{meta.label}</Badge>;
+                        })()}
+                      </div>
                       <p className="text-sm text-muted-foreground">{absence.reason}</p>
                     </div>
                     <p className="text-xs text-muted-foreground mt-4">
