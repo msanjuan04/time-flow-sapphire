@@ -44,6 +44,11 @@ import {
   extractDateFromTimestamp,
   extractTimeFromTimestamp,
 } from "@/lib/approvedAbsence";
+import {
+  checkVacationApproval,
+  isVacationAbsenceRequest,
+} from "@/lib/vacationGuard";
+import VacationBalanceBadge from "@/components/VacationBalanceBadge";
 
 interface CorrectionPayload {
   event_type: string;
@@ -225,7 +230,37 @@ const CorrectionRequests = () => {
     setLoading(true);
     try {
       const request = requests.find((r) => r.id === requestId);
-      
+
+      // Vacation balance guard: only check on approve, only for vacation absences
+      if (
+        newStatus === "approved" &&
+        request &&
+        companyId &&
+        isVacationAbsenceRequest(request.payload, request.reason)
+      ) {
+        const payload = request.payload as any;
+        const guard = await checkVacationApproval({
+          userId: request.user_id,
+          companyId,
+          startDate: payload.start_date,
+          endDate: payload.end_date,
+        });
+        if (guard.shouldBlock) {
+          toast.error(
+            `Aprobación bloqueada: ${guard.message} (cambia la política en Ajustes para permitir saldo negativo).`
+          );
+          setLoading(false);
+          return;
+        }
+        if (!guard.withinBalance) {
+          // Allowed by policy but in negative balance — show a soft warning so the manager knows.
+          toast.warning(
+            `Aprobada con saldo negativo: ${guard.message}`,
+            { duration: 6000 }
+          );
+        }
+      }
+
       const { error } = await supabase
         .from("correction_requests")
         .update({
@@ -605,7 +640,21 @@ const CorrectionRequests = () => {
                             );
                           })()}
                         </TableCell>
-                      <TableCell>{getStatusBadge(request.status)}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1 items-start">
+                          {getStatusBadge(request.status)}
+                          {request.status === "pending" &&
+                            companyId &&
+                            isVacationAbsenceRequest(request.payload, request.reason) && (
+                              <VacationBalanceBadge
+                                userId={request.user_id}
+                                companyId={companyId}
+                                startDate={(request.payload as any).start_date}
+                                endDate={(request.payload as any).end_date}
+                              />
+                            )}
+                        </div>
+                      </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {new Date(request.created_at).toLocaleDateString("es-ES")}
                       </TableCell>
