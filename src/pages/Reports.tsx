@@ -50,6 +50,7 @@ import { exportCSV } from "@/lib/exports";
 import html2pdf from "html2pdf.js";
 import OwnerIndividualReports from "@/components/OwnerIndividualReports";
 import { Checkbox } from "@/components/ui/checkbox";
+import CertifiedReportButton from "@/components/CertifiedReportButton";
 
 interface EmployeeStats {
   user_id: string;
@@ -2291,6 +2292,32 @@ const Reports = () => {
             Cancelar
           </Button>
           <Button onClick={handleDownloadPDF}>Descargar PDF</Button>
+          {companyId && (
+            <CertifiedReportButton
+              companyId={companyId}
+              periodStart={startDate}
+              periodEnd={endDate}
+              reportHtml={getReportHtml() || ""}
+              payload={{
+                start_date: startDate,
+                end_date: endDate,
+                center: selectedCenter,
+                employee: selectedEmployee,
+                sessions_count: sessionsRaw.length,
+                events_count: filteredMapEvents.length,
+                employees: employeeStats
+                  .filter((s) => s.company_id === companyId)
+                  .map((s) => ({
+                    id: (s as any).id ?? null,
+                    name: (s as any).full_name ?? (s as any).name ?? null,
+                    total_hours: (s as any).total_hours ?? null,
+                  })),
+              }}
+              scope={selectedEmployee === "all" ? "company" : "user"}
+              userId={selectedEmployee === "all" ? null : selectedEmployee}
+              disabled={!getReportHtml()}
+            />
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
