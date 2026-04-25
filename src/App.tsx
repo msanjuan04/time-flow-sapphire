@@ -48,6 +48,7 @@ const NfcClockPage = lazy(() => import("./pages/NfcClock"));
 const ClockCompanyNfcPage = lazy(() => import("./pages/ClockCompanyNfc"));
 const NotificationsPage = lazy(() => import("./pages/Notifications"));
 const LegalDocumentsPage = lazy(() => import("./pages/Owner/LegalDocuments"));
+const VerifyPage = lazy(() => import("./pages/Verify"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -120,6 +121,7 @@ const App = () => (
             <Route path="/legal" element={<LegalPage />} />
             <Route path="/access-issue" element={<AccessIssuePage />} />
             <Route path="/print/:id" element={<PrintViewPage />} />
+            <Route path="/verify/:token" element={<VerifyPage />} />
 
             <Route
               path="/dashboard"

@@ -51,6 +51,7 @@ import html2pdf from "html2pdf.js";
 import OwnerIndividualReports from "@/components/OwnerIndividualReports";
 import { Checkbox } from "@/components/ui/checkbox";
 import CertifiedReportButton from "@/components/CertifiedReportButton";
+import SignedReportsHistory from "@/components/SignedReportsHistory";
 
 interface EmployeeStats {
   user_id: string;
@@ -2273,6 +2274,9 @@ const Reports = () => {
             </Table>
           </div>
         </Card>
+        {companyId && (role === "owner" || role === "admin") && (
+          <SignedReportsHistory companyId={companyId} />
+        )}
       </div>
     </div>
     </div>
