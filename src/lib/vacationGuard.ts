@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { loadCompanyHolidayDates } from "@/lib/companyHolidays";
 
 export type CountType = "working" | "natural";
 
@@ -36,14 +37,14 @@ export interface VacationCheckResult {
 
 /**
  * Counts the days between two ISO dates (inclusive) according to count_type.
- * - 'natural': every calendar day counts.
- * - 'working': excludes Saturdays and Sundays. (Festivos no se descuentan
- *   aún — pendiente de la feature de calendario de festivos.)
+ * - 'natural': every calendar day counts (festivos NO se descuentan en cómputo natural).
+ * - 'working': excludes Saturdays, Sundays AND holiday dates (if provided).
  */
 export function countVacationDays(
   startISO: string,
   endISO: string,
-  countType: CountType
+  countType: CountType,
+  holidayDates?: Set<string>
 ): number {
   if (!startISO || !endISO) return 0;
   const start = new Date(startISO + "T00:00:00");
@@ -53,11 +54,14 @@ export function countVacationDays(
   let days = 0;
   const cur = new Date(start);
   while (cur <= end) {
+    const iso = cur.toISOString().slice(0, 10);
     if (countType === "natural") {
       days += 1;
     } else {
       const dow = cur.getDay(); // 0=Sun, 6=Sat
-      if (dow !== 0 && dow !== 6) days += 1;
+      const isWeekend = dow === 0 || dow === 6;
+      const isHoliday = holidayDates ? holidayDates.has(iso) : false;
+      if (!isWeekend && !isHoliday) days += 1;
     }
     cur.setDate(cur.getDate() + 1);
   }
@@ -120,15 +124,21 @@ export async function checkVacationApproval(opts: {
   startDate: string;
   endDate: string;
 }): Promise<VacationCheckResult> {
-  const [policy, balance] = await Promise.all([
+  const [policy, balance, holidayDates] = await Promise.all([
     loadVacationPolicy(opts.companyId),
     loadVacationBalance(opts.userId, opts.companyId),
+    loadCompanyHolidayDates(opts.companyId),
   ]);
 
   const countType: CountType = policy?.count_type ?? "working";
   const blockEnabled = policy?.block_over_balance ?? true;
 
-  const requestedDays = countVacationDays(opts.startDate, opts.endDate, countType);
+  const requestedDays = countVacationDays(
+    opts.startDate,
+    opts.endDate,
+    countType,
+    holidayDates
+  );
   const availableDays = Number(balance?.available_days ?? 0);
   const excessDays = Math.max(0, requestedDays - availableDays);
   const withinBalance = excessDays === 0;

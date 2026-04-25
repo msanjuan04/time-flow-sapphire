@@ -33,6 +33,7 @@ import { BackButton } from "@/components/BackButton";
 import OwnerQuickNav from "@/components/OwnerQuickNav";
 import CompanyLegalInfoCard from "@/components/owner/CompanyLegalInfoCard";
 import VacationPolicyCard from "@/components/owner/VacationPolicyCard";
+import HolidayCalendarCard from "@/components/owner/HolidayCalendarCard";
 import { getComplianceSettings, updateComplianceSettings } from "@/lib/compliance";
 import {
   getCompanyDayRules,
@@ -661,6 +662,8 @@ const CompanySettings = () => {
         {companyId && <CompanyLegalInfoCard companyId={companyId} canEdit={canEdit} />}
 
         {companyId && role === "owner" && <VacationPolicyCard companyId={companyId} />}
+
+        {companyId && role === "owner" && <HolidayCalendarCard companyId={companyId} />}
 
         <Card className="glass-card p-6 space-y-4">
           <div className="flex flex-col gap-2">
