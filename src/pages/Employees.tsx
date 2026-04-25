@@ -51,6 +51,7 @@ import { DEMO_COMPANY_IDS, DEMO_SHOWCASE_HEADCOUNT } from "@/config/demo";
 import { FunctionsHttpError } from "@supabase/functions-js";
 import ScheduleHoursDialog from "@/components/ScheduleHoursDialog";
 import EmployeeInsights from "@/components/EmployeeInsights";
+import EmployeeVacationCard from "@/components/owner/EmployeeVacationCard";
 import { AppLayout } from "@/components/AppLayout";
 import VacationAssignment from "@/components/admin/VacationAssignment";
 
@@ -174,7 +175,7 @@ const Employees = () => {
   // Ficha de empleado
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailsEvents, setDetailsEvents] = useState<DetailEvent[]>([]);
-  const [detailTab, setDetailTab] = useState<"hours" | "map" | "insights">("hours");
+  const [detailTab, setDetailTab] = useState<"hours" | "map" | "insights" | "vacaciones">("hours");
   const [detailHours, setDetailHours] = useState<DetailSession[]>([]);
   const [detailHoursLoading, setDetailHoursLoading] = useState(false);
   const [detailHoursStart, setDetailHoursStart] = useState(() => defaultStartDate());
@@ -1457,12 +1458,13 @@ const getFunctionErrorMessage = async (error: unknown) => {
                   </div>
                 </div>
 
-                <Tabs value={detailTab} onValueChange={(value) => setDetailTab(value as "hours" | "map" | "insights")} className="space-y-4">
+                <Tabs value={detailTab} onValueChange={(value) => setDetailTab(value as "hours" | "map" | "insights" | "vacaciones")} className="space-y-4">
                   <div className="sticky top-0 z-20 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 rounded-2xl border px-3 py-2">
-                    <TabsList className="w-full sm:w-auto grid grid-cols-3 rounded-xl bg-muted/40 p-1">
+                    <TabsList className="w-full sm:w-auto grid grid-cols-4 rounded-xl bg-muted/40 p-1">
                       <TabsTrigger value="hours" className="text-xs sm:text-sm">Horas</TabsTrigger>
                       <TabsTrigger value="map" className="text-xs sm:text-sm">Mapa</TabsTrigger>
                       <TabsTrigger value="insights" className="text-xs sm:text-sm">Insights</TabsTrigger>
+                      <TabsTrigger value="vacaciones" className="text-xs sm:text-sm">Vacaciones</TabsTrigger>
                     </TabsList>
                   </div>
                 <TabsContent value="hours" className="space-y-4">
@@ -1671,6 +1673,13 @@ const getFunctionErrorMessage = async (error: unknown) => {
                       employeeId={selectedEmployee.id}
                       employeeName={selectedEmployee.full_name || selectedEmployee.email}
                       companyId={companyId || ""}
+                    />
+                  </TabsContent>
+                  <TabsContent value="vacaciones" className="space-y-4">
+                    <EmployeeVacationCard
+                      userId={selectedEmployee.id}
+                      companyId={companyId || ""}
+                      canEdit={true}
                     />
                   </TabsContent>
                 </Tabs>
