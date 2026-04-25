@@ -15,6 +15,7 @@ import { GEOFENCE_RADIUS_METERS } from "@/config/geofence";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import WorkerScheduleSection from "@/components/WorkerScheduleSection";
+import MyVacationWidget from "@/components/MyVacationWidget";
 
 type WorkerStatus = "out" | "in" | "on_break";
 type TimeEventType = "clock_in" | "clock_out" | "pause_start" | "pause_end";
@@ -1142,6 +1143,10 @@ const WorkerView = () => {
               <p className="text-xs text-muted-foreground">{formatEventTimestamp(lastEvent.timestamp)}</p>
             </div>
           </Card>
+        )}
+
+        {user?.id && companyId && (
+          <MyVacationWidget userId={user.id} companyId={companyId} />
         )}
 
         {/* Status Indicator */}
