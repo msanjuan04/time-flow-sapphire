@@ -8,9 +8,9 @@ export interface QueuedClockAction {
   clientEventTime: string;
   payload: {
     action: "in" | "out" | "break_start" | "break_end";
-    user_id: string;
+    user_id?: string;
     device_id?: string;
-    company_id: string;
+    company_id?: string | null;
     source: string;
     latitude?: number;
     longitude?: number;

@@ -16,6 +16,8 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import WorkerScheduleSection from "@/components/WorkerScheduleSection";
 import MyVacationWidget from "@/components/MyVacationWidget";
+import { OfflineClockIndicator } from "@/components/OfflineClockIndicator";
+import { invokeClockWithQueue } from "@/lib/offlineClockQueue";
 
 type WorkerStatus = "out" | "in" | "on_break";
 type TimeEventType = "clock_in" | "clock_out" | "pause_start" | "pause_end";
@@ -424,18 +426,6 @@ const WorkerView = () => {
       note?: string;
     }
   ) => {
-    if (!navigator.onLine) {
-      toast.error("Sin conexión a internet", {
-        description: "Activa tu conexión para registrar el fichaje.",
-        action: {
-          label: "Reintentar",
-          onClick: () => callClockAPI(action),
-        },
-      });
-      setIsOffline(true);
-      return;
-    }
-
     setActionPending(action);
     setLoading(true);
     try {
@@ -457,8 +447,8 @@ const WorkerView = () => {
         }
       }
 
-      const response = await supabase.functions.invoke('clock', {
-        body: {
+      const queueResult = await invokeClockWithQueue({
+        payload: {
           action,
           latitude: loc?.latitude,
           longitude: loc?.longitude,
@@ -469,32 +459,43 @@ const WorkerView = () => {
         },
       });
 
-      if (response.error) {
-        const errorResponse = response.response ?? (response.error as any)?.context;
-        const parsedError = await parseFunctionError(errorResponse);
-        const serverMessage =
-          (response.data as any)?.error ||
-          parsedError ||
-          response.error.message ||
-          "Error en clock";
-        throw new Error(serverMessage);
-      }
-
-      const result = response.data as {
-        timestamp?: string;
-        is_within_geofence?: boolean | null;
-        distance_meters?: number | null;
-      };
-      
-      await fetchStatus();
-
-      // Show success message based on action
       const messages: Record<ClockAction, string> = {
         in: '✓ Entrada registrada',
         out: '✓ Salida registrada',
         break_start: '☕ Pausa iniciada',
         break_end: '✓ Pausa finalizada',
       };
+
+      if (queueResult.queued) {
+        const queuedAt = queueResult.queuedItem?.clientEventTime || new Date().toISOString();
+        setLastEvent({ type: action, timestamp: queuedAt });
+        setIsOffline(true);
+        toast.success(`${messages[action]} (sin conexión)`, {
+          description: "Se enviará automáticamente cuando vuelvas a tener red.",
+        });
+        return;
+      }
+
+      if (!queueResult.ok) {
+        const err = queueResult.error;
+        const response = (err as any)?.response;
+        const parsedError = response ? await parseFunctionError(response) : null;
+        const serverMessage =
+          (queueResult.data as any)?.error ||
+          parsedError ||
+          (err instanceof Error ? err.message : null) ||
+          "Error en clock";
+        throw new Error(serverMessage);
+      }
+
+      const result = (queueResult.data ?? {}) as {
+        timestamp?: string;
+        is_within_geofence?: boolean | null;
+        distance_meters?: number | null;
+      };
+
+      setIsOffline(false);
+      await fetchStatus();
 
       const timestamp = result?.timestamp || new Date().toISOString();
       setLastEvent({ type: action, timestamp });
@@ -860,6 +861,7 @@ const WorkerView = () => {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+            <OfflineClockIndicator />
             {hasMultipleCompanies && <CompanySelector />}
             <NotificationBell />
             <Button variant="ghost" size="icon" onClick={signOut} className="hover-scale">
