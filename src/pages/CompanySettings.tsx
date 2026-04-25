@@ -27,7 +27,7 @@ import {
 import { toast } from "sonner";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { Copy, Loader2, MapPin, Nfc, Save, Shield, Timer } from "lucide-react";
+import { Loader2, MapPin, Save, Shield, Timer } from "lucide-react";
 import { GEOFENCE_RADIUS_METERS } from "@/config/geofence";
 import { BackButton } from "@/components/BackButton";
 import OwnerQuickNav from "@/components/OwnerQuickNav";
@@ -44,9 +44,6 @@ import {
 } from "@/lib/dayRules";
 
 const DEFAULT_CENTER: [number, number] = [40.4168, -3.7038]; // Madrid
-
-const siteOrigin = () =>
-  (import.meta.env.VITE_PUBLIC_SITE_URL || "").replace(/\/+$/, "") || window.location.origin;
 
 const markerIconInline = L.divIcon({
   className: "hq-marker",
@@ -595,23 +592,6 @@ const CompanySettings = () => {
     return w.full_name.toLowerCase().includes(term) || w.email.toLowerCase().includes(term);
   });
 
-  const nfcKioskUrl = useMemo(
-    () => (companyId ? `${siteOrigin()}/clock/${companyId}/nfc` : ""),
-    [companyId]
-  );
-
-  const copyCompanyId = () => {
-    if (!companyId) return;
-    void navigator.clipboard.writeText(companyId);
-    toast.success("ID de empresa copiado");
-  };
-
-  const copyNfcUrl = () => {
-    if (!nfcKioskUrl) return;
-    void navigator.clipboard.writeText(nfcKioskUrl);
-    toast.success("Enlace del kiosko NFC copiado");
-  };
-
   return (
     <AppLayout>
       <div>
@@ -678,56 +658,6 @@ const CompanySettings = () => {
         </Card>
 
         {companyId && <CompanyLegalInfoCard companyId={companyId} canEdit={canEdit} />}
-
-        {companyId && (
-          <Card className="glass-card p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-primary/10 text-primary rounded-xl flex items-center justify-center">
-                <Nfc className="w-6 h-6" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <h2 className="text-lg font-semibold">Kiosko NFC</h2>
-                <p className="text-sm text-muted-foreground">
-                  Identificador interno de esta empresa y enlace directo para el lector (no hace falta buscarlo en Supabase).
-                </p>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="company-uuid">ID de empresa (UUID)</Label>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Input
-                  id="company-uuid"
-                  readOnly
-                  value={companyId}
-                  className="font-mono text-sm"
-                />
-                <Button type="button" variant="outline" className="shrink-0" onClick={copyCompanyId}>
-                  <Copy className="w-4 h-4 mr-2" />
-                  Copiar ID
-                </Button>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="nfc-kiosk-url">URL del kiosko NFC</Label>
-              <div className="flex flex-col sm:flex-row gap-2">
-                <Input
-                  id="nfc-kiosk-url"
-                  readOnly
-                  value={nfcKioskUrl}
-                  className="font-mono text-xs sm:text-sm"
-                />
-                <Button type="button" variant="outline" className="shrink-0" onClick={copyNfcUrl}>
-                  <Copy className="w-4 h-4 mr-2" />
-                  Copiar enlace
-                </Button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Abre esta URL en el dispositivo del kiosko o úsala como marcador. Si usas otro dominio de producción, configura{" "}
-                <code className="rounded bg-muted px-1">VITE_PUBLIC_SITE_URL</code> para que el enlace coincida.
-              </p>
-            </div>
-          </Card>
-        )}
 
         <Card className="glass-card p-6 space-y-4">
           <div className="flex flex-col gap-2">
