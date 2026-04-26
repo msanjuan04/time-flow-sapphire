@@ -25,6 +25,7 @@ import {
   Ban,
   Loader2,
   Clock3,
+  FileText,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -54,6 +55,7 @@ import EmployeeInsights from "@/components/EmployeeInsights";
 import EmployeeVacationCard from "@/components/owner/EmployeeVacationCard";
 import { AppLayout } from "@/components/AppLayout";
 import VacationAssignment from "@/components/admin/VacationAssignment";
+import EmployeeCsvImport from "@/components/owner/EmployeeCsvImport";
 
 /* --------------------------- utilidades locales --------------------------- */
 const exportCSV = (filename: string, headers: string[], rows: (string | number)[][]) => {
@@ -154,6 +156,7 @@ const Employees = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleFilter>("all");
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const [csvImportOpen, setCsvImportOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
@@ -1037,6 +1040,17 @@ const getFunctionErrorMessage = async (error: unknown) => {
                 </Button>
                 <Button
                   size="sm"
+                  variant="outline"
+                  onClick={() => setCsvImportOpen(true)}
+                  className="hover-scale"
+                  disabled={inviteDisabled}
+                  title={inviteDisabled ? "Has alcanzado el máximo de empleados permitidos" : "Importar empleados desde CSV"}
+                >
+                  <FileText className="w-4 h-4 mr-2" />
+                  Importar CSV
+                </Button>
+                <Button
+                  size="sm"
                   onClick={() => setInviteDialogOpen(true)}
                   className="hover-scale"
                   disabled={inviteDisabled}
@@ -1388,6 +1402,18 @@ const getFunctionErrorMessage = async (error: unknown) => {
           onSuccess={handleInviteSuccess}
           slotsAvailable={planLimit === null ? null : displayRemainingSlots}
           planLimit={planLimit}
+        />
+      )}
+
+      {canManageInvites && (
+        <EmployeeCsvImport
+          open={csvImportOpen}
+          onOpenChange={setCsvImportOpen}
+          onImported={() => {
+            // refresca lista de empleados e invitaciones tras importar
+            fetchEmployees();
+            handleInviteSuccess?.();
+          }}
         />
       )}
 
