@@ -56,6 +56,7 @@ import EmployeeVacationCard from "@/components/owner/EmployeeVacationCard";
 import { AppLayout } from "@/components/AppLayout";
 import VacationAssignment from "@/components/admin/VacationAssignment";
 import EmployeeCsvImport from "@/components/owner/EmployeeCsvImport";
+import PrivateMap from "@/components/PrivateMap";
 
 /* --------------------------- utilidades locales --------------------------- */
 const exportCSV = (filename: string, headers: string[], rows: (string | number)[][]) => {
@@ -295,8 +296,8 @@ const Employees = () => {
   const [invitesError, setInvitesError] = useState<string | null>(null);
   const [inviteAction, setInviteAction] = useState<{ id: string; action: "resend" | "revoke" } | null>(null);
 
-  const mapSrc = (lat: number, lng: number, z = 15) =>
-    `https://maps.google.com/maps?q=${lat},${lng}&z=${z}&output=embed`;
+  // Privacy: we use OpenStreetMap tiles via Leaflet instead of Google Maps
+  // iframes so coordinates are not sent to Google as third party (RGPD).
 
   const fetchLastLocation = async (empId: string) => {
     if (!companyId) return null;
@@ -1304,17 +1305,12 @@ const getFunctionErrorMessage = async (error: unknown) => {
                           </HoverCardTrigger>
                           <HoverCardContent className="w-[240px]">
                             {locCache[employee.id] ? (
-                              <div className="rounded-md overflow-hidden">
-                                <iframe
-                                  title={`map-${employee.id}`}
-                                  src={mapSrc(locCache[employee.id]!.lat, locCache[employee.id]!.lng, 14)}
-                                  width="232"
-                                  height="150"
-                                  style={{ border: 0 }}
-                                  loading="lazy"
-                                  referrerPolicy="no-referrer-when-downgrade"
-                                />
-                              </div>
+                              <PrivateMap
+                                lat={locCache[employee.id]!.lat}
+                                lng={locCache[employee.id]!.lng}
+                                zoom={14}
+                                height={150}
+                              />
                             ) : (
                               <span className="text-xs text-muted-foreground">Sin ubicación registrada</span>
                             )}
@@ -1322,15 +1318,12 @@ const getFunctionErrorMessage = async (error: unknown) => {
                         </HoverCard>
 
                         {miniMapsEnabled && locCache[employee.id] && (
-                          <div className="mt-2 rounded-md overflow-hidden border">
-                            <iframe
-                              title={`row-map-${employee.id}`}
-                              src={mapSrc(locCache[employee.id]!.lat, locCache[employee.id]!.lng, 13)}
-                              width="220"
-                              height="140"
-                              style={{ border: 0 }}
-                              loading="lazy"
-                              referrerPolicy="no-referrer-when-downgrade"
+                          <div className="mt-2">
+                            <PrivateMap
+                              lat={locCache[employee.id]!.lat}
+                              lng={locCache[employee.id]!.lng}
+                              zoom={13}
+                              height={140}
                             />
                           </div>
                         )}

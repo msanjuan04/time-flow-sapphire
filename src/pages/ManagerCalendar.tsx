@@ -128,8 +128,7 @@ const ManagerCalendar = () => {
   const [endDate, setEndDate] = useState("");
   const [absenceReasonType, setAbsenceReasonType] = useState(DEFAULT_ABSENCE_REASON);
   const [absenceOtherReason, setAbsenceOtherReason] = useState("");
-  const mapSrc = (lat: number, lng: number, z = 15) =>
-    `https://maps.google.com/maps?q=${lat},${lng}&z=${z}&output=embed`;
+  // mapSrc removed (privacy): we no longer embed Google Maps iframes.
 
   const renderSourceBadge = (event: ManagerTimeEvent) => {
     const sourceLabel =
@@ -563,10 +562,42 @@ const ManagerCalendar = () => {
   };
 
   const handleDeleteEvent = async (id: string) => {
+    // Borrar un fichaje afecta al historial legal del trabajador y la
+    // empresa: la Inspección de Trabajo puede pedir el cómputo completo.
+    // Pedimos confirmación explícita y motivo, que queda en audit_logs.
+    const reason = window.prompt(
+      "ATENCIÓN: estás a punto de borrar un fichaje. Este cambio queda registrado en la auditoría y puede afectar al cómputo legal de horas del trabajador.\n\nIndica el MOTIVO de la eliminación (obligatorio):"
+    );
+    if (reason === null) return; // cancelled
+    if (!reason.trim()) {
+      toast.error("Debes indicar un motivo para borrar un fichaje");
+      return;
+    }
     try {
+      // Snapshot del evento antes de borrar para guardar en audit_logs
+      const { data: existing } = await supabase
+        .from("time_events")
+        .select("*")
+        .eq("id", id)
+        .maybeSingle();
+
       const { error } = await supabase.from("time_events").delete().eq("id", id);
       if (error) throw error;
-      toast.success("Evento eliminado");
+
+      // Registro en auditoría (si la tabla existe). Nunca debe romper el flujo.
+      try {
+        await (supabase as any).from("audit_logs").insert({
+          actor_user_id: user?.id ?? null,
+          action: "delete_time_event",
+          entity_type: "time_events",
+          entity_id: id,
+          diff: { before: existing, reason: reason.trim() },
+        });
+      } catch (auditErr) {
+        console.warn("audit_logs insert failed (non-blocking):", auditErr);
+      }
+
+      toast.success("Evento eliminado y registrado en auditoría");
       setTimeEvents((prev) => prev.filter((e) => e.id !== id));
       setSelectedDayEvents((prev) => prev.filter((e) => e.id !== id));
     } catch (error) {

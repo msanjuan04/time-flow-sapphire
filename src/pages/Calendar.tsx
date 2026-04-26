@@ -10,6 +10,7 @@ import { Calendar as CalendarIcon, Clock, AlertCircle, MapPin, ExternalLink, Che
 import { Calendar } from "@/components/ui/calendar";
 import CalendarDayIndicators, { DayStatusKey } from "@/components/CalendarDayIndicators";
 import { SPANISH_HOLIDAYS } from "@/data/spainHolidays";
+import PrivateMap from "@/components/PrivateMap";
 import { format, startOfMonth, endOfMonth, parse, parseISO, isSameDay, addMonths, subMonths } from "date-fns";
 import { es } from "date-fns/locale";
 import { toast } from "sonner";
@@ -112,8 +113,7 @@ const WorkerCalendar = () => {
     }
   }, [miniMapsEnabled]);
 
-  const mapSrc = (lat: number, lng: number, z = 15) =>
-    `https://maps.google.com/maps?q=${lat},${lng}&z=${z}&output=embed`;
+  // Privacy: OpenStreetMap via Leaflet (no third-party leak to Google).
 
   // Fetch solo al cambiar de MES (no de día) — evita 5 queries innecesarias por click
   useEffect(() => {
@@ -592,17 +592,12 @@ const WorkerCalendar = () => {
                                   </a>
                                 </HoverCardTrigger>
                                 <HoverCardContent className="w-[220px] p-2">
-                                  <div className="rounded-md overflow-hidden">
-                                    <iframe
-                                      title="map-preview"
-                                      src={mapSrc(event.latitude, event.longitude, 14)}
-                                      width="216"
-                                      height="140"
-                                      style={{ border: 0 }}
-                                      loading="lazy"
-                                      referrerPolicy="no-referrer-when-downgrade"
-                                    />
-                                  </div>
+                                  <PrivateMap
+                                    lat={event.latitude}
+                                    lng={event.longitude}
+                                    zoom={14}
+                                    height={140}
+                                  />
                                 </HoverCardContent>
                               </HoverCard>
                             </div>
@@ -612,17 +607,12 @@ const WorkerCalendar = () => {
 
                           {miniMapsEnabled && event.latitude && event.longitude && (
                             <div className="pt-2">
-                              <div className="rounded-md overflow-hidden border">
-                                <iframe
-                                  title={`mini-map-${event.id}`}
-                                  src={mapSrc(event.latitude, event.longitude, 14)}
-                                  width="100%"
-                                  height="140"
-                                  style={{ border: 0 }}
-                                  loading="lazy"
-                                  referrerPolicy="no-referrer-when-downgrade"
-                                />
-                              </div>
+                              <PrivateMap
+                                lat={event.latitude}
+                                lng={event.longitude}
+                                zoom={14}
+                                height={140}
+                              />
                             </div>
                           )}
                         </div>

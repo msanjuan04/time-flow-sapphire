@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Textarea } from "@/components/ui/textarea";
 import WorkerScheduleSection from "@/components/WorkerScheduleSection";
 import MyVacationWidget from "@/components/MyVacationWidget";
+import MyDataExport from "@/components/MyDataExport";
 import { OfflineClockIndicator } from "@/components/OfflineClockIndicator";
 import { invokeClockWithQueue } from "@/lib/offlineClockQueue";
 
@@ -1149,6 +1150,10 @@ const WorkerView = () => {
 
         {user?.id && companyId && (
           <MyVacationWidget userId={user.id} companyId={companyId} />
+        )}
+
+        {user?.id && companyId && (
+          <MyDataExport userId={user.id} companyId={companyId} />
         )}
 
         {/* Status Indicator */}
