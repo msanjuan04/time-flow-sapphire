@@ -6,6 +6,7 @@ import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { cn } from "@/lib/utils";
 import { invokeNfcWithQueue } from "@/lib/offlineNfcQueue";
 import { useOfflineNfcSync } from "@/hooks/useOfflineNfcSync";
+import { playKioskSound, primeKioskAudio } from "@/lib/kioskSounds";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -107,6 +108,7 @@ const ClockCompanyNfcPage = () => {
 
       // Caso 1: se ha encolado por falta de conexión
       if (result.queued) {
+        playKioskSound("queued");
         setScreen({ phase: "queued" });
         scheduleBackToWaiting();
         return;
@@ -118,6 +120,7 @@ const ClockCompanyNfcPage = () => {
           (result.error as any)?.message ||
           String(result.error || "Error de conexión.");
         busyRef.current = false;
+        playKioskSound("error");
         setScreen({ phase: "error_rpc", message: msg });
         return;
       }
@@ -126,20 +129,25 @@ const ClockCompanyNfcPage = () => {
         ok?: boolean;
         error?: string;
         nombre_completo?: string;
+        action?: string;
       };
 
       if (payload.error === "company_not_found") {
         setScreen({ phase: "invalid_company" });
         busyRef.current = false;
+        playKioskSound("error");
         return;
       }
 
       if (payload.ok === true) {
+        // Distinto sonido para entrada (ascendente) y salida (descendente)
+        playKioskSound(payload.action === "clock_out" ? "success_out" : "success_in");
         setScreen({ phase: "success", name: payload.nombre_completo?.trim() || "Trabajador" });
         scheduleBackToWaiting();
         return;
       }
 
+      playKioskSound("error");
       setScreen({ phase: "error_unknown" });
       scheduleBackToWaiting();
     },
@@ -172,7 +180,10 @@ const ClockCompanyNfcPage = () => {
   const kioskShell = (children: React.ReactNode) => (
     <div
       className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white flex flex-col items-center justify-center px-4 py-8 relative"
-      onPointerDown={() => keepFocus()}
+      onPointerDown={() => {
+        primeKioskAudio();
+        keepFocus();
+      }}
     >
       {/* Indicador de estado offline / cola pendiente — esquina superior derecha */}
       {(!online || pendingCount > 0) && (

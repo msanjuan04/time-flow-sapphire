@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
+import { playKioskSound, primeKioskAudio } from "@/lib/kioskSounds";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -113,13 +114,16 @@ const NfcClockPage = () => {
         }
         const name = pickEmployeeName(data);
         if (pickActionOut(data)) {
+          playKioskSound("success_out");
           setDisplay({ kind: "success_out", name });
         } else {
+          playKioskSound("success_in");
           setDisplay({ kind: "success_in", name });
         }
       } catch (err) {
         const msg =
           err instanceof Error ? err.message : typeof err === "string" ? err : "No se pudo registrar el fichaje.";
+        playKioskSound("error");
         setDisplay({ kind: "error", message: msg });
       } finally {
         inFlightRef.current = false;
@@ -132,6 +136,9 @@ const NfcClockPage = () => {
     if (!isPointIdValid) return;
 
     const handler = (e: KeyboardEvent) => {
+      // First key press counts as user gesture — unlock audio
+      primeKioskAudio();
+
       const phase = displayRef.current.kind;
       if (phase === "success_in" || phase === "success_out" || phase === "error") return;
       if (inFlightRef.current) return;
