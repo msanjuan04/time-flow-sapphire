@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { Nfc } from "lucide-react";
+import { Nfc, WifiOff, RefreshCw } from "lucide-react";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { cn } from "@/lib/utils";
+import { invokeNfcWithQueue } from "@/lib/offlineNfcQueue";
+import { useOfflineNfcSync } from "@/hooks/useOfflineNfcSync";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -14,6 +16,7 @@ type ScreenState =
   | { phase: "waiting" }
   | { phase: "processing" }
   | { phase: "success"; name: string }
+  | { phase: "queued" }
   | { phase: "error_unknown" }
   | { phase: "error_rpc"; message: string };
 
@@ -30,6 +33,8 @@ const ClockCompanyNfcPage = () => {
   const inputRef = useRef<HTMLInputElement>(null);
   const busyRef = useRef(false);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { pending, online, flushing, flushNow } = useOfflineNfcSync();
 
   const clearResetTimer = () => {
     if (resetTimerRef.current) {
@@ -98,21 +103,26 @@ const ClockCompanyNfcPage = () => {
       busyRef.current = true;
       setScreen({ phase: "processing" });
 
-      const { data, error } = await supabase.rpc("nfc_kiosk_clock" as any, {
-        p_company_id: companyId,
-        p_raw_uid: trimmed,
-      });
+      const result = await invokeNfcWithQueue(companyId, trimmed);
 
-      if (error) {
-        busyRef.current = false;
-        setScreen({
-          phase: "error_rpc",
-          message: error.message || "Error de conexión.",
-        });
+      // Caso 1: se ha encolado por falta de conexión
+      if (result.queued) {
+        setScreen({ phase: "queued" });
+        scheduleBackToWaiting();
         return;
       }
 
-      const payload = (data || {}) as {
+      // Caso 2: error de servidor (no de red)
+      if (!result.ok) {
+        const msg =
+          (result.error as any)?.message ||
+          String(result.error || "Error de conexión.");
+        busyRef.current = false;
+        setScreen({ phase: "error_rpc", message: msg });
+        return;
+      }
+
+      const payload = (result.data || {}) as {
         ok?: boolean;
         error?: string;
         nombre_completo?: string;
@@ -157,11 +167,36 @@ const ClockCompanyNfcPage = () => {
     }
   };
 
+  const pendingCount = pending.length;
+
   const kioskShell = (children: React.ReactNode) => (
     <div
-      className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white flex flex-col items-center justify-center px-4 py-8"
+      className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white flex flex-col items-center justify-center px-4 py-8 relative"
       onPointerDown={() => keepFocus()}
     >
+      {/* Indicador de estado offline / cola pendiente — esquina superior derecha */}
+      {(!online || pendingCount > 0) && (
+        <div className="absolute top-4 right-4 flex items-center gap-2">
+          {!online && (
+            <div className="flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-medium text-amber-200">
+              <WifiOff className="w-3.5 h-3.5" />
+              Sin conexión
+            </div>
+          )}
+          {pendingCount > 0 && (
+            <button
+              onClick={() => void flushNow()}
+              disabled={flushing || !online}
+              className="flex items-center gap-1.5 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-xs font-medium text-cyan-200 hover:bg-cyan-500/20 disabled:opacity-50"
+              title={`${pendingCount} fichaje${pendingCount === 1 ? "" : "s"} pendiente${pendingCount === 1 ? "" : "s"} de sincronizar`}
+            >
+              <RefreshCw className={cn("w-3.5 h-3.5", flushing && "animate-spin")} />
+              {pendingCount} pendiente{pendingCount === 1 ? "" : "s"}
+            </button>
+          )}
+        </div>
+      )}
+
       {children}
       {(screen.phase === "waiting" || screen.phase === "loading") && (
         <input
@@ -241,6 +276,18 @@ const ClockCompanyNfcPage = () => {
           <p className="text-7xl sm:text-8xl">✅</p>
           <p className="text-2xl sm:text-4xl font-bold text-emerald-400 leading-tight">
             Bienvenido, {screen.name}
+          </p>
+        </>
+      )}
+
+      {screen.phase === "queued" && (
+        <>
+          <p className="text-7xl sm:text-8xl">📡</p>
+          <p className="text-2xl sm:text-4xl font-bold text-amber-300 leading-tight">
+            Guardado sin conexión
+          </p>
+          <p className="text-base sm:text-xl text-amber-200/80">
+            Se sincronizará automáticamente cuando vuelva internet.
           </p>
         </>
       )}
