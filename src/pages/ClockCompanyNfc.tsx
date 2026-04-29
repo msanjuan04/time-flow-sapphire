@@ -16,7 +16,7 @@ type ScreenState =
   | { phase: "invalid_uuid" }
   | { phase: "waiting" }
   | { phase: "processing" }
-  | { phase: "success"; name: string }
+  | { phase: "success"; name: string; action: "clock_in" | "clock_out" }
   | { phase: "queued" }
   | { phase: "error_unknown" }
   | { phase: "error_rpc"; message: string };
@@ -140,9 +140,13 @@ const ClockCompanyNfcPage = () => {
       }
 
       if (payload.ok === true) {
-        // Distinto sonido para entrada (ascendente) y salida (descendente)
-        playKioskSound(payload.action === "clock_out" ? "success_out" : "success_in");
-        setScreen({ phase: "success", name: payload.nombre_completo?.trim() || "Trabajador" });
+        const action = payload.action === "clock_out" ? "clock_out" : "clock_in";
+        playKioskSound(action === "clock_out" ? "success_out" : "success_in");
+        setScreen({
+          phase: "success",
+          name: payload.nombre_completo?.trim() || "Trabajador",
+          action,
+        });
         scheduleBackToWaiting();
         return;
       }
@@ -284,9 +288,23 @@ const ClockCompanyNfcPage = () => {
 
       {screen.phase === "success" && (
         <>
-          <p className="text-7xl sm:text-8xl">✅</p>
-          <p className="text-2xl sm:text-4xl font-bold text-emerald-400 leading-tight">
-            Bienvenido, {screen.name}
+          <p className="text-7xl sm:text-8xl">
+            {screen.action === "clock_out" ? "👋" : "✅"}
+          </p>
+          <p
+            className={cn(
+              "text-2xl sm:text-4xl font-bold leading-tight",
+              screen.action === "clock_out" ? "text-rose-300" : "text-emerald-400"
+            )}
+          >
+            {screen.action === "clock_out"
+              ? `Hasta pronto, ${screen.name}`
+              : `Bienvenido, ${screen.name}`}
+          </p>
+          <p className="text-sm sm:text-lg text-slate-400">
+            {screen.action === "clock_out"
+              ? "Salida registrada correctamente"
+              : "Entrada registrada correctamente"}
           </p>
         </>
       )}
