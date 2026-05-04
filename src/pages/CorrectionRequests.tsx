@@ -49,6 +49,7 @@ import {
   isVacationAbsenceRequest,
 } from "@/lib/vacationGuard";
 import VacationBalanceBadge from "@/components/VacationBalanceBadge";
+import { getManagerScope, isManagerScopeEmpty } from "@/lib/managerScope";
 
 interface CorrectionPayload {
   event_type: string;
@@ -116,7 +117,19 @@ const CorrectionRequests = () => {
 
       if (isWorker) {
         query = query.eq("user_id", user?.id);
+      } else if (role === "manager" && user?.id && companyId) {
+        // Managers only see requests from people in their team/center scope
+        const scope = await getManagerScope(user.id, companyId);
+        if (isManagerScopeEmpty(scope)) {
+          // Manager con scope vacío: no ve nada hasta que el owner le asigne
+          // un equipo o centro.
+          setRequests([]);
+          setLoading(false);
+          return;
+        }
+        query = query.in("user_id", scope.userIds);
       }
+      // owner/admin: sin filtro adicional, ven toda la empresa.
 
       const { data, error } = await query;
 
