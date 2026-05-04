@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
+import { getManagerScope, isManagerScopeEmpty } from "@/lib/managerScope";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -36,12 +37,26 @@ const ReviewSessionsPage = () => {
     const baseSelect =
       "id, user_id, clock_in_time, clock_out_time, review_status, status, is_corrected";
 
-    const { data, error } = await supabase
+    // Manager scope: si es manager, restringe las sesiones a su equipo/centro
+    let scopeIds: string[] | null = null;
+    if (role === "manager" && user?.id) {
+      const scope = await getManagerScope(user.id, companyId);
+      if (isManagerScopeEmpty(scope)) {
+        setSessions([]);
+        setLoading(false);
+        return;
+      }
+      scopeIds = scope.userIds;
+    }
+
+    let baseQuery = supabase
       .from("work_sessions")
       .select(baseSelect)
       .eq("company_id", companyId)
       .or("review_status.eq.exceeded_limit,review_status.eq.pending_review,review_status.is.null,status.eq.auto_closed")
       .order("clock_in_time", { ascending: true });
+    if (scopeIds !== null) baseQuery = baseQuery.in("user_id", scopeIds);
+    const { data, error } = await baseQuery;
 
     if (error) {
       console.error("Error loading sessions to review", error);
@@ -51,11 +66,13 @@ const ReviewSessionsPage = () => {
 
     let rows = (data as WorkSessionReview[]) ?? [];
     if (!rows.length) {
-      const { data: all } = await supabase
+      let allQuery = supabase
         .from("work_sessions")
         .select(baseSelect)
         .eq("company_id", companyId)
         .order("clock_in_time", { ascending: true });
+      if (scopeIds !== null) allQuery = allQuery.in("user_id", scopeIds);
+      const { data: all } = await allQuery;
       const pending =
         (all as WorkSessionReview[])?.filter((row) => {
           const pendingStatuses = ["exceeded_limit", "pending_review"];
