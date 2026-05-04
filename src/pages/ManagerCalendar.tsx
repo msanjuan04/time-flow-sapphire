@@ -1,6 +1,7 @@
 import { AppLayout } from "@/components/AppLayout";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useMembership } from "@/hooks/useMembership";
+import { getManagerScope, isManagerScopeEmpty } from "@/lib/managerScope";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
@@ -91,7 +92,7 @@ interface DayOverview {
 }
 
 const ManagerCalendar = () => {
-  const { membership, loading: membershipLoading } = useMembership();
+  const { membership, loading: membershipLoading, role } = useMembership();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [date, setDate] = useState<Date | undefined>(new Date());
@@ -271,24 +272,35 @@ const ManagerCalendar = () => {
     const start = `${dateStr}T00:00:00`;
     const end = `${dateStr}T23:59:59`;
 
+    // Scope: si es manager, restringe a employees ya filtrados; si owner/admin, sin restricción.
+    const scopeIds = role === "manager" ? employees.map((e) => e.id) : null;
+    if (scopeIds !== null && scopeIds.length === 0) {
+      setTeamDayOverview({});
+      return;
+    }
+
     try {
+      const sessionsQ = supabase
+        .from("work_sessions")
+        .select("user_id, clock_in_time, clock_out_time, total_work_duration")
+        .eq("company_id", membership.company_id)
+        .gte("clock_in_time", start)
+        .lte("clock_in_time", end);
+      const scheduledQ = supabase
+        .from("scheduled_hours")
+        .select("user_id, expected_hours")
+        .eq("company_id", membership.company_id)
+        .eq("date", dateStr);
+      const absencesQ = supabase
+        .from("absences")
+        .select("user_id, start_date, end_date, absence_type, status")
+        .eq("company_id", membership.company_id)
+        .or(`and(start_date.lte.${dateStr},end_date.gte.${dateStr})`);
+
       const [sessionsRes, scheduledRes, absencesRes] = await Promise.all([
-        supabase
-          .from("work_sessions")
-          .select("user_id, clock_in_time, clock_out_time, total_work_duration")
-          .eq("company_id", membership.company_id)
-          .gte("clock_in_time", start)
-          .lte("clock_in_time", end),
-        supabase
-          .from("scheduled_hours")
-          .select("user_id, expected_hours")
-          .eq("company_id", membership.company_id)
-          .eq("date", dateStr),
-        supabase
-          .from("absences")
-          .select("user_id, start_date, end_date, absence_type, status")
-          .eq("company_id", membership.company_id)
-          .or(`and(start_date.lte.${dateStr},end_date.gte.${dateStr})`),
+        scopeIds !== null ? sessionsQ.in("user_id", scopeIds) : sessionsQ,
+        scopeIds !== null ? scheduledQ.in("user_id", scopeIds) : scheduledQ,
+        scopeIds !== null ? absencesQ.in("user_id", scopeIds) : absencesQ,
       ]);
 
       if (sessionsRes.error || scheduledRes.error || absencesRes.error) {
@@ -355,7 +367,7 @@ const ManagerCalendar = () => {
       console.error("Error fetching day overview:", error);
       setTeamDayOverview({});
     }
-  }, [membership, date]);
+  }, [membership, date, role, employees]);
 
   useEffect(() => {
     fetchTeamDayOverview();
@@ -401,7 +413,22 @@ const ManagerCalendar = () => {
       if (membershipsError) throw membershipsError;
 
       if (memberships && memberships.length > 0) {
-        const userIds = memberships.map((m) => m.user_id);
+        let userIds = memberships.map((m) => m.user_id);
+
+        // Si el rol es manager, restringir empleados al scope (su equipo/centro)
+        if (role === "manager" && user?.id) {
+          const scope = await getManagerScope(user.id, membership.company_id);
+          if (isManagerScopeEmpty(scope)) {
+            setEmployees([]);
+            return;
+          }
+          userIds = userIds.filter((id) => scope.userIds.includes(id));
+          if (userIds.length === 0) {
+            setEmployees([]);
+            return;
+          }
+        }
+
         const { data: profiles, error: profilesError } = await supabase
           .from("profiles")
           .select("id, full_name, email")
