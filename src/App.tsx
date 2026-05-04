@@ -49,6 +49,7 @@ const ClockCompanyNfcPage = lazy(() => import("./pages/ClockCompanyNfc"));
 const NotificationsPage = lazy(() => import("./pages/Notifications"));
 const LegalDocumentsPage = lazy(() => import("./pages/Owner/LegalDocuments"));
 const VerifyPage = lazy(() => import("./pages/Verify"));
+const OrganizationPage = lazy(() => import("./pages/Owner/Organization"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -288,6 +289,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["owner", "admin"]}>
                   <LegalDocumentsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/owner/organization"
+              element={
+                <ProtectedRoute allowedRoles={["owner", "admin"]}>
+                  <OrganizationPage />
                 </ProtectedRoute>
               }
             />

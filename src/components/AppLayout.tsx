@@ -12,6 +12,7 @@ import {
   Settings,
   AlertTriangle,
   FileText,
+  Building2,
   LogOut,
   type LucideIcon,
 } from "lucide-react";
@@ -57,6 +58,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { icon: Calendar,        label: "Calendario",   path: "/manager-calendar" },
     { icon: AlertTriangle,   label: "Incidencias",  path: "/incidents" },
     { icon: MapPin,          label: "Ausencias",    path: "/absences" },
+    { icon: Building2,       label: "Organización", path: "/owner/organization" },
     { icon: Settings,        label: "Ajustes",      path: "/company-settings" },
     { icon: FileText,        label: "Documentos",   path: "/owner/legal-documents" },
     { icon: Clock,           label: "Mi ficha",     path: "/me/clock" },
