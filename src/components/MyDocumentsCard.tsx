@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import html2pdf from "html2pdf.js";
+import { buildSignedAcceptancePdfHtml } from "@/lib/pdfTemplates";
 
 interface Props {
   userId: string;
@@ -155,34 +157,50 @@ export function MyDocumentsCard({ userId, companyId }: Props) {
     }
   };
 
-  const handleDownloadSignature = (sig: SignatureRow) => {
-    const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>${sig.document_title}</title>
-<style>
-  body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1f2937; }
-  h1 { font-size: 18px; }
-  .meta { background: #f3f4f6; padding: 12px; border-radius: 8px; font-size: 12px; line-height: 1.6; }
-  .signature { border: 1px solid #d1d5db; padding: 16px; margin-top: 24px; border-radius: 8px; }
-  .hash { font-family: monospace; font-size: 10px; word-break: break-all; }
-</style></head><body>
-<h1>${sig.document_title}</h1>
-<div class="meta">
-  <strong>Firmado el:</strong> ${fmtDate(sig.signed_at)}<br/>
-  <strong>Hash SHA-256:</strong> <span class="hash">${sig.document_hash}</span>
-</div>
-<div>${sig.document_html}</div>
-<div class="signature">
-  <p><strong>Mi firma:</strong></p>
-  <img src="${sig.signature_image}" alt="Firma" style="max-width: 320px;" />
-</div>
-</body></html>`;
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `firma-${sig.document_type}-${sig.signed_at.slice(0, 10)}.html`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const handleDownloadSignature = async (sig: SignatureRow) => {
+    const t = toast.loading("Generando PDF…");
+    try {
+      // Resolver datos del firmante para enriquecer el PDF
+      const [profileRes, companyRes] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("full_name, email, dni")
+          .eq("id", userId)
+          .maybeSingle(),
+        supabase.from("companies").select("name").eq("id", companyId).maybeSingle(),
+      ]);
+      const profile = (profileRes.data || {}) as any;
+      const company = (companyRes.data || {}) as any;
+
+      const html = buildSignedAcceptancePdfHtml({
+        companyName: company?.name || "Empresa",
+        fullName: profile?.full_name || profile?.email || "Trabajador",
+        dni: profile?.dni ?? null,
+        documentTitle: sig.document_title,
+        documentHtml: sig.document_html,
+        signatureImage: sig.signature_image,
+        signedAt: sig.signed_at,
+        documentHash: sig.document_hash,
+      });
+
+      const filename = `firma-${sig.document_type}-${sig.signed_at.slice(0, 10)}.pdf`;
+      await html2pdf()
+        .set({
+          margin: 10,
+          filename,
+          image: { type: "jpeg", quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          pagebreak: { mode: ["css", "legacy"] },
+        })
+        .from(html)
+        .save();
+
+      toast.success("PDF descargado", { id: t });
+    } catch (err: any) {
+      console.error("Signature PDF error:", err);
+      toast.error(err?.message || "No se pudo generar el PDF", { id: t });
+    }
   };
 
   return (

@@ -4,20 +4,14 @@ import { Card } from "@/components/ui/card";
 import { Download, Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import html2pdf from "html2pdf.js";
+import { buildRgpdExportHtml } from "@/lib/pdfTemplates";
 
 interface Props {
   userId: string;
   companyId: string;
 }
 
-/**
- * Worker-facing GDPR data export button (art. 15 RGPD — derecho de acceso).
- *
- * Generates a JSON file with all the personal data the company holds about
- * the worker: profile, work sessions, time events (with location), absences,
- * approved adjustments, correction requests and notifications. Machine
- * readable per art. 20 (portabilidad).
- */
 export function MyDataExport({ userId, companyId }: Props) {
   const [exporting, setExporting] = useState(false);
 
@@ -26,8 +20,6 @@ export function MyDataExport({ userId, companyId }: Props) {
     setExporting(true);
     const t = toast.loading("Recopilando tus datos…");
     try {
-      // Run all queries in parallel — each one is RLS-protected to the user's
-      // own rows so the worker can only read their own data.
       const [
         profileRes,
         sessionsRes,
@@ -36,13 +28,9 @@ export function MyDataExport({ userId, companyId }: Props) {
         approvedRes,
         requestsRes,
         notificationsRes,
-        membershipRes,
+        companyRes,
       ] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", userId)
-          .maybeSingle(),
+        supabase.from("profiles").select("*").eq("id", userId).maybeSingle(),
         supabase
           .from("work_sessions")
           .select("*")
@@ -80,44 +68,44 @@ export function MyDataExport({ userId, companyId }: Props) {
           .eq("company_id", companyId)
           .order("created_at", { ascending: false })
           .limit(500),
-        supabase
-          .from("memberships")
-          .select("*")
-          .eq("user_id", userId)
-          .eq("company_id", companyId),
+        supabase.from("companies").select("name").eq("id", companyId).maybeSingle(),
       ]);
 
-      const dump = {
-        meta: {
-          generated_at: new Date().toISOString(),
-          user_id: userId,
-          company_id: companyId,
-          legal_basis:
-            "Art. 15 RGPD (derecho de acceso) y art. 20 RGPD (portabilidad). Datos exportados por el propio interesado desde GTIQ.",
-          notes:
-            "Este archivo contiene TODOS los datos personales que GTIQ almacena sobre ti en esta empresa, incluidas coordenadas GPS de fichajes si las autorizaste en su día.",
+      const profile = (profileRes.data || {}) as any;
+      const html = buildRgpdExportHtml({
+        generatedAt: new Date().toISOString(),
+        companyName: (companyRes.data as any)?.name || "Empresa",
+        worker: {
+          fullName: profile?.full_name || profile?.email || "Trabajador",
+          email: profile?.email || "—",
+          dni: profile?.dni ?? null,
+          phone: profile?.phone ?? null,
+          hireDate: profile?.hire_date ?? null,
         },
-        profile: profileRes.data || null,
-        membership: membershipRes.data || [],
-        work_sessions: sessionsRes.data || [],
-        time_events: eventsRes.data || [],
+        workSessions: sessionsRes.data || [],
+        timeEvents: eventsRes.data || [],
         absences: absencesRes.data || [],
-        approved_absences: approvedRes.data || [],
-        correction_requests: requestsRes.data || [],
+        approvedAbsences: approvedRes.data || [],
+        correctionRequests: requestsRes.data || [],
         notifications: notificationsRes.data || [],
-      };
+      });
 
-      const json = JSON.stringify(dump, null, 2);
-      const blob = new Blob([json], { type: "application/json;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
       const today = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `mis-datos-gtiq-${today}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const filename = `mis-datos-gtiq-${today}.pdf`;
 
-      toast.success("Tus datos han sido descargados", { id: t });
+      await html2pdf()
+        .set({
+          margin: 10,
+          filename,
+          image: { type: "jpeg", quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          pagebreak: { mode: ["css", "legacy"] },
+        })
+        .from(html)
+        .save();
+
+      toast.success("Tus datos se han descargado en PDF", { id: t });
     } catch (err: any) {
       console.error("MyDataExport error:", err);
       toast.error(err?.message || "No se pudieron exportar los datos", { id: t });
@@ -135,9 +123,9 @@ export function MyDataExport({ userId, companyId }: Props) {
         <div className="flex-1 min-w-0">
           <p className="text-sm font-semibold">Mis datos personales (RGPD)</p>
           <p className="text-xs text-muted-foreground">
-            Descarga todos los datos que esta empresa almacena sobre ti
-            (perfil, fichajes, ausencias, ubicaciones). Derecho garantizado
-            por el art. 15 del RGPD.
+            Descarga en PDF todos los datos que esta empresa almacena sobre ti
+            (perfil, fichajes, ausencias, ubicaciones). Derecho garantizado por
+            el art. 15 del RGPD.
           </p>
         </div>
         <Button

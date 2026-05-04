@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import html2pdf from "html2pdf.js";
+import { buildSignedAcceptancePdfHtml } from "@/lib/pdfTemplates";
 
 interface Acceptance {
   id: string;
@@ -99,44 +101,48 @@ export function SignedAcceptancesViewer({ companyId }: Props) {
     void load();
   }, [load]);
 
-  const downloadAsHtml = (a: Acceptance) => {
-    const profile = profiles[a.user_id];
-    const fullName = a.full_name_snapshot || profile?.full_name || profile?.email || "—";
-    const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>${a.document_title}</title>
-<style>
-  body { font-family: -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; color: #1f2937; }
-  h1 { font-size: 18px; }
-  .meta { background: #f3f4f6; padding: 12px; border-radius: 8px; font-size: 12px; line-height: 1.6; }
-  .signature { border: 1px solid #d1d5db; padding: 16px; margin-top: 24px; border-radius: 8px; }
-  .hash { font-family: monospace; font-size: 10px; word-break: break-all; }
-</style></head><body>
-<h1>${a.document_title}</h1>
-<div class="meta">
-  <strong>Trabajador/a:</strong> ${fullName}<br/>
-  ${a.dni_snapshot ? `<strong>DNI:</strong> ${a.dni_snapshot}<br/>` : ""}
-  <strong>Firmado el:</strong> ${fmt(a.signed_at)}<br/>
-  ${a.geo_lat ? `<strong>Ubicación:</strong> ${a.geo_lat}, ${a.geo_lng}<br/>` : ""}
-  <strong>Hash SHA-256:</strong> <span class="hash">${a.document_hash}</span>
-</div>
-<div>${a.document_html}</div>
-<div class="signature">
-  <p><strong>Firma del trabajador/a:</strong></p>
-  <img src="${a.signature_image}" alt="Firma" style="max-width: 320px;" />
-</div>
-<p style="margin-top:32px; font-size: 11px; color: #6b7280;">
-  Documento generado por GTIQ. La autenticidad se verifica recalculando el
-  hash SHA-256 del contenido y comparándolo con el registrado en la base de
-  datos en el momento de la firma.
-</p>
-</body></html>`;
-    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a2 = document.createElement("a");
-    a2.href = url;
-    a2.download = `firma-${a.document_type}-${a.signed_at.slice(0, 10)}.html`;
-    a2.click();
-    URL.revokeObjectURL(url);
+  const downloadAsPdf = async (a: Acceptance) => {
+    const t = toast.loading("Generando PDF…");
+    try {
+      const profile = profiles[a.user_id];
+      const fullName = a.full_name_snapshot || profile?.full_name || profile?.email || "—";
+
+      const { data: company } = await supabase
+        .from("companies")
+        .select("name")
+        .eq("id", companyId)
+        .maybeSingle();
+
+      const html = buildSignedAcceptancePdfHtml({
+        companyName: (company as any)?.name || "Empresa",
+        fullName,
+        dni: a.dni_snapshot ?? null,
+        documentTitle: a.document_title,
+        documentHtml: a.document_html,
+        signatureImage: a.signature_image,
+        signedAt: a.signed_at,
+        documentHash: a.document_hash,
+        geo: a.geo_lat && a.geo_lng ? { lat: Number(a.geo_lat), lng: Number(a.geo_lng) } : null,
+      });
+
+      const filename = `firma-${a.document_type}-${a.signed_at.slice(0, 10)}.pdf`;
+      await html2pdf()
+        .set({
+          margin: 10,
+          filename,
+          image: { type: "jpeg", quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          pagebreak: { mode: ["css", "legacy"] },
+        })
+        .from(html)
+        .save();
+
+      toast.success("PDF descargado", { id: t });
+    } catch (err: any) {
+      console.error("Acceptance PDF error:", err);
+      toast.error(err?.message || "No se pudo generar el PDF", { id: t });
+    }
   };
 
   return (
@@ -207,7 +213,7 @@ export function SignedAcceptancesViewer({ companyId }: Props) {
                         <Button variant="ghost" size="sm" onClick={() => setViewing(r)} title="Ver firma">
                           <Eye className="w-3.5 h-3.5" />
                         </Button>
-                        <Button variant="ghost" size="sm" onClick={() => downloadAsHtml(r)} title="Descargar HTML">
+                        <Button variant="ghost" size="sm" onClick={() => void downloadAsPdf(r)} title="Descargar PDF">
                           <Download className="w-3.5 h-3.5" />
                         </Button>
                       </td>
