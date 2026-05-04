@@ -1,6 +1,6 @@
 import { AppLayout } from "@/components/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,6 +82,14 @@ const CorrectionRequests = () => {
   const [loading, setLoading] = useState(false);
   const [showNewRequest, setShowNewRequest] = useState(false);
 
+  // Filtros visuales (solo para owner/admin/manager — para acotar la lista)
+  const [centers, setCenters] = useState<{ id: string; name: string }[]>([]);
+  const [teams, setTeams] = useState<{ id: string; name: string; center_id: string | null }[]>([]);
+  const [profilesScope, setProfilesScope] = useState<Record<string, { team_id: string | null; center_id: string | null }>>({});
+  const [filterCenter, setFilterCenter] = useState<string>("all");
+  const [filterTeam, setFilterTeam] = useState<string>("all");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
+
   // Form state for new request
   const [requestDate, setRequestDate] = useState("");
   const [requestTime, setRequestTime] = useState("");
@@ -90,6 +98,22 @@ const CorrectionRequests = () => {
 
   const isWorker = role === "worker";
   const canManage = role === "owner" || role === "admin" || role === "manager";
+
+  // Lista filtrada según los selectores visuales (centro/equipo/estado)
+  const displayedRequests = useMemo(() => {
+    return requests.filter((r) => {
+      if (filterStatus !== "all" && r.status !== filterStatus) return false;
+      if (filterCenter !== "all") {
+        const scope = profilesScope[r.user_id];
+        if (!scope || scope.center_id !== filterCenter) return false;
+      }
+      if (filterTeam !== "all") {
+        const scope = profilesScope[r.user_id];
+        if (!scope || scope.team_id !== filterTeam) return false;
+      }
+      return true;
+    });
+  }, [requests, filterStatus, filterCenter, filterTeam, profilesScope]);
 
   useEffect(() => {
     if (!membershipLoading) {
@@ -103,8 +127,19 @@ const CorrectionRequests = () => {
         return;
       }
       fetchRequests();
+      // También cargamos centros y equipos para filtros visuales
+      if (canManage) {
+        void (async () => {
+          const [centersRes, teamsRes] = await Promise.all([
+            supabase.from("centers").select("id, name").eq("company_id", companyId).order("name"),
+            supabase.from("teams").select("id, name, center_id").eq("company_id", companyId).order("name"),
+          ]);
+          setCenters((centersRes.data as any[]) || []);
+          setTeams((teamsRes.data as any[]) || []);
+        })();
+      }
     }
-  }, [companyId, user, membershipLoading, navigate]);
+  }, [companyId, user, membershipLoading, navigate, canManage]);
 
   const fetchRequests = async () => {
     setLoading(true);
@@ -139,17 +174,20 @@ const CorrectionRequests = () => {
       const userIds = Array.from(new Set(requestsData.map((item) => item.user_id).filter(Boolean)));
 
       let profilesMap: Record<string, { full_name: string | null; email: string | null }> = {};
+      const scopeMap: Record<string, { team_id: string | null; center_id: string | null }> = {};
       if (userIds.length > 0) {
         const { data: profilesData } = await supabase
           .from("profiles")
-          .select("id, full_name, email")
+          .select("id, full_name, email, team_id, center_id")
           .in("id", userIds);
 
-        profilesMap = (profilesData || []).reduce((acc, profile) => {
+        profilesMap = (profilesData || []).reduce((acc, profile: any) => {
           acc[profile.id] = { full_name: profile.full_name, email: profile.email };
+          scopeMap[profile.id] = { team_id: profile.team_id ?? null, center_id: profile.center_id ?? null };
           return acc;
         }, {} as Record<string, { full_name: string | null; email: string | null }>);
       }
+      setProfilesScope(scopeMap);
 
       setRequests(
         requestsData.map((item) => ({
@@ -539,9 +577,66 @@ const CorrectionRequests = () => {
 
         {/* Requests Table */}
         <Card className="glass-card p-6">
-          <h2 className="text-xl font-semibold mb-4">
-            {canManage ? "Avisos/Solicitudes" : "Mis avisos y solicitudes"}
-          </h2>
+          <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+            <h2 className="text-xl font-semibold">
+              {canManage ? "Avisos/Solicitudes" : "Mis avisos y solicitudes"}
+            </h2>
+            {canManage && (
+              <div className="flex flex-wrap items-end gap-2">
+                <div>
+                  <Label htmlFor="f-status" className="text-xs">Estado</Label>
+                  <Select value={filterStatus} onValueChange={setFilterStatus}>
+                    <SelectTrigger id="f-status" className="w-[150px] h-9">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Todos</SelectItem>
+                      <SelectItem value="pending">Pendientes</SelectItem>
+                      <SelectItem value="approved">Aprobadas</SelectItem>
+                      <SelectItem value="rejected">Rechazadas</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {centers.length > 0 && (
+                  <div>
+                    <Label htmlFor="f-center" className="text-xs">Centro</Label>
+                    <Select
+                      value={filterCenter}
+                      onValueChange={(v) => { setFilterCenter(v); setFilterTeam("all"); }}
+                    >
+                      <SelectTrigger id="f-center" className="w-[170px] h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los centros</SelectItem>
+                        {centers.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {teams.length > 0 && (
+                  <div>
+                    <Label htmlFor="f-team" className="text-xs">Equipo</Label>
+                    <Select value={filterTeam} onValueChange={setFilterTeam}>
+                      <SelectTrigger id="f-team" className="w-[170px] h-9">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Todos los equipos</SelectItem>
+                        {teams
+                          .filter((t) => filterCenter === "all" || t.center_id === filterCenter)
+                          .map((t) => (
+                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
@@ -574,8 +669,17 @@ const CorrectionRequests = () => {
                       No hay solicitudes
                     </TableCell>
                   </TableRow>
+                ) : displayedRequests.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={canManage ? 7 : 6}
+                      className="text-center text-muted-foreground py-8"
+                    >
+                      No hay solicitudes que coincidan con los filtros
+                    </TableCell>
+                  </TableRow>
                 ) : (
-                  requests.map((request) => (
+                  displayedRequests.map((request) => (
                     <TableRow
                       key={request.id}
                       className="smooth-transition hover:bg-secondary/50"
