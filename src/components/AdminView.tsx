@@ -8,6 +8,7 @@ import { useMembership } from "@/hooks/useMembership";
 import { useNavigate } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import OwnerQuickNav from "@/components/OwnerQuickNav";
+import { getManagerScope, isManagerScopeEmpty } from "@/lib/managerScope";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -50,7 +51,7 @@ const DASHBOARD_REFRESH_MS = 60000;
 
 const AdminView = () => {
   const { signOut, user } = useAuth();
-  const { companyId, membership, loading: membershipLoading } = useMembership();
+  const { companyId, membership, loading: membershipLoading, role } = useMembership();
   const navigate = useNavigate();
   const [stats, setStats] = useState({
     activeUsers: 0,
@@ -62,6 +63,8 @@ const AdminView = () => {
   const [recentEvents, setRecentEvents] = useState<RecentEvent[]>([]);
   const [weeklyData, setWeeklyData] = useState<DailyStats[]>([]);
   const [loading, setLoading] = useState(true);
+  // Manager scope: si es 'manager', el dashboard se restringe a su equipo
+  const [scopeUserIds, setScopeUserIds] = useState<string[] | null>(null);
   const [companyStatus, setCompanyStatus] = useState<string>("active");
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -143,30 +146,43 @@ const AdminView = () => {
     const todayIso = startOfToday.toISOString();
     const weekIso = startOfWeek.toISOString();
 
+    // Helper para aplicar filtro de scope (solo si es manager con scope)
+    const applyScope = <T extends { in: (col: string, vals: any[]) => T; eq: (col: string, val: any) => T }>(q: T): T => {
+      if (scopeUserIds === null) return q;
+      if (scopeUserIds.length === 0) return q.eq("user_id", "00000000-0000-0000-0000-000000000000");
+      return q.in("user_id", scopeUserIds);
+    };
+
     // ── 4 queries en paralelo (antes eran 5 secuenciales) ──
     const [activeResult, checkInsResult, incidentsResult, weekSessionsResult] = await Promise.all([
-      supabase
-        .from("work_sessions")
-        .select("*", { count: "exact", head: true })
-        .eq("company_id", companyId)
-        .eq("is_active", true),
-      supabase
-        .from("time_events")
-        .select("*", { count: "exact", head: true })
-        .eq("company_id", companyId)
-        .eq("event_type", "clock_in")
-        .gte("event_time", todayIso),
+      applyScope(
+        supabase
+          .from("work_sessions")
+          .select("*", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("is_active", true)
+      ),
+      applyScope(
+        supabase
+          .from("time_events")
+          .select("*", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("event_type", "clock_in")
+          .gte("event_time", todayIso)
+      ),
       supabase
         .from("incidents")
         .select("*", { count: "exact", head: true })
         .eq("company_id", companyId)
         .gte("created_at", weekIso),
       // Week sessions: today es un subconjunto → 1 query basta para ambos
-      supabase
-        .from("work_sessions")
-        .select("clock_in_time, clock_out_time, total_pause_duration")
-        .eq("company_id", companyId)
-        .gte("clock_in_time", weekIso),
+      applyScope(
+        supabase
+          .from("work_sessions")
+          .select("clock_in_time, clock_out_time, total_pause_duration")
+          .eq("company_id", companyId)
+          .gte("clock_in_time", weekIso)
+      ),
     ]);
 
     if (activeResult.error) throw activeResult.error;
@@ -187,7 +203,7 @@ const AdminView = () => {
       totalHoursToday: calculateTotalHours(todaySessions),
       totalHoursWeek: calculateTotalHours(weekSessions),
     });
-  }, [companyId]);
+  }, [companyId, scopeUserIds]);
 
   const fetchWeeklyData = useCallback(async () => {
     if (!companyId) return;
@@ -416,6 +432,24 @@ const AdminView = () => {
     };
     fetchLogo();
   }, [companyId, membership?.company?.logo_url]);
+
+  // Manager scope loader: solo cuando role === 'manager'
+  useEffect(() => {
+    if (!companyId || !user?.id) return;
+    if (role !== "manager") {
+      setScopeUserIds(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const scope = await getManagerScope(user.id, companyId);
+      if (cancelled) return;
+      setScopeUserIds(isManagerScopeEmpty(scope) ? [] : scope.userIds);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [companyId, user?.id, role]);
 
   useEffect(() => {
     if (!companyId) return;

@@ -52,6 +52,7 @@ import OwnerIndividualReports from "@/components/OwnerIndividualReports";
 import { Checkbox } from "@/components/ui/checkbox";
 import CertifiedReportButton from "@/components/CertifiedReportButton";
 import SignedReportsHistory from "@/components/SignedReportsHistory";
+import { getManagerScope, isManagerScopeEmpty } from "@/lib/managerScope";
 
 interface EmployeeStats {
   user_id: string;
@@ -844,6 +845,8 @@ const Reports = () => {
   const [employeeStats, setEmployeeStats] = useState<EmployeeStats[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
   const [teams, setTeams] = useState<{ id: string; name: string; center_id: string | null }[]>([]);
+  // Manager scope: si el rol es 'manager', restringe a sus equipos/centros
+  const [managerScopeUserIds, setManagerScopeUserIds] = useState<string[] | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [sessionsRaw, setSessionsRaw] = useState<SessionLike[]>([]);
   const [geoAddressCache, setGeoAddressCache] = useState<Record<string, string>>({});
@@ -1195,7 +1198,7 @@ const Reports = () => {
     if (companyId) {
       fetchReportData();
     }
-  }, [companyId, startDate, endDate, selectedCenter, selectedTeam, selectedEmployee, onlyPendingReview]);
+  }, [companyId, startDate, endDate, selectedCenter, selectedTeam, selectedEmployee, onlyPendingReview, managerScopeUserIds]);
 
   useEffect(() => {
     if (companyId) {
@@ -1296,6 +1299,19 @@ const Reports = () => {
 
     setTeams(teamsData || []);
 
+    // Compute manager scope: only relevant when role is 'manager'.
+    // owner/admin see everything (managerScopeUserIds = null).
+    if (role === "manager" && user?.id) {
+      const scope = await getManagerScope(user.id, companyId);
+      if (isManagerScopeEmpty(scope)) {
+        setManagerScopeUserIds([]); // no scope → no data
+      } else {
+        setManagerScopeUserIds(scope.userIds);
+      }
+    } else {
+      setManagerScopeUserIds(null);
+    }
+
     // Fetch employees
     const { data: employeesData } = await supabase
       .from("profiles")
@@ -1347,6 +1363,16 @@ const Reports = () => {
         query = query.eq("user_id", selectedEmployee);
       }
 
+      // Manager scope: restrict to users in their teams/centers
+      if (managerScopeUserIds !== null) {
+        if (managerScopeUserIds.length === 0) {
+          // Manager sin scope asignado → ninguna sesión
+          query = query.eq("user_id", "00000000-0000-0000-0000-000000000000");
+        } else {
+          query = query.in("user_id", managerScopeUserIds);
+        }
+      }
+
       if (onlyPendingReview) {
         query = query.or(
           "review_status.eq.exceeded_limit,review_status.eq.pending_review,review_status.is.null,status.eq.auto_closed"
@@ -1374,6 +1400,14 @@ const Reports = () => {
 
       if (selectedTeam !== "all") {
         eventsQuery = eventsQuery.eq("profiles.team_id", selectedTeam);
+      }
+
+      if (managerScopeUserIds !== null) {
+        if (managerScopeUserIds.length === 0) {
+          eventsQuery = eventsQuery.eq("user_id", "00000000-0000-0000-0000-000000000000");
+        } else {
+          eventsQuery = eventsQuery.in("user_id", managerScopeUserIds);
+        }
       }
 
       if (selectedEmployee !== "all") {
