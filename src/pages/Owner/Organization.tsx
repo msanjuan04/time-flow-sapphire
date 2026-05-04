@@ -32,7 +32,9 @@ import {
   UserCog,
   MapPin,
   Loader2,
+  Sparkles,
 } from "lucide-react";
+import ApplyTemplateButton from "@/components/owner/ApplyTemplateButton";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -426,16 +428,27 @@ const Organization = () => {
                                   </Button>
                                 </div>
                               </div>
-                              <div className="flex flex-wrap gap-1 text-[11px]">
-                                {teamManager && (
-                                  <Badge variant="outline" className="gap-1">
-                                    <UserCog className="w-3 h-3" />
-                                    {teamManager.full_name || teamManager.email}
+                              <div className="flex flex-wrap gap-1 text-[11px] items-center justify-between">
+                                <div className="flex flex-wrap gap-1">
+                                  {teamManager && (
+                                    <Badge variant="outline" className="gap-1">
+                                      <UserCog className="w-3 h-3" />
+                                      {teamManager.full_name || teamManager.email}
+                                    </Badge>
+                                  )}
+                                  <Badge variant="secondary">
+                                    {members.length} {members.length === 1 ? "persona" : "personas"}
                                   </Badge>
+                                </div>
+                                {companyId && members.length > 0 && (
+                                  <ApplyTemplateButton
+                                    companyId={companyId}
+                                    initialUserIds={members.map((m) => m.id)}
+                                    label="Horario"
+                                    size="sm"
+                                    variant="outline"
+                                  />
                                 )}
-                                <Badge variant="secondary">
-                                  {members.length} {members.length === 1 ? "persona" : "personas"}
-                                </Badge>
                               </div>
                             </div>
                           );
@@ -485,14 +498,25 @@ const Organization = () => {
                           </Button>
                         </div>
                       </div>
-                      <div className="flex flex-wrap gap-1 text-[11px]">
-                        {teamManager && (
-                          <Badge variant="outline" className="gap-1">
-                            <UserCog className="w-3 h-3" />
-                            {teamManager.full_name || teamManager.email}
-                          </Badge>
+                      <div className="flex flex-wrap gap-1 text-[11px] items-center justify-between">
+                        <div className="flex flex-wrap gap-1">
+                          {teamManager && (
+                            <Badge variant="outline" className="gap-1">
+                              <UserCog className="w-3 h-3" />
+                              {teamManager.full_name || teamManager.email}
+                            </Badge>
+                          )}
+                          <Badge variant="secondary">{members.length}</Badge>
+                        </div>
+                        {companyId && members.length > 0 && (
+                          <ApplyTemplateButton
+                            companyId={companyId}
+                            initialUserIds={members.map((m) => m.id)}
+                            label="Horario"
+                            size="sm"
+                            variant="outline"
+                          />
                         )}
-                        <Badge variant="secondary">{members.length}</Badge>
                       </div>
                     </div>
                   );

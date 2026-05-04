@@ -54,6 +54,7 @@ import ScheduleHoursDialog from "@/components/ScheduleHoursDialog";
 import EmployeeInsights from "@/components/EmployeeInsights";
 import EmployeeVacationCard from "@/components/owner/EmployeeVacationCard";
 import EmployeeDocumentsCard from "@/components/owner/EmployeeDocumentsCard";
+import ApplyTemplateButton from "@/components/owner/ApplyTemplateButton";
 import { AppLayout } from "@/components/AppLayout";
 import VacationAssignment from "@/components/admin/VacationAssignment";
 import EmployeeCsvImport from "@/components/owner/EmployeeCsvImport";
@@ -1697,6 +1698,23 @@ const getFunctionErrorMessage = async (error: unknown) => {
                     />
                   </TabsContent>
                   <TabsContent value="vacaciones" className="space-y-4">
+                    {companyId && (role === "owner" || role === "admin" || role === "manager") && (
+                      <Card className="p-4 flex items-start gap-3 bg-primary/5 border-primary/20">
+                        <div className="flex-1">
+                          <p className="text-sm font-semibold">Asignar horario semanal</p>
+                          <p className="text-xs text-muted-foreground">
+                            Aplica una plantilla de horario a este trabajador en un rango de fechas
+                            (en lugar de configurar día a día desde el calendario).
+                          </p>
+                        </div>
+                        <ApplyTemplateButton
+                          companyId={companyId}
+                          initialUserIds={[selectedEmployee.id]}
+                          label="Aplicar plantilla"
+                          size="sm"
+                        />
+                      </Card>
+                    )}
                     <EmployeeVacationCard
                       userId={selectedEmployee.id}
                       companyId={companyId || ""}

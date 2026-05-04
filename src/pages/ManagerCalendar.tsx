@@ -2,6 +2,7 @@ import { AppLayout } from "@/components/AppLayout";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useMembership } from "@/hooks/useMembership";
 import { getManagerScope, isManagerScopeEmpty } from "@/lib/managerScope";
+import ApplyTemplateButton from "@/components/owner/ApplyTemplateButton";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
@@ -932,6 +933,18 @@ const ManagerCalendar = () => {
             </div>
             <span className="text-lg font-semibold">Empleados</span>
           </div>
+          {selectedEmployee && membership?.company_id && (
+            <div className="mb-4">
+              <ApplyTemplateButton
+                companyId={membership.company_id}
+                initialUserIds={[selectedEmployee]}
+                label="Aplicar plantilla"
+                size="sm"
+                variant="outline"
+                className="w-full"
+              />
+            </div>
+          )}
           <Input
             placeholder="Buscar..."
             value={search}
