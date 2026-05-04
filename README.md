@@ -1,6 +1,6 @@
 # TimeTrack - Sistema de Control Horario
 
-Sistema profesional de control horario (fichaje) para empresas construido con React, TypeScript, Tailwind CSS y Lovable Cloud.
+Sistema profesional de control horario (fichaje) para empresas construido con React, TypeScript, Tailwind CSS y Supabase.
 
 ## Características
 
@@ -16,7 +16,7 @@ Sistema profesional de control horario (fichaje) para empresas construido con Re
 
 - **Frontend**: React 18 + TypeScript + Vite + Vitest para testing
 - **Estilos**: Tailwind CSS + Shadcn UI
-- **Backend**: Lovable Cloud (Supabase)
+- **Backend**: Supabase (PostgreSQL + Edge Functions + Auth + Storage)
 - **Base de datos**: PostgreSQL con RLS
 - **Autenticación**: Supabase Auth
 - **Testing**: Vitest + Testing Library
@@ -132,4 +132,4 @@ Notas específicas:
 - Señales de geolocalización avanzada
 
 ---
-Desarrollado con ❤️ usando Lovable Cloud
+GTIQ © GNERAI
