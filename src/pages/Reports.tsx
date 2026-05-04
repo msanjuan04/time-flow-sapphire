@@ -843,6 +843,7 @@ const Reports = () => {
   const [loading, setLoading] = useState(false);
   const [employeeStats, setEmployeeStats] = useState<EmployeeStats[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
+  const [teams, setTeams] = useState<{ id: string; name: string; center_id: string | null }[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [sessionsRaw, setSessionsRaw] = useState<SessionLike[]>([]);
   const [geoAddressCache, setGeoAddressCache] = useState<Record<string, string>>({});
@@ -880,6 +881,7 @@ const Reports = () => {
   });
   const [monthlyCenter, setMonthlyCenter] = useState<string>("all");
   const [selectedCenter, setSelectedCenter] = useState<string>("all");
+  const [selectedTeam, setSelectedTeam] = useState<string>("all");
   const [selectedEmployee, setSelectedEmployee] = useState<string>("all");
   const [onlyPendingReview, setOnlyPendingReview] = useState<boolean>(false);
   const mapContainerRef = useRef<HTMLDivElement>(null);
@@ -1193,7 +1195,7 @@ const Reports = () => {
     if (companyId) {
       fetchReportData();
     }
-  }, [companyId, startDate, endDate, selectedCenter, selectedEmployee, onlyPendingReview]);
+  }, [companyId, startDate, endDate, selectedCenter, selectedTeam, selectedEmployee, onlyPendingReview]);
 
   useEffect(() => {
     if (companyId) {
@@ -1285,6 +1287,15 @@ const Reports = () => {
 
     setCenters(centersData || []);
 
+    // Fetch teams
+    const { data: teamsData } = await supabase
+      .from("teams")
+      .select("id, name, center_id")
+      .eq("company_id", companyId)
+      .order("name");
+
+    setTeams(teamsData || []);
+
     // Fetch employees
     const { data: employeesData } = await supabase
       .from("profiles")
@@ -1328,6 +1339,10 @@ const Reports = () => {
         query = query.eq("profiles.center_id", selectedCenter);
       }
 
+      if (selectedTeam !== "all") {
+        query = query.eq("profiles.team_id", selectedTeam);
+      }
+
       if (selectedEmployee !== "all") {
         query = query.eq("user_id", selectedEmployee);
       }
@@ -1355,6 +1370,10 @@ const Reports = () => {
 
       if (selectedCenter !== "all") {
         eventsQuery = eventsQuery.eq("profiles.center_id", selectedCenter);
+      }
+
+      if (selectedTeam !== "all") {
+        eventsQuery = eventsQuery.eq("profiles.team_id", selectedTeam);
       }
 
       if (selectedEmployee !== "all") {
@@ -1926,7 +1945,7 @@ const Reports = () => {
             </div>
             <div>
               <Label htmlFor="center">Centro</Label>
-              <Select value={selectedCenter} onValueChange={setSelectedCenter}>
+              <Select value={selectedCenter} onValueChange={(v) => { setSelectedCenter(v); setSelectedTeam("all"); }}>
                 <SelectTrigger id="center" className="mt-1">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
@@ -1937,6 +1956,24 @@ const Reports = () => {
                       {center.name}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="team">Equipo</Label>
+              <Select value={selectedTeam} onValueChange={setSelectedTeam}>
+                <SelectTrigger id="team" className="mt-1">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los equipos</SelectItem>
+                  {teams
+                    .filter((t) => selectedCenter === "all" || t.center_id === selectedCenter)
+                    .map((team) => (
+                      <SelectItem key={team.id} value={team.id}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>

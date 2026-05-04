@@ -216,6 +216,8 @@ const CorrectionRequests = () => {
           entityType: "correction_request",
           entityId: insertedRequest.id,
           excludeUserId: user?.id,
+          targetUserId: user?.id,
+          category: "correction",
         });
       }
 

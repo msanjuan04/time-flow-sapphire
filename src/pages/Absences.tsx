@@ -154,6 +154,8 @@ const Absences = () => {
           entityType: "absence_request",
           entityId: insertedRequest.id,
           excludeUserId: user?.id,
+          targetUserId: user?.id,
+          category: "absence",
         });
       }
 
