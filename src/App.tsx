@@ -50,6 +50,7 @@ const NotificationsPage = lazy(() => import("./pages/Notifications"));
 const LegalDocumentsPage = lazy(() => import("./pages/Owner/LegalDocuments"));
 const VerifyPage = lazy(() => import("./pages/Verify"));
 const OrganizationPage = lazy(() => import("./pages/Owner/Organization"));
+const ScheduleTemplatesPage = lazy(() => import("./pages/Owner/ScheduleTemplates"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -297,6 +298,14 @@ const App = () => (
               element={
                 <ProtectedRoute allowedRoles={["owner", "admin"]}>
                   <OrganizationPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/owner/schedule-templates"
+              element={
+                <ProtectedRoute allowedRoles={["owner", "admin", "manager"]}>
+                  <ScheduleTemplatesPage />
                 </ProtectedRoute>
               }
             />

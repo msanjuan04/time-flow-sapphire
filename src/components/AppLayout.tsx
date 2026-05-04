@@ -59,6 +59,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { icon: AlertTriangle,   label: "Incidencias",  path: "/incidents" },
     { icon: MapPin,          label: "Ausencias",    path: "/absences" },
     { icon: Building2,       label: "Organización", path: "/owner/organization" },
+    { icon: Calendar,        label: "Plantillas",   path: "/owner/schedule-templates" },
     { icon: Settings,        label: "Ajustes",      path: "/company-settings" },
     { icon: FileText,        label: "Documentos",   path: "/owner/legal-documents" },
     { icon: Clock,           label: "Mi ficha",     path: "/me/clock" },
