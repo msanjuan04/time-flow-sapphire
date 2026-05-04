@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import WorkerScheduleSection from "@/components/WorkerScheduleSection";
 import MyVacationWidget from "@/components/MyVacationWidget";
 import MyDataExport from "@/components/MyDataExport";
+import WorkerOnboardingDialog from "@/components/WorkerOnboardingDialog";
 import { OfflineClockIndicator } from "@/components/OfflineClockIndicator";
 import { invokeClockWithQueue } from "@/lib/offlineClockQueue";
 
@@ -1154,6 +1155,14 @@ const WorkerView = () => {
 
         {user?.id && companyId && (
           <MyDataExport userId={user.id} companyId={companyId} />
+        )}
+
+        {user?.id && companyId && (
+          <WorkerOnboardingDialog
+            userId={user.id}
+            companyId={companyId}
+            fullName={(user as any)?.user_metadata?.full_name || user.email}
+          />
         )}
 
         {/* Status Indicator */}

@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { LEGAL_DOCS } from "@/legal/registry";
 import { PROVIDER_INFO } from "@/legal/providerInfo";
 import type { CompanyLegalData, LegalDoc, LegalDocContext } from "@/legal/types";
+import SignedAcceptancesViewer from "@/components/owner/SignedAcceptancesViewer";
 
 const REQUIRED_FIELDS: (keyof CompanyLegalData)[] = [
   "legal_name",
@@ -248,6 +249,12 @@ const LegalDocuments = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {companyId && (
+        <div className="max-w-7xl mx-auto px-4 py-6">
+          <SignedAcceptancesViewer companyId={companyId} />
+        </div>
+      )}
     </AppLayout>
   );
 };
