@@ -18,7 +18,7 @@ import WorkerScheduleSection from "@/components/WorkerScheduleSection";
 import MyVacationWidget from "@/components/MyVacationWidget";
 import MyDataExport from "@/components/MyDataExport";
 import WorkerOnboardingDialog from "@/components/WorkerOnboardingDialog";
-import EmployeeDocumentsCard from "@/components/owner/EmployeeDocumentsCard";
+import MyDocumentsCard from "@/components/MyDocumentsCard";
 import { OfflineClockIndicator } from "@/components/OfflineClockIndicator";
 import { invokeClockWithQueue } from "@/lib/offlineClockQueue";
 
@@ -1159,11 +1159,7 @@ const WorkerView = () => {
         )}
 
         {user?.id && companyId && (
-          <EmployeeDocumentsCard
-            userId={user.id}
-            companyId={companyId}
-            canManage={false}
-          />
+          <MyDocumentsCard userId={user.id} companyId={companyId} />
         )}
 
         {user?.id && companyId && (

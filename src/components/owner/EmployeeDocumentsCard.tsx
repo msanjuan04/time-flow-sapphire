@@ -58,7 +58,6 @@ interface DocRow {
 const CATEGORY_LABELS: Record<string, string> = {
   contract: "Contrato",
   addendum: "Anexo / modificación",
-  payslip: "Nómina",
   training: "Formación",
   medical: "Reconocimiento médico",
   prl: "PRL",
@@ -70,7 +69,6 @@ const CATEGORY_LABELS: Record<string, string> = {
 const CATEGORY_COLORS: Record<string, string> = {
   contract: "bg-blue-100 text-blue-700 border-blue-300",
   addendum: "bg-cyan-100 text-cyan-700 border-cyan-300",
-  payslip: "bg-emerald-100 text-emerald-700 border-emerald-300",
   training: "bg-purple-100 text-purple-700 border-purple-300",
   medical: "bg-rose-100 text-rose-700 border-rose-300",
   prl: "bg-amber-100 text-amber-700 border-amber-300",
