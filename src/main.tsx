@@ -39,14 +39,6 @@ if (typeof window !== "undefined" && typeof window.fetch === "function") {
   };
 }
 
-// Inject the PWA manifest at runtime
-try {
-  const link = document.createElement("link");
-  link.rel = "manifest";
-  link.href = "/manifest.webmanifest";
-  document.head.appendChild(link);
-} catch {}
-
 createRoot(document.getElementById("root")!).render(
   <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
     <App />

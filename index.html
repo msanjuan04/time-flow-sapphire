@@ -2,9 +2,30 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/png" href="/logo.png" />
-    <!-- PWA manifest is injected at runtime to avoid CORS in preview envs -->
+
+    <!-- Favicon (multi-resolución para pestañas y bookmarks) -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+
+    <!-- iOS: añadir a pantalla de inicio -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="GTiQ" />
+
+    <!-- Android Chrome (PWA install) -->
+    <link rel="icon" type="image/png" sizes="192x192" href="/android-chrome-192x192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/android-chrome-512x512.png" />
+
+    <!-- Safari pinned tab -->
+    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#0ea5e9" />
+
+    <!-- PWA manifest -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+
     <meta name="theme-color" content="#0ea5e9" />
+    <meta name="msapplication-TileColor" content="#0ea5e9" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GTiQ - Sistema de Control Horario para Empresas</title>
     <meta name="description" content="Sistema profesional de control horario y fichaje para empresas. Gestiona entradas, salidas y pausas de tu equipo de forma sencilla y eficiente." />
@@ -13,11 +34,12 @@
     <meta property="og:title" content="GTiQ - Sistema de Control Horario" />
     <meta property="og:description" content="Sistema profesional de control horario y fichaje para empresas. Gestiona tu equipo de forma eficiente." />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="/logo.png" />
+    <meta property="og:url" content="https://gneraitiq.com" />
+    <meta property="og:image" content="/android-chrome-512x512.png" />
 
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:site" content="@GTiQ" />
-    <meta name="twitter:image" content="/logo.png" />
+    <meta name="twitter:image" content="/android-chrome-512x512.png" />
 
     <!-- #01 Tipografía: Inter variable font -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
