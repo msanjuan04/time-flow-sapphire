@@ -572,6 +572,40 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ─── Bloqueo automático por baja médica aprobada ───
+    // Si el usuario tiene una row en absences con status='approved',
+    // absence_type='sick_leave' que cubra HOY → rechazar fichaje.
+    {
+      const todayIso = new Date(now).toISOString().slice(0, 10);
+      const { data: sickLeave } = await supabaseAdmin
+        .from('absences')
+        .select('id, start_date, end_date, reason')
+        .eq('user_id', currentUserId)
+        .eq('company_id', companyId)
+        .eq('status', 'approved')
+        .eq('absence_type', 'sick_leave')
+        .lte('start_date', todayIso)
+        .gte('end_date', todayIso)
+        .maybeSingle();
+
+      if (sickLeave) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: 'ON_SICK_LEAVE',
+            reason: 'sick_leave_active',
+            message:
+              'Estás en periodo de baja médica aprobada. Si has vuelto antes de tiempo, avisa a tu responsable para cerrar la baja.',
+            sick_leave: {
+              start_date: sickLeave.start_date,
+              end_date: sickLeave.end_date,
+            },
+          }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // Get current active session
     let { data: activeSession } = await supabaseAdmin
       .from('work_sessions')

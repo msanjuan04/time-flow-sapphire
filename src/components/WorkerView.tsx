@@ -483,6 +483,22 @@ const WorkerView = () => {
         const err = queueResult.error;
         const response = (err as any)?.response;
         const parsedError = response ? await parseFunctionError(response) : null;
+
+        // Caso especial: usuario está de baja médica aprobada
+        const errorBody = (queueResult.data as any) || {};
+        const isOnSickLeave =
+          errorBody?.error === "ON_SICK_LEAVE" ||
+          (parsedError && /ON_SICK_LEAVE/i.test(String(parsedError)));
+        if (isOnSickLeave) {
+          toast.error("Estás de baja médica", {
+            description:
+              errorBody?.message ||
+              "Si has vuelto antes de tiempo, avisa a tu responsable para cerrar la baja.",
+            duration: 8000,
+          });
+          return;
+        }
+
         const serverMessage =
           (queueResult.data as any)?.error ||
           parsedError ||
