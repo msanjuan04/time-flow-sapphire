@@ -1,8 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Stethoscope, Loader2 } from "lucide-react";
+import { Stethoscope, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Props {
   companyId: string;
@@ -30,16 +33,18 @@ const fmtDate = (iso: string) => {
   }
 };
 
-/**
- * Tarjeta para el dashboard del owner: lista de trabajadores con baja
- * médica aprobada activa hoy. Útil para tener visibilidad rápida
- * sin tener que cruzar el calendario de cada empleado.
- *
- * Si la lista está vacía, no se renderiza nada (evita ruido visual).
- */
+const todayIso = () => new Date().toISOString().slice(0, 10);
+const yesterdayIso = () => {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+};
+
 export function SickLeaveTodayCard({ companyId }: Props) {
+  const { user } = useAuth();
   const [rows, setRows] = useState<SickLeaveRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [acting, setActing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!companyId) return;
@@ -62,7 +67,205 @@ export function SickLeaveTodayCard({ companyId }: Props) {
     void load();
   }, [load]);
 
-  // No renderizamos nada si hay 0 bajas activas (limpio visualmente)
+  /**
+   * Acorta la baja al día de ayer → el trabajador puede fichar HOY.
+   * Si la baja empezó hoy, la marca rejected directamente.
+   */
+  const shortenSickLeave = async (row: SickLeaveRow) => {
+    const fullName = row.full_name || row.email;
+    if (
+      !confirm(
+        `¿Cerrar la baja de ${fullName}?\n\nA partir de hoy podrá fichar de nuevo. Si te has equivocado, podrás reabrir la baja desde Inspección/Auditoría.`
+      )
+    )
+      return;
+
+    setActing(row.user_id);
+    try {
+      const newEnd = row.start_date >= todayIso() ? null : yesterdayIso();
+
+      // Buscar la row exacta de la baja activa
+      const { data: absences, error: findError } = await supabase
+        .from("absences")
+        .select("id, start_date, end_date, status")
+        .eq("user_id", row.user_id)
+        .eq("company_id", companyId)
+        .eq("status", "approved")
+        .eq("absence_type", "sick_leave")
+        .lte("start_date", todayIso())
+        .gte("end_date", todayIso())
+        .order("start_date", { ascending: false })
+        .limit(1);
+      if (findError) throw findError;
+
+      const target = absences?.[0];
+      if (!target) {
+        toast.error("No encontré la baja activa. Refresca la página.");
+        return;
+      }
+
+      let updateError: any = null;
+
+      if (newEnd === null) {
+        // La baja empezaba hoy → mejor anularla
+        const { error } = await supabase
+          .from("absences")
+          .update({
+            status: "rejected",
+            reason:
+              (target as any).reason ||
+              "Baja cerrada el mismo día por el responsable",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", target.id);
+        updateError = error;
+      } else {
+        const { error } = await supabase
+          .from("absences")
+          .update({
+            end_date: newEnd,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", target.id);
+        updateError = error;
+      }
+
+      if (updateError) throw updateError;
+
+      // Auditoría (best-effort)
+      try {
+        await (supabase as any).from("audit_logs").insert({
+          actor_user_id: user?.id ?? null,
+          action: "shorten_sick_leave",
+          entity_type: "absences",
+          entity_id: target.id,
+          diff: {
+            before: { end_date: target.end_date, status: target.status },
+            after: { end_date: newEnd, status: newEnd === null ? "rejected" : "approved" },
+            target_user_id: row.user_id,
+            target_user_name: fullName,
+          },
+        });
+      } catch (auditErr) {
+        console.warn("audit_logs insert failed (non-blocking):", auditErr);
+      }
+
+      // Notificación al trabajador
+      try {
+        await supabase.from("notifications").insert({
+          company_id: companyId,
+          user_id: row.user_id,
+          title: "Tu baja médica se ha cerrado",
+          message: "Ya puedes fichar normalmente. Si crees que es un error, contacta con tu responsable.",
+          type: "info",
+          entity_type: "absence",
+          entity_id: target.id,
+        });
+      } catch (notifyErr) {
+        console.warn("worker notification failed (non-blocking):", notifyErr);
+      }
+
+      toast.success(
+        newEnd === null
+          ? `Baja de ${fullName} anulada. Ya puede fichar.`
+          : `Baja de ${fullName} cerrada. Ya puede fichar desde hoy.`
+      );
+      await load();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.message || "Error al cerrar la baja");
+    } finally {
+      setActing(null);
+    }
+  };
+
+  /**
+   * Anula completamente la baja (status='rejected'). Útil si se metió por error.
+   */
+  const cancelSickLeave = async (row: SickLeaveRow) => {
+    const fullName = row.full_name || row.email;
+    if (
+      !confirm(
+        `¿Anular completamente la baja de ${fullName}?\n\nLa baja quedará marcada como rechazada (no aparecerá en histórico de bajas válidas). Usar SOLO si se metió por error.`
+      )
+    )
+      return;
+
+    setActing(row.user_id);
+    try {
+      const { data: absences, error: findError } = await supabase
+        .from("absences")
+        .select("id, start_date, end_date, status, reason")
+        .eq("user_id", row.user_id)
+        .eq("company_id", companyId)
+        .eq("status", "approved")
+        .eq("absence_type", "sick_leave")
+        .lte("start_date", todayIso())
+        .gte("end_date", todayIso())
+        .order("start_date", { ascending: false })
+        .limit(1);
+      if (findError) throw findError;
+
+      const target = absences?.[0];
+      if (!target) {
+        toast.error("No encontré la baja activa.");
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from("absences")
+        .update({
+          status: "rejected",
+          reason:
+            ((target as any).reason || "") +
+            ` [Anulada por responsable el ${new Date().toLocaleDateString("es-ES")}]`,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", target.id);
+      if (updateError) throw updateError;
+
+      // Auditoría
+      try {
+        await (supabase as any).from("audit_logs").insert({
+          actor_user_id: user?.id ?? null,
+          action: "cancel_sick_leave",
+          entity_type: "absences",
+          entity_id: target.id,
+          diff: {
+            before: { status: target.status, end_date: target.end_date },
+            after: { status: "rejected" },
+            target_user_id: row.user_id,
+            target_user_name: fullName,
+          },
+        });
+      } catch (auditErr) {
+        console.warn("audit_logs insert failed:", auditErr);
+      }
+
+      // Notificación al trabajador
+      try {
+        await supabase.from("notifications").insert({
+          company_id: companyId,
+          user_id: row.user_id,
+          title: "Baja médica anulada",
+          message: "Tu baja médica ha sido anulada por el responsable. Ya puedes fichar.",
+          type: "warning",
+          entity_type: "absence",
+          entity_id: target.id,
+        });
+      } catch (notifyErr) {
+        console.warn("worker notification failed:", notifyErr);
+      }
+
+      toast.success(`Baja de ${fullName} anulada. Ya puede fichar.`);
+      await load();
+    } catch (err: any) {
+      toast.error(err?.message || "Error al anular");
+    } finally {
+      setActing(null);
+    }
+  };
+
   if (loading) {
     return (
       <Card className="p-4 flex items-center gap-2 text-muted-foreground">
@@ -93,32 +296,66 @@ export function SickLeaveTodayCard({ companyId }: Props) {
         </Badge>
       </div>
 
-      <div className="space-y-1.5">
-        {rows.map((r) => (
-          <div
-            key={r.user_id}
-            className="flex items-center justify-between gap-2 py-1.5 px-2 rounded-md bg-white border border-red-100"
-          >
-            <div className="min-w-0">
-              <p className="font-medium text-sm truncate">
-                {r.full_name || r.email}
-              </p>
-              <p className="text-[11px] text-muted-foreground truncate">
-                {r.reason || "Baja médica"}
-              </p>
+      <div className="space-y-2">
+        {rows.map((r) => {
+          const isActing = acting === r.user_id;
+          return (
+            <div
+              key={r.user_id}
+              className="rounded-md bg-white border border-red-100 p-3 space-y-2"
+            >
+              <div className="flex items-start justify-between gap-2 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-sm">
+                    {r.full_name || r.email}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    {r.reason || "Baja médica"}
+                  </p>
+                  <div className="mt-1 flex items-center gap-2 flex-wrap">
+                    <Badge variant="outline" className="text-[10px] gap-1">
+                      {fmtDate(r.start_date)} → {fmtDate(r.end_date)}
+                    </Badge>
+                    <span className="text-[10px] text-muted-foreground">
+                      {r.days_remaining > 0
+                        ? `${r.days_remaining} ${r.days_remaining === 1 ? "día" : "días"} restantes`
+                        : "Termina hoy"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5 pt-1 border-t border-red-100">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1 text-xs h-7"
+                  disabled={isActing}
+                  onClick={() => shortenSickLeave(r)}
+                  title="Cierra la baja con efecto desde hoy. El trabajador puede fichar."
+                >
+                  {isActing ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-3 h-3" />
+                  )}
+                  Cerrar baja (volver al trabajo)
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="gap-1 text-xs h-7 text-destructive hover:text-destructive"
+                  disabled={isActing}
+                  onClick={() => cancelSickLeave(r)}
+                  title="Anula completamente (solo si se registró por error)"
+                >
+                  <XCircle className="w-3 h-3" />
+                  Anular (error)
+                </Button>
+              </div>
             </div>
-            <div className="text-right shrink-0">
-              <Badge variant="outline" className="text-[10px] gap-1">
-                {fmtDate(r.start_date)} → {fmtDate(r.end_date)}
-              </Badge>
-              <p className="text-[10px] text-muted-foreground mt-0.5">
-                {r.days_remaining > 0
-                  ? `${r.days_remaining} ${r.days_remaining === 1 ? "día" : "días"} restantes`
-                  : "Termina hoy"}
-              </p>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </Card>
   );
