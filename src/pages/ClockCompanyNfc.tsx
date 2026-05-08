@@ -18,6 +18,7 @@ type ScreenState =
   | { phase: "processing" }
   | { phase: "success"; name: string; action: "clock_in" | "clock_out" }
   | { phase: "queued" }
+  | { phase: "sick_leave"; name: string; message: string }
   | { phase: "error_unknown" }
   | { phase: "error_rpc"; message: string };
 
@@ -136,6 +137,17 @@ const ClockCompanyNfcPage = () => {
         setScreen({ phase: "invalid_company" });
         busyRef.current = false;
         playKioskSound("error");
+        return;
+      }
+
+      if (payload.error === "on_sick_leave") {
+        playKioskSound("error");
+        setScreen({
+          phase: "sick_leave",
+          name: payload.nombre_completo?.trim() || "Trabajador",
+          message: (payload as any).message || "Estás de baja médica aprobada.",
+        });
+        scheduleBackToWaiting();
         return;
       }
 
@@ -305,6 +317,18 @@ const ClockCompanyNfcPage = () => {
             {screen.action === "clock_out"
               ? "Salida registrada correctamente"
               : "Entrada registrada correctamente"}
+          </p>
+        </>
+      )}
+
+      {screen.phase === "sick_leave" && (
+        <>
+          <p className="text-7xl sm:text-8xl">🩺</p>
+          <p className="text-2xl sm:text-4xl font-bold text-amber-300 leading-tight">
+            {screen.name}, estás de baja
+          </p>
+          <p className="text-base sm:text-xl text-amber-200/80 max-w-xl mx-auto">
+            {screen.message}
           </p>
         </>
       )}

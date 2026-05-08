@@ -9,6 +9,7 @@ import { useNavigate } from "react-router-dom";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import OwnerQuickNav from "@/components/OwnerQuickNav";
 import { getManagerScope, isManagerScopeEmpty } from "@/lib/managerScope";
+import SickLeaveTodayCard from "@/components/SickLeaveTodayCard";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -598,6 +599,7 @@ const AdminView = () => {
     <div className="px-3 sm:px-4 py-4">
       <div className="max-w-7xl mx-auto space-y-5 sm:space-y-6 pt-6 sm:pt-8 animate-fade-in">
         <OwnerQuickNav />
+        {companyId && <SickLeaveTodayCard companyId={companyId} />}
         <PendingReviewAlert />
         {error && (
           <Card className="border-destructive bg-destructive/10 text-destructive-foreground p-4 flex flex-col gap-2">
