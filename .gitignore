@@ -23,3 +23,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Credenciales y códigos de acceso (nunca subir)
+CODIGOS-USUARIOS.txt
