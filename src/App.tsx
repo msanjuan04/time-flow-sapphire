@@ -6,10 +6,14 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-route
 import { AuthProvider, useAuth, Membership } from "@/contexts/AuthContext";
 import { ImpersonationBanner } from "@/components/ImpersonationBanner";
 import ThemeToggle from "@/components/ThemeToggle";
+import { MonitoringErrorBoundary } from "@/lib/monitoring";
+import AppErrorFallback from "@/components/AppErrorFallback";
 
 // Lazy-loaded pages (renombradas a *Page para evitar choques de nombres)
 const RoleRedirectPage = lazy(() => import("./pages/RoleRedirect"));
 const AuthPage = lazy(() => import("./pages/Auth"));
+const RegistroPage = lazy(() => import("./pages/Registro"));
+const VerificarRegistroPage = lazy(() => import("./pages/VerificarRegistro"));
 const EmployeesPage = lazy(() => import("./pages/Employees"));
 const PeoplePage = lazy(() => import("./pages/People"));
 const AcceptInvitePage = lazy(() => import("./pages/AcceptInvite"));
@@ -108,6 +112,11 @@ const RouteAwareThemeToggle = () => {
 };
 
 const App = () => (
+  <MonitoringErrorBoundary
+    fallback={({ error, resetError, eventId }) => (
+      <AppErrorFallback error={error} resetError={resetError} eventId={eventId} />
+    )}
+  >
   <QueryClientProvider client={queryClient}>
     <Toaster />
     <Sonner />
@@ -122,6 +131,8 @@ const App = () => (
             <Route path="/logout" element={<LogoutPage />} />
             <Route path="/legal" element={<LegalPage />} />
             <Route path="/access-issue" element={<AccessIssuePage />} />
+            <Route path="/registro" element={<RegistroPage />} />
+            <Route path="/registro/verificar" element={<VerificarRegistroPage />} />
             <Route path="/print/:id" element={<PrintViewPage />} />
             <Route path="/verify/:token" element={<VerifyPage />} />
 
@@ -366,6 +377,7 @@ const App = () => (
       </AuthProvider>
       </BrowserRouter>
   </QueryClientProvider>
+  </MonitoringErrorBoundary>
 );
 
 export default App;

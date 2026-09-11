@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { resolveDefaultRoute } from "@/lib/routeResolver";
+import { setMonitoringUser } from "@/lib/monitoring";
 
 export interface AuthUser {
   id: string;
@@ -135,6 +136,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setUser(null);
     setMemberships([]);
     setCompany(null);
+    setMonitoringUser(null);
   };
 
   // ---------------------------------------------------------------------
@@ -198,6 +200,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser(userData);
       setMemberships(list);
       setCompany(activeCompany);
+      setMonitoringUser({ id: userData.id, role: list[0]?.role ?? null, companyId: activeCompany?.id ?? null });
 
       localStorage.setItem(
         STORAGE_KEY,
@@ -224,8 +227,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const signInWithCode = async (code: string, options?: { redirect?: string | null }) => {
     const normalized = code.replace(/\D/g, "").trim();
     if (!/^\d{6}$/.test(normalized)) return { error: "INVALID_CODE_FORMAT" };
-
-    console.log("Attempting login with code:", normalized);
 
     const r = await fetch(`${SUPABASE_BASE_URL}/functions/v1/login-with-code`, {
       method: "POST",
@@ -313,6 +314,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setUser(userData);
     setMemberships(list);
     setCompany(activeCompany);
+    setMonitoringUser({ id: userData.id, role: list[0]?.role ?? null, companyId: activeCompany?.id ?? null });
 
     const targetRoute =
       options && Object.prototype.hasOwnProperty.call(options, "redirect")

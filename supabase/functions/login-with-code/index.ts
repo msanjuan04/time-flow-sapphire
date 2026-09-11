@@ -229,7 +229,8 @@ serve(async (req) => {
         actor_user_id: profile.id,
         company_id: memberships?.[0]?.company_id,
         action: "login_with_code",
-        diff: { code: normalized },
+        // Nunca guardar el código: es la credencial del usuario.
+        diff: { method: "code" },
         ip,
         user_agent,
       });

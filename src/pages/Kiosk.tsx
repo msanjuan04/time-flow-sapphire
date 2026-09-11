@@ -7,12 +7,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { useSearchParams, useNavigate } from "react-router-dom";
+import { Label } from "@/components/ui/label";
+import { kioskDeviceByPin, kioskEmployeeByCode, KIOSK_ERROR_MESSAGES } from "@/lib/kioskApi";
 
 interface Device {
   id: string;
   company_id: string;
   name: string;
-  center_id: string | null;
+  center_id?: string | null;
 }
 
 const Kiosk = () => {
@@ -52,26 +54,16 @@ const Kiosk = () => {
 
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("devices")
-        .select("*")
-        .eq("secret_hash", pinToUse)
-        .eq("type", "kiosk")
-        .maybeSingle();
+      // La búsqueda por PIN se hace en servidor (kiosk_device_by_pin), que
+      // además actualiza last_seen_at. Ya no se lee la tabla devices desde aquí.
+      const result = await kioskDeviceByPin(pinToUse);
 
-      if (error) throw error;
-
-      if (!data) {
-        toast.error("PIN incorrecto");
+      if (!result.ok) {
+        toast.error(KIOSK_ERROR_MESSAGES[result.error]);
         return;
       }
 
-      // Update last seen
-      await supabase
-        .from("devices")
-        .update({ last_seen_at: new Date().toISOString() })
-        .eq("id", data.id);
-
+      const data = result.data;
       setDevice(data);
       setAuthenticated(true);
       toast.success(`Kiosko activado: ${data.name}`);
@@ -165,32 +157,21 @@ const Kiosk = () => {
 
     setLoading(true);
     try {
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, full_name, email, login_code")
-        .eq("login_code", code)
-        .maybeSingle();
+      // Código + PIN se validan juntos en servidor: sin PIN válido no se
+      // puede consultar ningún código, y la pertenencia a la empresa la
+      // comprueba la propia función.
+      const result = await kioskEmployeeByCode(pin.trim().toUpperCase(), code);
 
-      if (profileError) throw profileError;
-      if (!profile) {
-        toast.error("Código no encontrado");
+      if (!result.ok) {
+        toast.error(KIOSK_ERROR_MESSAGES[result.error]);
         return;
       }
 
-      const { data: membership, error: membershipError } = await supabase
-        .from("memberships")
-        .select("company_id")
-        .eq("user_id", profile.id)
-        .eq("company_id", device.company_id)
-        .maybeSingle();
-
-      if (membershipError) throw membershipError;
-      if (!membership) {
-        toast.error("Código no pertenece a esta empresa");
-        return;
-      }
-
-      await handleClockAction(profile.id, action, { full_name: profile.full_name, email: profile.email });
+      const { employee } = result.data;
+      await handleClockAction(employee.id, action, {
+        full_name: employee.full_name ?? undefined,
+        email: employee.email ?? undefined,
+      });
     } catch (err) {
       console.error("Clock by code error:", err);
       const message = err instanceof Error ? err.message : "No pudimos validar el código";

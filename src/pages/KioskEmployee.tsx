@@ -8,8 +8,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { kioskEmployeeByCode, KIOSK_ERROR_MESSAGES } from "@/lib/kioskApi";
 import { Clock, Coffee, LogIn, LogOut, ArrowLeft, CheckCircle2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { invokeClockWithQueue } from "@/lib/offlineClockQueue";
@@ -21,7 +21,6 @@ interface Profile {
   id: string;
   full_name: string | null;
   email: string | null;
-  login_code: string | null;
 }
 
 interface Device {
@@ -73,66 +72,28 @@ const KioskEmployee = () => {
       return;
     }
     try {
-      const { data: prof, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, email, login_code")
-        .eq("login_code", token)
-        .maybeSingle();
+      // Una sola llamada en servidor: valida PIN + código, comprueba que el
+      // empleado pertenece a la empresa del dispositivo y calcula su estado
+      // (antes se leía work_sessions.is_on_break, columna que no existe, y
+      // el kiosco siempre mostraba "Fuera de turno").
+      const result = await kioskEmployeeByCode(devicePin, token);
 
-      if (error) throw error;
-      if (!prof) {
-        toast.error("No encontramos al empleado");
+      if (!result.ok) {
+        toast.error(KIOSK_ERROR_MESSAGES[result.error]);
         setLoading(false);
         return;
       }
-      setProfile(prof as Profile);
 
-      const { data: deviceData } = await supabase
-        .from("devices")
-        .select("id, company_id, name")
-        .eq("secret_hash", devicePin)
-        .eq("type", "kiosk")
-        .maybeSingle();
-
-      if (!deviceData) {
-        toast.error("Dispositivo no encontrado");
-        setLoading(false);
-        return;
-      }
-      setDevice(deviceData as Device);
-      const company = deviceData.company_id;
-
-      setCompanyId(company);
-      if (company) {
-        await fetchStatus(prof.id, company);
-      }
+      const { device: dev, employee, status: currentStatus } = result.data;
+      setProfile(employee);
+      setDevice(dev);
+      setCompanyId(dev.company_id);
+      setStatus(currentStatus);
     } catch (err) {
       console.error("Error cargando empleado:", err);
       toast.error("No pudimos cargar el empleado");
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchStatus = async (userId: string, company: string) => {
-    try {
-      const { data: session } = await supabase
-        .from("work_sessions")
-        .select("id, is_active, is_on_break")
-        .eq("user_id", userId)
-        .eq("company_id", company)
-        .order("clock_in_time", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (session?.is_active) {
-        setStatus(session.is_on_break ? "break" : "on");
-      } else {
-        setStatus("off");
-      }
-    } catch (err) {
-      console.error("Error calculando estado:", err);
-      setStatus("off");
     }
   };
 

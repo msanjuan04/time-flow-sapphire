@@ -60,5 +60,3 @@ export const resolveSiteUrl = (req?: Request, allowLocalhost = false) => {
 
   return FALLBACK_PRODUCTION_URL;
 };
-
-

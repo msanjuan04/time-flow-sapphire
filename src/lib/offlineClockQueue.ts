@@ -99,6 +99,40 @@ const invokeClockOnce = async (
 };
 
 /**
+ * Extracts a human-readable message from a failed `functions.invoke` call.
+ * Checks, in order: the parsed `data` body, the raw response attached to the
+ * error (`error.context`), and finally the error message itself (ignoring the
+ * generic "non-2xx status code" text). Returns null if nothing useful.
+ */
+export const extractFunctionErrorMessage = async (
+  error: unknown,
+  data?: unknown
+): Promise<string | null> => {
+  if (data && typeof data === "object") {
+    const body = data as { error?: unknown; message?: unknown };
+    if (typeof body.error === "string" && body.error.trim()) return body.error;
+    if (typeof body.message === "string" && body.message.trim()) return body.message;
+  }
+  if (typeof data === "string" && data.trim()) return data;
+
+  const context = (error as { context?: Response } | null)?.context;
+  if (context && typeof context.clone === "function") {
+    try {
+      const body = (await context.clone().json()) as { error?: unknown; message?: unknown };
+      if (typeof body?.error === "string" && body.error.trim()) return body.error;
+      if (typeof body?.message === "string" && body.message.trim()) return body.message;
+    } catch {
+      // cuerpo no JSON: seguimos con el mensaje del error
+    }
+  }
+
+  if (error instanceof Error && error.message && !/non-2xx/i.test(error.message)) {
+    return error.message;
+  }
+  return null;
+};
+
+/**
  * Tries to call the `clock` edge function. If we are offline or the request
  * fails with a network error, the action is enqueued locally and will be
  * synced later by useOfflineClockSync.

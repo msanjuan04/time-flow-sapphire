@@ -3,10 +3,10 @@ import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./index.css";
 import { ThemeProvider } from "next-themes";
+import { initMonitoring } from "./lib/monitoring";
 
-if (import.meta.env.DEV) {
-  console.log("SUPERADMIN_CODE:", "739421");
-}
+// Errores de producción → Sentry (solo si VITE_SENTRY_DSN está definido)
+initMonitoring();
 
 // Prevent noisy Vite ping requests when running a production build
 // outside of the dev server (e.g., in hosted previews).

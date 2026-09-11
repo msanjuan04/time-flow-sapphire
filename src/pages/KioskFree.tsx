@@ -14,8 +14,8 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { kioskDeviceByPin, kioskEmployeeByCode, KIOSK_ERROR_MESSAGES } from "@/lib/kioskApi";
 import {
   Loader2,
   ShieldCheck,
@@ -68,15 +68,19 @@ const KioskFree = () => {
     if (!devicePin) return;
     let cancelled = false;
     (async () => {
-      const { data } = await supabase
-        .from("devices")
-        .select("name")
-        .eq("secret_hash", devicePin)
-        .eq("type", "kiosk")
-        .maybeSingle();
-      if (!cancelled && data?.name) {
-        setDeviceName(data.name);
-        localStorage.setItem(DEVICE_NAME_KEY, data.name);
+      const result = await kioskDeviceByPin(devicePin);
+      if (cancelled) return;
+      if (result.ok) {
+        setDeviceName(result.data.name);
+        localStorage.setItem(DEVICE_NAME_KEY, result.data.name);
+      } else if (result.error === "device_not_found") {
+        // El PIN guardado ya no es válido (dispositivo borrado o PIN cambiado).
+        localStorage.removeItem(PIN_STORAGE_KEY);
+        localStorage.removeItem(DEVICE_NAME_KEY);
+        setDevicePin("");
+        setDeviceName("");
+        setPinDraft("");
+        setPinDialogOpen(true);
       }
     })();
     return () => {
@@ -93,23 +97,17 @@ const KioskFree = () => {
     setValidatingPin(true);
     setPinError(null);
     try {
-      const { data, error } = await supabase
-        .from("devices")
-        .select("id, company_id, name")
-        .eq("secret_hash", pin)
-        .eq("type", "kiosk")
-        .maybeSingle();
-      if (error) throw error;
-      if (!data) {
-        setPinError("PIN incorrecto");
+      const result = await kioskDeviceByPin(pin);
+      if (!result.ok) {
+        setPinError(KIOSK_ERROR_MESSAGES[result.error]);
         return;
       }
       localStorage.setItem(PIN_STORAGE_KEY, pin);
-      localStorage.setItem(DEVICE_NAME_KEY, data.name);
+      localStorage.setItem(DEVICE_NAME_KEY, result.data.name);
       setDevicePin(pin);
-      setDeviceName(data.name);
+      setDeviceName(result.data.name);
       setPinDialogOpen(false);
-      toast.success(`Kiosko ${data.name} activado`);
+      toast.success(`Kiosko ${result.data.name} activado`);
     } catch (err) {
       console.error("Error validando PIN:", err);
       setPinError("No pudimos validar el PIN");
@@ -130,14 +128,11 @@ const KioskFree = () => {
     }
     setSubmitting(true);
     try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, login_code")
-        .eq("login_code", code)
-        .maybeSingle();
-      if (error) throw error;
-      if (!data) {
-        toast.error("Código no reconocido");
+      // Valida código y pertenencia a la empresa del dispositivo en servidor
+      // antes de pasar a la pantalla de fichaje.
+      const result = await kioskEmployeeByCode(devicePin, code);
+      if (!result.ok) {
+        toast.error(KIOSK_ERROR_MESSAGES[result.error]);
         setCode("");
         setSubmitting(false);
         return;
