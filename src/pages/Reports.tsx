@@ -1416,7 +1416,7 @@ const Reports = () => {
 
       const { data: events } = await eventsQuery;
 
-      let sessionsData: SessionLike[] = (sessions as SessionLike[]) || [];
+      let sessionsData: SessionLike[] = (sessions as unknown as SessionLike[]) || [];
 
       // Si pedimos solo pendientes, no construimos sesiones desde eventos (no tienen review_status)
       if ((!sessionsData || sessionsData.length === 0) && events && events.length > 0 && !onlyPendingReview) {
@@ -1610,9 +1610,9 @@ const Reports = () => {
     const options = {
       margin: 10,
       filename: "informe-gtiq.pdf",
-      image: { type: "jpeg", quality: 0.98 },
+      image: { type: "jpeg" as const, quality: 0.98 },
       html2canvas: { scale: 2, useCORS: true },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" as const },
     };
 
     try {

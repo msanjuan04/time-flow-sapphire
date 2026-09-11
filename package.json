@@ -12,7 +12,9 @@
     "ensure:superadmin": "node ./scripts/ensure-superadmin.mjs",
     "test": "vitest",
     "test:watch": "vitest --watch",
-    "test:ci": "vitest run"
+    "test:ci": "vitest run",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit",
+    "check": "npm run typecheck && npm run test:ci && npm run build"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

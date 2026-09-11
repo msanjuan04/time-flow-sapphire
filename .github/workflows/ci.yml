@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  check:
+    name: Typecheck, tests y build
+    runs-on: ubuntu-latest
+    env:
+      # Valores ficticios: el cliente de Supabase exige que existan al importar,
+      # pero ningún test ni el build hablan con la base de datos real.
+      VITE_SUPABASE_URL: https://ci-placeholder.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-placeholder
+      VITE_SUPABASE_PROJECT_ID: ci-placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck (tsc estricto, debe quedar a 0)
+        run: npm run typecheck
+      - name: Tests
+        run: npm run test:ci
+      - name: Build
+        run: npm run build
+      - name: Lint (informativo hasta eliminar los `as any` pendientes)
+        run: npm run lint
+        continue-on-error: true

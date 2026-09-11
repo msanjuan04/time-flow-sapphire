@@ -29,7 +29,7 @@ type ClockPoint = {
 
 const getClockPoints = async (companyId: string): Promise<ClockPoint[]> => {
   const { data, error } = await supabase
-    .from("fastclock_points" as any)
+    .from("fastclock_points")
     .select("id, name, latitude, longitude, radius_meters, active")
     .eq("company_id", companyId)
     .order("created_at", { ascending: true });
@@ -49,7 +49,7 @@ const createClockPoint = async (
   payload: { name: string; latitude: number; longitude: number; radius_meters: number; active: boolean }
 ) => {
   const { data, error } = await supabase
-    .from("fastclock_points" as any)
+    .from("fastclock_points")
     .insert({
       company_id: companyId,
       name: payload.name,
@@ -73,7 +73,7 @@ const createClockPoint = async (
 
 const updateClockPoint = async (companyId: string, pointId: string, payload: Partial<ClockPoint>) => {
   const { data, error } = await supabase
-    .from("fastclock_points" as any)
+    .from("fastclock_points")
     .update({
       name: payload.name,
       latitude: payload.latitude,

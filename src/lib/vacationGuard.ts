@@ -98,7 +98,7 @@ export async function loadVacationBalance(
   year?: number
 ): Promise<VacationBalance | null> {
   if (!userId || !companyId) return null;
-  const params: Record<string, any> = {
+  const params: { p_user_id: string; p_company_id: string; p_year?: number } = {
     p_user_id: userId,
     p_company_id: companyId,
   };

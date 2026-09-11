@@ -40,7 +40,7 @@ type ClockPoint = {
 
 const getClockPoints = async (companyId: string): Promise<ClockPoint[]> => {
   const { data, error } = await supabase
-    .from("fastclock_points" as any)
+    .from("fastclock_points")
     .select("id, name, active")
     .eq("company_id", companyId)
     .order("created_at", { ascending: true });
@@ -64,12 +64,12 @@ const loadEmployees = async (companyId: string): Promise<ProfileRow[]> => {
 
 const loadNfcCards = async (companyId: string): Promise<NfcCardRow[]> => {
   const { data: rows, error } = await supabase
-    .from("nfc_cards" as any)
+    .from("nfc_cards")
     .select("id, user_id, card_uid, label, active")
     .eq("company_id", companyId)
     .order("created_at", { ascending: false });
   if (error) throw error;
-  const list = (rows || []) as Omit<NfcCardRow, "profile">[];
+  const list = (rows || []) as unknown as Omit<NfcCardRow, "profile">[];
   const ids = [...new Set(list.map((r) => r.user_id))];
   const profileMap = new Map<string, { full_name: string | null; email: string | null }>();
   if (ids.length > 0) {
@@ -183,7 +183,7 @@ const NfcCardsPage = () => {
     }
     setSaving(true);
     try {
-      const { error } = await supabase.from("nfc_cards" as any).insert({
+      const { error } = await supabase.from("nfc_cards").insert({
         company_id: companyId,
         user_id: selectedUserId,
         card_uid,
@@ -208,7 +208,7 @@ const NfcCardsPage = () => {
     if (!companyId) return;
     try {
       const { error } = await supabase
-        .from("nfc_cards" as any)
+        .from("nfc_cards")
         .update({ active })
         .eq("id", row.id)
         .eq("company_id", companyId);
@@ -224,7 +224,7 @@ const NfcCardsPage = () => {
   const handleDelete = async (row: NfcCardRow) => {
     if (!companyId) return;
     try {
-      const { error } = await supabase.from("nfc_cards" as any).delete().eq("id", row.id).eq("company_id", companyId);
+      const { error } = await supabase.from("nfc_cards").delete().eq("id", row.id).eq("company_id", companyId);
       if (error) throw error;
       setCards((prev) => prev.filter((c) => c.id !== row.id));
       toast.success("Tarjeta eliminada");

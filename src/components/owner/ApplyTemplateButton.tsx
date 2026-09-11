@@ -62,7 +62,7 @@ export function ApplyTemplateButton({
         .eq("company_id", companyId)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      setTemplates((data as ScheduleTemplate[]) || []);
+      setTemplates((data as unknown as ScheduleTemplate[]) || []);
     } catch (err: any) {
       toast.error(err?.message || "Error al cargar plantillas");
     } finally {

@@ -45,7 +45,7 @@ import { exportCSV } from "@/lib/exports";
 import html2pdf from "html2pdf.js";
 import { useAuth } from "@/contexts/AuthContext";
 
-type EventType = Database["public"]["Enums"]["event_type"];
+type EventType = Database["public"]["Enums"]["time_event_type"];
 type TimeEventRow = Database["public"]["Tables"]["time_events"]["Row"] & {
   original_event_time?: string | null;
 };
@@ -223,7 +223,7 @@ const OwnerIndividualReports = ({ companyId }: OwnerIndividualReportsProps) => {
     if (notesOnly) parts.push("Solo con notas");
     if (eventTypeFilter !== "all") parts.push(`Tipo: ${EVENT_LABELS[eventTypeFilter]}`);
     if (sourceFilter !== "all") {
-      const srcLabel: Record<typeof sourceFilter, string> = {
+      const srcLabel: Record<string, string> = {
         all: "Todos",
         manual: "Manual",
         device: "Dispositivo",

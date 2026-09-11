@@ -20,6 +20,9 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import html2pdf from "html2pdf.js";
+
+// El paquete no exporta sus interfaces; derivamos el tipo de opciones de .set()
+type Html2PdfOptions = NonNullable<Parameters<typeof html2pdf>[1]>;
 import { buildSignedAcceptancePdfHtml } from "@/lib/pdfTemplates";
 
 interface Props {
@@ -190,11 +193,12 @@ export function MyDocumentsCard({ userId, companyId }: Props) {
         .set({
           margin: 10,
           filename,
-          image: { type: "jpeg", quality: 0.98 },
+          image: { type: "jpeg" as const, quality: 0.98 },
           html2canvas: { scale: 2, useCORS: true },
-          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" as const },
+          // `pagebreak` existe en html2pdf pero falta en su type.d.ts
           pagebreak: { mode: ["css", "legacy"] },
-        })
+        } as Html2PdfOptions)
         .from(html)
         .save();
 

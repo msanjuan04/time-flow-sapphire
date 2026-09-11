@@ -26,13 +26,13 @@ export interface WorkerDayRules {
 
 export const getCompanyDayRules = async (companyId: string) => {
   const { data, error } = await supabase
-    .from("company_day_rules" as any)
+    .from("company_day_rules")
     .select("*")
     .eq("company_id", companyId)
     .maybeSingle();
 
   if (error) throw error;
-  return data as CompanyDayRules | null;
+  return data as unknown as CompanyDayRules | null;
 };
 
 export const upsertCompanyDayRules = async (
@@ -40,7 +40,7 @@ export const upsertCompanyDayRules = async (
   payload: Partial<Omit<CompanyDayRules, "id" | "company_id" | "created_at" | "updated_at">>
 ) => {
   const { data, error } = await supabase
-    .from("company_day_rules" as any)
+    .from("company_day_rules")
     .upsert(
       {
         company_id: companyId,
@@ -57,12 +57,12 @@ export const upsertCompanyDayRules = async (
 
 export const getWorkerDayRules = async (companyId: string) => {
   const { data, error } = await supabase
-    .from("worker_day_rules" as any)
+    .from("worker_day_rules")
     .select("*")
     .eq("company_id", companyId);
 
   if (error) throw error;
-  return (data || []) as WorkerDayRules[];
+  return (data || []) as unknown as WorkerDayRules[];
 };
 
 export const upsertWorkerDayRule = async (
@@ -71,7 +71,7 @@ export const upsertWorkerDayRule = async (
   payload: Partial<Omit<WorkerDayRules, "id" | "company_id" | "user_id" | "created_at" | "updated_at">>
 ) => {
   const { data, error } = await supabase
-    .from("worker_day_rules" as any)
+    .from("worker_day_rules")
     .upsert(
       {
         company_id: companyId,
@@ -84,5 +84,5 @@ export const upsertWorkerDayRule = async (
     .maybeSingle();
 
   if (error) throw error;
-  return data as WorkerDayRules;
+  return data as unknown as WorkerDayRules;
 };

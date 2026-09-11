@@ -62,7 +62,7 @@ const WeeklyScheduleEditor = ({
                     ))}
                   </SelectContent>
                 </Select>
-                <Button size="xs" variant="outline" onClick={() => onCopyWeek(index, copyWeekTargets[index])}>
+                <Button size="sm" variant="outline" onClick={() => onCopyWeek(index, copyWeekTargets[index])}>
                   Copiar
                 </Button>
               </div>

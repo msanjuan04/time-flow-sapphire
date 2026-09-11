@@ -56,6 +56,7 @@ interface Employee {
 
 interface WorkSession {
   id: string;
+  user_id: string;
   clock_in_time: string;
   clock_out_time: string | null;
   total_work_duration: string | null;
@@ -80,6 +81,7 @@ interface ScheduledHour {
 
 interface AbsenceRecord {
   id: string;
+  user_id: string;
   start_date: string;
   end_date: string;
   absence_type: string;
@@ -328,7 +330,7 @@ const ManagerCalendar = () => {
         );
       };
 
-      (sessionsRes.data as WorkSession[] | null)?.forEach((session) => {
+      (sessionsRes.data as unknown as WorkSession[] | null)?.forEach((session) => {
         const duration =
           session.total_work_duration && session.total_work_duration !== "00:00:00"
             ? parseDuration(session.total_work_duration)
@@ -355,7 +357,7 @@ const ManagerCalendar = () => {
         }
       );
 
-      (absencesRes.data as AbsenceRecord[] | null)?.forEach((absence) => {
+      (absencesRes.data as unknown as AbsenceRecord[] | null)?.forEach((absence) => {
         const userId = absence.user_id;
         if (!summary[userId]) {
           summary[userId] = { workedHours: 0 };
@@ -483,11 +485,6 @@ const ManagerCalendar = () => {
 
   // handleQuickSchedule removido → sustituido por QuickSchedulePanel con presets
 
-  const updateWeekSchedule = (weekIndex: number, patch: Partial<WeekSchedule>) => {
-    setWeeklySchedules((prev) =>
-      prev.map((week, idx) => (idx === weekIndex ? { ...week, ...patch } : week))
-    );
-  };
 
   const handleCreateAbsence = async () => {
     const reasonMeta = ABSENCE_REASONS.find((item) => item.value === absenceReasonType);
@@ -646,7 +643,8 @@ const ManagerCalendar = () => {
     setStartDate(dateStr);
     setEndDate(dateStr);
     setAbsenceType("other");
-    setAbsenceReason("Festivo de empresa");
+    setAbsenceReasonType("otro");
+    setAbsenceOtherReason("Festivo de empresa");
     setIsAbsenceDialogOpen(true);
   };
 
@@ -1348,7 +1346,8 @@ const ManagerCalendar = () => {
                         const d = format(date, "yyyy-MM-dd");
                         setStartDate(d);
                         setEndDate(d);
-                        setAbsenceReason("Festivo");
+                        setAbsenceReasonType("otro");
+                        setAbsenceOtherReason("Festivo");
                         setIsAbsenceDialogOpen(true);
                       }}
                     >
@@ -1450,7 +1449,8 @@ const ManagerCalendar = () => {
                               const d = format(date, "yyyy-MM-dd");
                               setStartDate(d);
                               setEndDate(d);
-                              setAbsenceReason("Festivo");
+                              setAbsenceReasonType("otro");
+                        setAbsenceOtherReason("Festivo");
                               setIsAbsenceDialogOpen(true);
                             }}
                           >

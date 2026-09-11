@@ -189,11 +189,9 @@ const FastClockPage = () => {
 
   useEffect(() => {
     if (!companyId) return;
-    supabase
-      .from("companies")
-      .select("pauses_enabled")
-      .eq("id", companyId)
-      .maybeSingle()
+    Promise.resolve(
+      supabase.from("companies").select("pauses_enabled").eq("id", companyId).maybeSingle()
+    )
       .then(({ data }) => {
         if (typeof data?.pauses_enabled === "boolean") {
           setPausesEnabled(Boolean(data.pauses_enabled));

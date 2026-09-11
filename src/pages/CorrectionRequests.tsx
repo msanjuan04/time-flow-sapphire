@@ -55,6 +55,11 @@ interface CorrectionPayload {
   event_type: string;
   event_time: string;
   reason: string;
+  /** Solicitudes de ausencia: type="absence" con rango de fechas */
+  type?: string;
+  start_date?: string;
+  end_date?: string;
+  description?: string;
 }
 
 interface CorrectionRequest {
@@ -64,6 +69,7 @@ interface CorrectionRequest {
   payload: CorrectionPayload;
   status: string;
   reason: string | null;
+  description?: string | null;
   created_at: string;
   updated_at: string;
   manager_id: string | null;

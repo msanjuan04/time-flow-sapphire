@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMembership } from "@/hooks/useMembership";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
 import { supabase } from "@/integrations/supabase/client";
+import type { Database } from "@/integrations/supabase/types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -147,29 +148,30 @@ const CompanySettings = () => {
         return;
       }
 
-      if (data) {
-        setCompanyName(data.name || "Empresa");
-        setHqLat(data.hq_lat ?? null);
-        setHqLng(data.hq_lng ?? null);
+      // Los dos selects (con y sin logo) devuelven formas distintas; tipamos al Row de companies.
+      const company = data as unknown as Partial<Database["public"]["Tables"]["companies"]["Row"]> | null;
+      if (company) {
+        setCompanyName(company.name || "Empresa");
+        setHqLat(company.hq_lat ?? null);
+        setHqLng(company.hq_lng ?? null);
         setMaxShiftHours(
-          typeof data.max_shift_hours === "number" && !Number.isNaN(data.max_shift_hours)
-            ? String(Number(data.max_shift_hours))
+          typeof company.max_shift_hours === "number" && !Number.isNaN(company.max_shift_hours)
+            ? String(Number(company.max_shift_hours))
             : ""
         );
-        if (typeof data.keep_sessions_open === "boolean") {
-          setKeepSessionsOpen(Boolean(data.keep_sessions_open));
+        if (typeof company.keep_sessions_open === "boolean") {
+          setKeepSessionsOpen(Boolean(company.keep_sessions_open));
         }
-        if (typeof data.keep_sessions_days === "number" && !Number.isNaN(data.keep_sessions_days)) {
-          setKeepSessionsDays(data.keep_sessions_days);
+        if (typeof company.keep_sessions_days === "number" && !Number.isNaN(company.keep_sessions_days)) {
+          setKeepSessionsDays(company.keep_sessions_days);
         }
-        if (typeof data.entry_early_minutes === "number") setEntryEarly(data.entry_early_minutes);
-        if (typeof data.entry_late_minutes === "number") setEntryLate(data.entry_late_minutes);
-        if (typeof data.exit_early_minutes === "number") setExitEarly(data.exit_early_minutes);
-        if (typeof data.exit_late_minutes === "number") setExitLate(data.exit_late_minutes);
-        if (typeof data.pauses_enabled === "boolean") setPausesEnabled(Boolean(data.pauses_enabled));
+        if (typeof company.entry_early_minutes === "number") setEntryEarly(company.entry_early_minutes);
+        if (typeof company.entry_late_minutes === "number") setEntryLate(company.entry_late_minutes);
+        if (typeof company.exit_early_minutes === "number") setExitEarly(company.exit_early_minutes);
+        if (typeof company.exit_late_minutes === "number") setExitLate(company.exit_late_minutes);
+        if (typeof company.pauses_enabled === "boolean") setPausesEnabled(Boolean(company.pauses_enabled));
         // Si la columna no existe, data no trae logo_url; mantenemos lo que haya.
-        // @ts-expect-error: logo_url puede no venir si la columna no existe aún
-        setLogoUrl(data.logo_url ?? null);
+        setLogoUrl(company.logo_url ?? null);
       }
     };
 

@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Stethoscope, Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { useAuth } from "@/contexts/AuthContext";
 
 interface Props {
@@ -49,7 +50,10 @@ export function SickLeaveTodayCard({ companyId }: Props) {
   const load = useCallback(async () => {
     if (!companyId) return;
     try {
-      const { data, error } = await supabase
+      // La vista no está en los tipos generados (falta aplicar la migración
+      // 20260508 en producción); se consulta con el cliente sin tipar.
+      const untyped = supabase as unknown as SupabaseClient;
+      const { data, error } = await untyped
         .from("workers_on_sick_leave_today")
         .select("user_id, full_name, email, start_date, end_date, days_remaining, days_elapsed, reason")
         .eq("company_id", companyId)

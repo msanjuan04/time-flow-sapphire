@@ -54,12 +54,15 @@ export function EmployeeVacationCard({ userId, companyId, canEdit }: Props) {
             p_company_id: companyId,
             p_year: year,
           }),
+          // La vista approved_absences no tiene start_date/end_date/reason
+          // (la consulta anterior fallaba con 400 y la tarjeta quedaba vacía).
           supabase
-            .from("approved_absences")
+            .from("absences")
             .select("start_date, end_date, reason")
             .eq("user_id", userId)
             .eq("company_id", companyId)
-            .eq("category", "vacation")
+            .eq("absence_type", "vacation")
+            .eq("status", "approved")
             .gte("end_date", `${year}-01-01`)
             .lte("start_date", `${year}-12-31`)
             .order("start_date", { ascending: false }),

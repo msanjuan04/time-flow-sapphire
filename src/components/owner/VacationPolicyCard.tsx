@@ -72,10 +72,10 @@ export function VacationPolicyCard({ companyId }: { companyId: string }) {
       if (data) {
         setPolicy({
           annual_days: data.annual_days,
-          count_type: data.count_type,
-          carry_over: data.carry_over,
+          count_type: data.count_type as Policy["count_type"],
+          carry_over: data.carry_over as Policy["carry_over"],
           carry_over_until_month: data.carry_over_until_month,
-          fiscal_year_start: data.fiscal_year_start,
+          fiscal_year_start: data.fiscal_year_start as Policy["fiscal_year_start"],
           block_over_balance: data.block_over_balance,
         });
       }

@@ -148,10 +148,14 @@ const AdminView = () => {
     const weekIso = startOfWeek.toISOString();
 
     // Helper para aplicar filtro de scope (solo si es manager con scope)
-    const applyScope = <T extends { in: (col: string, vals: any[]) => T; eq: (col: string, val: any) => T }>(q: T): T => {
+    // Tipado laxo a propósito: el builder de PostgREST hace que TS entre en
+    // "instanciación excesivamente profunda" si se intenta tipar el genérico.
+    type ScopedQuery = { in: (col: string, vals: string[]) => unknown; eq: (col: string, val: string) => unknown };
+    const applyScope = <T,>(q: T): T => {
+      const builder = q as unknown as ScopedQuery;
       if (scopeUserIds === null) return q;
-      if (scopeUserIds.length === 0) return q.eq("user_id", "00000000-0000-0000-0000-000000000000");
-      return q.in("user_id", scopeUserIds);
+      if (scopeUserIds.length === 0) return builder.eq("user_id", "00000000-0000-0000-0000-000000000000") as T;
+      return builder.in("user_id", scopeUserIds) as T;
     };
 
     // ── 4 queries en paralelo (antes eran 5 secuenciales) ──
@@ -191,7 +195,7 @@ const AdminView = () => {
     if (incidentsResult.error) throw incidentsResult.error;
     if (weekSessionsResult.error) throw weekSessionsResult.error;
 
-    const weekSessions = (weekSessionsResult.data || []) as WorkSessionRecord[];
+    const weekSessions = (weekSessionsResult.data || []) as unknown as WorkSessionRecord[];
     // Filtrar today del subconjunto de la semana (0 queries extra)
     const todaySessions = weekSessions.filter(
       (s) => s.clock_in_time && new Date(s.clock_in_time) >= startOfToday
@@ -240,7 +244,7 @@ const AdminView = () => {
     if (sessionsResult.error) throw sessionsResult.error;
     if (checkInsResult.error) throw checkInsResult.error;
 
-    const allSessions = (sessionsResult.data || []) as WorkSessionRecord[];
+    const allSessions = (sessionsResult.data || []) as unknown as WorkSessionRecord[];
     const allCheckIns = checkInsResult.data || [];
 
     // Agrupar por día en cliente (0 queries extra)

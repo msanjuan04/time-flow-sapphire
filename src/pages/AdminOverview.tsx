@@ -119,9 +119,8 @@ const AdminOverview = () => {
   const fetchLogs = async () => {
     setLogsLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("admin-list-logs", {
-        query: { limit: 8 },
-      });
+      // functions.invoke no admite `query`; admin-list-logs lee ?limit= de la URL.
+      const { data, error } = await supabase.functions.invoke("admin-list-logs?limit=8");
       if (error) throw error;
       setLogs((data?.data as AdminLog[]) || []);
     } catch (err) {

@@ -43,7 +43,19 @@ export const KIOSK_ERROR_MESSAGES: Record<KioskError, string> = {
   network: "Sin conexión con el servidor",
 };
 
-type Result<T> = { ok: true; data: T } | { ok: false; error: KioskError };
+/**
+ * Resultado de una llamada al kiosco. Se usa una forma plana en vez de una
+ * unión discriminada porque el proyecto compila con strict=false, y sin
+ * strictNullChecks TypeScript no estrecha uniones por `ok`.
+ * Contrato: ok=true → data definido; ok=false → error definido.
+ */
+export interface KioskResult<T> {
+  ok: boolean;
+  data: T | null;
+  error: KioskError | null;
+}
+
+type Result<T> = KioskResult<T>;
 
 const normalizeError = (raw: unknown): KioskError => {
   const s = typeof raw === "string" ? raw : "";
@@ -54,10 +66,10 @@ const normalizeError = (raw: unknown): KioskError => {
 
 export const kioskDeviceByPin = async (pin: string): Promise<Result<KioskDevice>> => {
   const { data, error } = await supabase.rpc("kiosk_device_by_pin" as never, { p_pin: pin } as never);
-  if (error) return { ok: false, error: "network" };
+  if (error) return { ok: false, data: null, error: "network" };
   const payload = (data || {}) as { ok?: boolean; error?: string; device?: KioskDevice };
-  if (!payload.ok || !payload.device) return { ok: false, error: normalizeError(payload.error) };
-  return { ok: true, data: payload.device };
+  if (!payload.ok || !payload.device) return { ok: false, data: null, error: normalizeError(payload.error) };
+  return { ok: true, data: payload.device, error: null };
 };
 
 export const kioskEmployeeByCode = async (
@@ -68,7 +80,7 @@ export const kioskEmployeeByCode = async (
     "kiosk_employee_by_code" as never,
     { p_pin: pin, p_code: code } as never
   );
-  if (error) return { ok: false, error: "network" };
+  if (error) return { ok: false, data: null, error: "network" };
   const payload = (data || {}) as {
     ok?: boolean;
     error?: string;
@@ -77,10 +89,11 @@ export const kioskEmployeeByCode = async (
     status?: KioskStatus;
   };
   if (!payload.ok || !payload.device || !payload.employee) {
-    return { ok: false, error: normalizeError(payload.error) };
+    return { ok: false, data: null, error: normalizeError(payload.error) };
   }
   return {
     ok: true,
     data: { device: payload.device, employee: payload.employee, status: payload.status ?? "off" },
+    error: null,
   };
 };

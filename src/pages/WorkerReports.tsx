@@ -145,7 +145,7 @@ const WorkerReports = () => {
         computedSessions.push(current);
       }
 
-      setSessions(computedSessions);
+      setSessions(computedSessions as unknown as WorkSession[]);
 
       // Calculate total hours desde eventos
       let total = 0;
@@ -189,7 +189,7 @@ const WorkerReports = () => {
         if (adjustmentsError) {
           console.error("Error fetching approved adjustments:", adjustmentsError);
         } else {
-          adjustments = (adjustmentsData as ApprovedAbsenceRecord[]) || [];
+          adjustments = (adjustmentsData as unknown as ApprovedAbsenceRecord[]) || [];
         }
       } catch (adjustmentsException) {
         console.error("Unexpected error loading approved adjustments:", adjustmentsException);
@@ -211,7 +211,7 @@ const WorkerReports = () => {
             console.error("Error fetching schedule history:", historyError);
           }
         } else {
-          historyRows = historyData ?? [];
+          historyRows = (historyData ?? []) as unknown as typeof historyRows;
         }
       } catch (historyException) {
         console.error("Unexpected error loading schedule history:", historyException);
@@ -477,9 +477,9 @@ const WorkerReports = () => {
     const options = {
       margin: 10,
       filename: "informe-gtiq.pdf",
-      image: { type: "jpeg", quality: 0.98 },
+      image: { type: "jpeg" as const, quality: 0.98 },
       html2canvas: { scale: 2 },
-      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      jsPDF: { unit: "mm", format: "a4", orientation: "portrait" as const },
     };
     html2pdf().set(options).from(reportRef.current).save();
     setPreviewOpen(false);

@@ -225,7 +225,7 @@ const WorkerCalendar = () => {
         .gte("date", format(monthStart, "yyyy-MM-dd"))
         .lte("date", format(monthEnd, "yyyy-MM-dd"));
       if (adjustmentsError) throw adjustmentsError;
-      setApprovedAdjustments((adjustments as ApprovedAbsence[]) || []);
+      setApprovedAdjustments((adjustments as unknown as ApprovedAbsence[]) || []);
 
       // Time events (with geo)
       const { data: events, error: eventsError } = await supabase
