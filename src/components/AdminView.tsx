@@ -14,6 +14,7 @@ import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import PendingReviewAlert from "@/components/PendingReviewAlert";
+import PresenceBoard from "@/components/PresenceBoard";
 
 interface DailyStats {
   date: string;
@@ -605,6 +606,7 @@ const AdminView = () => {
         <OwnerQuickNav />
         {companyId && <SickLeaveTodayCard companyId={companyId} />}
         <PendingReviewAlert />
+        {companyId && <PresenceBoard companyId={companyId} scopeUserIds={scopeUserIds} />}
         {error && (
           <Card className="border-destructive bg-destructive/10 text-destructive-foreground p-4 flex flex-col gap-2">
             <div className="flex items-center gap-2">

@@ -21,6 +21,7 @@ import WorkerOnboardingDialog from "@/components/WorkerOnboardingDialog";
 import MyDocumentsCard from "@/components/MyDocumentsCard";
 import { OfflineClockIndicator } from "@/components/OfflineClockIndicator";
 import { invokeClockWithQueue } from "@/lib/offlineClockQueue";
+import WorkdaySummaryCard from "@/components/WorkdaySummaryCard";
 
 type WorkerStatus = "out" | "in" | "on_break";
 type TimeEventType = "clock_in" | "clock_out" | "pause_start" | "pause_end";
@@ -43,6 +44,9 @@ interface WorkerSchedule {
   date: string;
   start_time: string | null;
   end_time: string | null;
+  /** Turno partido: fin de la mañana e inicio de la tarde */
+  morning_end_time?: string | null;
+  afternoon_start_time?: string | null;
   expected_hours: number;
 }
 
@@ -99,6 +103,9 @@ const formatTargetHours = (hours: number) => {
   const m = totalMinutes % 60;
   return m === 0 ? `${h}h` : `${h}h ${String(m).padStart(2, "0")}m`;
 };
+
+/** "09:00:00" → "09:00" */
+const shortTime = (value?: string | null) => (value ? String(value).slice(0, 5) : "—");
 
 const WorkerView = () => {
   const { user, signOut, memberships: authMemberships, company: authCompany } = useAuth();
@@ -163,7 +170,7 @@ const WorkerView = () => {
     const date = formatLocalDate(new Date(referenceDate));
     const { data } = await supabase
       .from("scheduled_hours")
-      .select("date, start_time, end_time, expected_hours")
+      .select("date, start_time, end_time, morning_end_time, afternoon_start_time, expected_hours")
       .eq("user_id", user.id)
       .eq("company_id", companyId)
       .eq("date", date)
@@ -174,6 +181,8 @@ const WorkerView = () => {
         date: data.date,
         start_time: data.start_time,
         end_time: data.end_time,
+        morning_end_time: data.morning_end_time ?? null,
+        afternoon_start_time: data.afternoon_start_time ?? null,
         expected_hours: Number(data.expected_hours || 0),
       });
     } else {
@@ -1223,9 +1232,20 @@ const WorkerView = () => {
             </div>
           </Card>
 
+          {/* Horas de hoy y de la semana */}
+          {companyId && user?.id && (
+            <div className="mt-4">
+              <WorkdaySummaryCard
+                userId={user.id}
+                companyId={companyId}
+                refreshKey={`${status}-${activeSession?.id ?? "none"}-${lastEvent?.timestamp ?? ""}`}
+              />
+            </div>
+          )}
+
           {/* Today's Schedule */}
           {todaySchedule && (
-            <Card className="glass-card p-4">
+            <Card className="glass-card p-4 mt-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-primary" />
@@ -1235,17 +1255,36 @@ const WorkerView = () => {
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {todaySchedule.start_time && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Entrada</p>
-                    <p className="text-sm font-semibold">{todaySchedule.start_time}</p>
-                  </div>
-                )}
-                {todaySchedule.end_time && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Salida</p>
-                    <p className="text-sm font-semibold">{todaySchedule.end_time}</p>
-                  </div>
+                {todaySchedule.morning_end_time && todaySchedule.afternoon_start_time ? (
+                  <>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Mañana</p>
+                      <p className="text-sm font-semibold">
+                        {shortTime(todaySchedule.start_time)} – {shortTime(todaySchedule.morning_end_time)}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Tarde</p>
+                      <p className="text-sm font-semibold">
+                        {shortTime(todaySchedule.afternoon_start_time)} – {shortTime(todaySchedule.end_time)}
+                      </p>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {todaySchedule.start_time && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Entrada</p>
+                        <p className="text-sm font-semibold">{shortTime(todaySchedule.start_time)}</p>
+                      </div>
+                    )}
+                    {todaySchedule.end_time && (
+                      <div>
+                        <p className="text-xs text-muted-foreground">Salida</p>
+                        <p className="text-sm font-semibold">{shortTime(todaySchedule.end_time)}</p>
+                      </div>
+                    )}
+                  </>
                 )}
                 <div>
                   <p className="text-xs text-muted-foreground">Horas</p>

@@ -1,4 +1,11 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.81.0'
+import {
+  classifyScheduleDeviation,
+  dateKeyInTimeZone,
+  DEVIATION_LABELS,
+  minutesInTimeZone,
+  type DaySchedule,
+} from '../_shared/scheduleWindow.ts'
 // Geofence helpers inlined to avoid missing _shared bundle in dashboard deploys
 const GEOFENCE_RADIUS_METERS = 200;
 const calculateDistanceMeters = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -877,14 +884,16 @@ Deno.serve(async (req) => {
     // Fetch horario programado para hoy (se reutiliza abajo).
     // Si es salida (out) y estamos en madrugada (ej. 02:00), el turno puede haber empezado ayer (ej. 20:00-02:00):
     // en ese caso buscamos también el horario de la fecha de entrada.
-    let scheduled: { start_time?: string | null; end_time?: string | null; expected_hours?: number | null } | null = null;
+    let scheduled: DaySchedule | null = null;
+    // Fecha del horario en hora de España (la función corre en UTC).
+    const scheduleDateKey = dateKeyInTimeZone(eventTime);
     try {
       const { data: scheduledData } = await supabaseAdmin
         .from('scheduled_hours')
-        .select('start_time, end_time, expected_hours')
+        .select('start_time, end_time, morning_end_time, afternoon_start_time, expected_hours')
         .eq('user_id', currentUserId)
         .eq('company_id', companyId)
-        .eq('date', todayLocal)
+        .eq('date', scheduleDateKey)
         .maybeSingle();
       if (scheduledData) scheduled = scheduledData;
 
@@ -898,7 +907,7 @@ Deno.serve(async (req) => {
         if (sessionDateLocal !== todayLocal) {
           const { data: sessionDayData } = await supabaseAdmin
             .from('scheduled_hours')
-            .select('start_time, end_time, expected_hours')
+            .select('start_time, end_time, morning_end_time, afternoon_start_time, expected_hours')
             .eq('user_id', currentUserId)
             .eq('company_id', companyId)
             .eq('date', sessionDateLocal)
@@ -1008,71 +1017,20 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Validación de márgenes de fichaje respecto al horario
-    const parseTimeToMinutes = (t?: string | null) => {
-      if (!t) return null;
-      const [h, m] = String(t).split(':').map(Number);
-      if (Number.isNaN(h) || Number.isNaN(m)) return null;
-      return h * 60 + m;
-    };
-
-    const withinScheduleWindow = () => {
-      const current = new Date();
-      const currentMinutes = current.getHours() * 60 + current.getMinutes();
-      const startMinutes = parseTimeToMinutes(scheduled?.start_time);
-      const endMinutes = parseTimeToMinutes(scheduled?.end_time);
-      const expectedHours =
-        typeof scheduled?.expected_hours === 'number'
-          ? scheduled.expected_hours
-          : Number(scheduled?.expected_hours ?? 0);
-
-      if (allowOutsideSchedule) return { ok: true };
-
-      // Si no hay horario con horas asignadas, no bloqueamos fichajes por horario
-      const shouldEnforceSchedule =
-        Boolean(scheduled) && expectedHours > 0 && startMinutes !== null && endMinutes !== null;
-      if (!shouldEnforceSchedule) return { ok: true };
-
-      const crossesMidnight = startMinutes !== null && endMinutes !== null && endMinutes < startMinutes;
-
-      if (effectiveAction === 'in') {
-        const minAllowed = startMinutes! - entryEarly;
-        const maxAllowed = startMinutes! + entryLate;
-        if (currentMinutes < minAllowed) {
-          return { ok: false, msg: 'No puedes fichar todavía' };
-        }
-        if (currentMinutes > maxAllowed) {
-          return { ok: false, msg: 'Ya no puedes fichar' };
-        }
-      }
-      if (effectiveAction === 'out') {
-        if (crossesMidnight) {
-          // Turno nocturno (ej. 20:00–02:00): la salida es en madrugada; ventana válida 00:00 hasta end + exitLate
-          if (currentMinutes > endMinutes! + exitLate) {
-            return { ok: false, msg: 'Ya no puedes fichar' };
-          }
-          // Opcional: no permitir salida antes de medianoche el mismo día (minAllowed en “día siguiente” es 0)
-        } else {
-          const minAllowed = endMinutes! - exitEarly;
-          const maxAllowed = endMinutes! + exitLate;
-          if (currentMinutes < minAllowed) {
-            return { ok: false, msg: 'No puedes fichar todavía' };
-          }
-          if (currentMinutes > maxAllowed) {
-            return { ok: false, msg: 'Ya no puedes fichar' };
-          }
-        }
-      }
-      return { ok: true };
-    };
-
-    const scheduleCheck = withinScheduleWindow();
-    if (!scheduleCheck.ok) {
-      return new Response(
-        JSON.stringify({ success: false, error: scheduleCheck.msg }), // FIX consistent error envelope
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    // -------------------------------------------------------------------
+    // Horario. Un fichaje NUNCA se rechaza por la hora: el registro de
+    // jornada debe reflejar la hora real (art. 34.9 ET). Antes, con los
+    // márgenes activos, quien salía tarde de una cirugía no podía fichar la
+    // salida. Ahora la desviación se guarda en el evento (meta) y se avisa
+    // al responsable más abajo. Entiende turno partido y usa la hora de
+    // España del momento del fichaje (antes usaba la hora UTC del servidor).
+    // -------------------------------------------------------------------
+    const scheduleDeviation = classifyScheduleDeviation(
+      scheduled,
+      effectiveAction,
+      minutesInTimeZone(eventTime),
+      { entryEarly, entryLate, exitEarly, exitLate }
+    );
 
     let distanceMeters: number | null = null;
     let isWithinGeofence: boolean | null = null;
@@ -1126,6 +1084,7 @@ Deno.serve(async (req) => {
           photo_url: photo_url || null,
           notes: notes || null,
           event_time: eventTime.toISOString(),
+          meta: scheduleDeviation ? { schedule_deviation: scheduleDeviation } : null,
         })
         .select('id')
         .single();
@@ -1361,55 +1320,43 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Aviso por fichaje fuera del horario programado del día (solo en entrada)
-    if (effectiveAction === 'in') {
+    // Aviso al responsable cuando la entrada o la salida se sale del horario.
+    // El fichaje ya está guardado con la hora real; esto es solo para revisar
+    // (retrasos, horas extra). Un aviso por persona, día y tipo.
+    if (scheduleDeviation) {
       try {
-        if (scheduled?.start_time && scheduled?.end_time && Number(scheduled.expected_hours) > 0) {
-          const now = new Date();
-          const [sh, sm] = String(scheduled.start_time).split(':').map(Number);
-          const [eh, em] = String(scheduled.end_time).split(':').map(Number);
-          const startMinutes = sh * 60 + sm;
-          const endMinutes = eh * 60 + em;
-          const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        const { data: admins } = await supabaseAdmin
+          .from('memberships')
+          .select('user_id')
+          .eq('company_id', companyId)
+          .in('role', ['owner', 'admin', 'manager']);
 
-          const crossesMidnightNotify = endMinutes < startMinutes;
-          const isOutsideWindow =
-            crossesMidnightNotify
-              ? currentMinutes < startMinutes && currentMinutes > endMinutes
-              : currentMinutes < startMinutes || currentMinutes > endMinutes;
-          if (Number.isFinite(startMinutes) && Number.isFinite(endMinutes) && isOutsideWindow) {
-            const { data: admins } = await supabaseAdmin
-              .from('memberships')
-              .select('user_id')
-              .eq('company_id', companyId)
-              .in('role', ['owner', 'admin', 'manager']);
+        const { data: profile } = await supabaseAdmin
+          .from('profiles')
+          .select('full_name, email')
+          .eq('id', currentUserId)
+          .maybeSingle();
 
-            const { data: profile } = await supabaseAdmin
-              .from('profiles')
-              .select('full_name, email')
-              .eq('id', currentUserId)
-              .maybeSingle();
-
-            const recipientIds = Array.from(new Set((admins || []).map((m: any) => m.user_id)));
-            const userLabel = profile?.full_name || profile?.email || 'Empleado';
-            // Deduplicamos por día para no repetir avisos del mismo empleado fuera de horario
-          const dedupEntityId = `${currentUserId}-${todayLocal}-schedule-out-of-hours`;
-            await notifyUsers(
-              recipientIds,
-              {
-                company_id: companyId,
-                title: 'Fichaje fuera de horario',
-                message: `${userLabel} registró un fichaje (${action}) fuera de su horario programado de hoy.`,
-                type: 'warning',
-                entity_type: 'time_event',
-                entity_id: dedupEntityId,
-              },
-              { deduplicateByEntity: true }
-            );
-          }
-        }
+        const recipientIds = Array.from(
+          new Set((admins || []).map((m: any) => m.user_id).filter((id: string) => id !== currentUserId))
+        );
+        const userLabel = profile?.full_name || profile?.email || 'Empleado';
+        const m = scheduleDeviation.minutes;
+        const minutesLabel = m >= 60 ? `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}` : `${m} min`;
+        await notifyUsers(
+          recipientIds,
+          {
+            company_id: companyId,
+            title: 'Fichaje fuera de horario',
+            message: `${userLabel}: ${DEVIATION_LABELS[scheduleDeviation.kind]} de ${minutesLabel} respecto a las ${scheduleDeviation.reference}. Queda registrado con la hora real.`,
+            type: 'warning',
+            entity_type: 'time_event',
+            entity_id: `${currentUserId}-${scheduleDateKey}-${scheduleDeviation.kind}`,
+          },
+          { deduplicateByEntity: true }
+        );
       } catch (scheduleNotifyError) {
-        console.error('Schedule notification check failed:', scheduleNotifyError);
+        console.error('Schedule notification failed:', scheduleNotifyError);
       }
     }
 
@@ -1433,6 +1380,7 @@ Deno.serve(async (req) => {
         event_type: eventType,
         employee_name: kioskEmployeeName,
         event_time: eventTime.toISOString(),
+        schedule_deviation: scheduleDeviation,
         timestamp: new Date().toISOString(),
         distance_meters: distanceMeters,
         is_within_geofence: isWithinGeofence,
