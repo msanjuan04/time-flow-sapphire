@@ -9,6 +9,8 @@ export interface QueuedClockAction {
   payload: {
     action: "in" | "out" | "break_start" | "break_end";
     user_id?: string;
+    /** Kiosco por PIN: credencial del dispositivo, validada en servidor */
+    device_pin?: string;
     device_id?: string;
     company_id?: string | null;
     source: string;

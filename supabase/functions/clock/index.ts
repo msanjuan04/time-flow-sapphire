@@ -25,9 +25,11 @@ interface ClockRequest {
   longitude?: number;
   photo_url?: string;
   device_id?: string;
-  source?: 'mobile' | 'web' | 'kiosk' | 'fastclock';
+  source?: 'mobile' | 'web' | 'kiosk' | 'kiosk-free' | 'fastclock' | 'nfc' | 'owner-dashboard';
   point_id?: string;
-  user_id?: string; // For kiosk mode
+  user_id?: string; // Kiosco por PIN: empleado que ficha (requiere device_pin)
+  device_pin?: string; // Kiosco por PIN: credencial del dispositivo
+  card_uid?: string; // Kiosco NFC: la tarjeta es la credencial (requiere company_id o point_id)
   company_id?: string; // Active company
   notes?: string;
   // ISO timestamp from the client. If provided and not too far in the future,
@@ -86,6 +88,8 @@ Deno.serve(async (req) => {
       device_id,
       source = 'web',
       user_id,
+      device_pin,
+      card_uid,
       company_id,
       notes,
       point_id,
@@ -109,23 +113,110 @@ Deno.serve(async (req) => {
     const pointIdForEvent = isUuid(normalizedPointId) ? normalizedPointId : null;
 
     let currentUserId: string;
+    // Empresa resuelta por la credencial del kiosco (tarjeta, punto o PIN).
+    let kioskCompanyId: string | null = null;
+    let kioskEmployeeName: string | null = null;
 
-    // Check if authenticated user or if user_id is provided (for kiosk)
+    const jsonError = (status: number, error: string, extra: Record<string, unknown> = {}) =>
+      new Response(JSON.stringify({ success: false, error, ...extra }), {
+        status,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    const slowDown = () => new Promise((resolve) => setTimeout(resolve, 300));
+    const normalizeUid = (raw: string) => raw.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    // Algunos lectores USB entregan el UID con los bytes en orden inverso.
+    const reverseBytes = (hex: string) =>
+      hex.length % 2 === 0 ? (hex.match(/.{2}/g) || []).reverse().join('') : hex;
+
+    // -------------------------------------------------------------------
+    // Identidad. Tres vías, todas verificadas en servidor:
+    //   1. Sesión (JWT): móvil, web, FastClock, owner-dashboard.
+    //   2. Tarjeta NFC (card_uid + company_id o point_id): la tarjeta es la
+    //      credencial; se resuelve el empleado en nfc_cards.
+    //   3. Kiosco por PIN (device_pin + user_id): el PIN del dispositivo es
+    //      la credencial; se comprueba contra devices.
+    // Antes bastaba con enviar user_id sin ninguna credencial: cualquiera
+    // con la clave pública podía fichar por cualquier empleado.
+    // -------------------------------------------------------------------
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
     if (user) {
       currentUserId = user.id;
-    } else if (user_id) {
-      // Kiosk mode - user_id provided
+    } else if (typeof card_uid === 'string' && card_uid.trim()) {
+      let cardCompanyId = typeof company_id === 'string' && isUuid(company_id) ? company_id : null;
+      if (!cardCompanyId && pointIdForEvent) {
+        const { data: point } = await supabaseAdmin
+          .from('fastclock_points')
+          .select('company_id, active')
+          .eq('id', pointIdForEvent)
+          .maybeSingle();
+        if (!point || point.active === false) {
+          return jsonError(404, 'POINT_NOT_FOUND', { message: 'No encontramos este punto de fichaje.' });
+        }
+        cardCompanyId = point.company_id;
+      }
+      if (!cardCompanyId) {
+        return jsonError(400, 'COMPANY_REQUIRED', { message: 'Falta la empresa o el punto del kiosco.' });
+      }
+      const norm = normalizeUid(card_uid);
+      if (!norm) return jsonError(400, 'CARD_INVALID', { message: 'UID de tarjeta vacío.' });
+      const rev = reverseBytes(norm);
+      const { data: cards } = await supabaseAdmin
+        .from('nfc_cards')
+        .select('user_id, empleado_id, uid, card_uid, card_uid_normalized, active')
+        .eq('company_id', cardCompanyId);
+      const card = (cards || []).find((c: any) => {
+        if (c.active === false) return false;
+        const stored = normalizeUid(String(c.uid || c.card_uid || c.card_uid_normalized || ''));
+        return stored !== '' && (stored === norm || stored === rev);
+      });
+      const cardUserId: string | null = card?.user_id || card?.empleado_id || null;
+      if (!cardUserId) {
+        await slowDown();
+        return jsonError(404, 'CARD_NOT_REGISTERED', { message: 'Tarjeta no reconocida.' });
+      }
+      currentUserId = cardUserId;
+      kioskCompanyId = cardCompanyId;
+    } else if (typeof device_pin === 'string' && device_pin.trim() && user_id) {
+      const { data: device } = await supabaseAdmin
+        .from('devices')
+        .select('id, company_id')
+        .eq('type', 'kiosk')
+        .ilike('secret_hash', device_pin.trim())
+        .maybeSingle();
+      if (!device) {
+        await slowDown();
+        return jsonError(403, 'DEVICE_PIN_INVALID', { message: 'PIN de dispositivo incorrecto.' });
+      }
+      if (company_id && company_id !== device.company_id) {
+        return jsonError(403, 'DEVICE_COMPANY_MISMATCH', { message: 'El dispositivo no pertenece a esta empresa.' });
+      }
       currentUserId = user_id;
+      kioskCompanyId = device.company_id;
     } else {
-      return new Response(
-        JSON.stringify({ success: false, error: 'No autenticado o user_id no proporcionado' }), // FIX always return JSON shape
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return jsonError(401, 'KIOSK_AUTH_REQUIRED', {
+        message: 'Se requiere sesión iniciada, PIN de dispositivo o tarjeta NFC.',
+      });
     }
+
+    // Empleado resuelto por kiosco: debe estar activo. Guardamos el nombre
+    // para mostrarlo en pantalla.
+    if (kioskCompanyId) {
+      const { data: kioskProfile } = await supabaseAdmin
+        .from('profiles')
+        .select('full_name, email, is_active')
+        .eq('id', currentUserId)
+        .maybeSingle();
+      if (kioskProfile && kioskProfile.is_active === false) {
+        return jsonError(403, 'EMPLOYEE_INACTIVE', { message: 'Este empleado está dado de baja.' });
+      }
+      kioskEmployeeName = kioskProfile?.full_name?.trim() || kioskProfile?.email || null;
+    }
+
+    // Empresa efectiva: la de la credencial del kiosco manda sobre la del cuerpo.
+    const requestedCompanyId = kioskCompanyId ?? (typeof company_id === 'string' ? company_id : undefined);
 
     const notifyUsers = async (
       userIds: string[],
@@ -256,10 +347,10 @@ Deno.serve(async (req) => {
       )
       .eq('user_id', currentUserId);
     
-    if (company_id) {
-      membershipQuery = membershipQuery.eq('company_id', company_id);
+    if (requestedCompanyId) {
+      membershipQuery = membershipQuery.eq('company_id', requestedCompanyId);
     }
-    
+
     const { data: memberships, error: membershipError } = await membershipQuery;
 
     if (membershipError || !memberships || memberships.length === 0) {
@@ -273,7 +364,7 @@ Deno.serve(async (req) => {
     let membership = memberships[0] as any;
 
     // If no company_id was provided and user has more than one membership, force selection
-    if (!company_id && memberships.length > 1) {
+    if (!requestedCompanyId && memberships.length > 1) {
       return new Response(
         JSON.stringify({ success: false, error: 'Debe seleccionar una empresa para fichar' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -281,8 +372,8 @@ Deno.serve(async (req) => {
     }
 
     // If company_id provided, pick the matching membership (defensive)
-    if (company_id && memberships.length > 0) {
-      const match = memberships.find((m: any) => m.company_id === company_id);
+    if (requestedCompanyId && memberships.length > 0) {
+      const match = memberships.find((m: any) => m.company_id === requestedCompanyId);
       if (match) membership = match;
     }
 
@@ -352,7 +443,7 @@ Deno.serve(async (req) => {
     const deviceId = device_id || null;
     let deviceIdForEvent: string | null = null;
 
-    if (source !== 'owner-dashboard') {
+    if (source !== 'owner-dashboard' && source !== 'nfc') {
       if (!deviceId) {
         return new Response(
           JSON.stringify({ success: false, error: 'DEVICE_REQUIRED' }),
@@ -523,7 +614,7 @@ Deno.serve(async (req) => {
         }
       }
     } else {
-      // owner-dashboard: no exigimos device_id para fichar ni lo guardamos
+      // owner-dashboard y nfc: no exigimos device_id ni vinculamos dispositivo
       deviceIdForEvent = null;
     }
 
@@ -594,6 +685,7 @@ Deno.serve(async (req) => {
             success: false,
             error: 'ON_SICK_LEAVE',
             reason: 'sick_leave_active',
+            employee_name: kioskEmployeeName,
             message:
               'Estás en periodo de baja médica aprobada. Si has vuelto antes de tiempo, avisa a tu responsable para cerrar la baja.',
             sick_leave: {
@@ -1206,6 +1298,10 @@ Deno.serve(async (req) => {
           clock_out_time: eventTime.toISOString(),
           is_active: false,
           status: 'closed',
+          total_hours:
+            Math.round(
+              Math.max(0, eventTime.getTime() - new Date(activeSession.clock_in_time).getTime()) / 36000
+            ) / 100,
         })
         .eq('id', activeSession.id);
 
@@ -1319,9 +1415,9 @@ Deno.serve(async (req) => {
 
     // Determine current status
     let currentStatus: 'working' | 'paused' | 'off';
-    if (action === 'out') {
+    if (effectiveAction === 'out') {
       currentStatus = 'off';
-    } else if (action === 'break_start') {
+    } else if (effectiveAction === 'break_start') {
       currentStatus = 'paused';
     } else {
       currentStatus = 'working';
@@ -1333,7 +1429,10 @@ Deno.serve(async (req) => {
       JSON.stringify({
         success: true,
         status: currentStatus,
+        action: effectiveAction,
         event_type: eventType,
+        employee_name: kioskEmployeeName,
+        event_time: eventTime.toISOString(),
         timestamp: new Date().toISOString(),
         distance_meters: distanceMeters,
         is_within_geofence: isWithinGeofence,

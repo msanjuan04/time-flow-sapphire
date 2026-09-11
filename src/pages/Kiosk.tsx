@@ -115,6 +115,8 @@ const Kiosk = () => {
         body: {
           action,
           user_id: userId,
+          // El PIN del dispositivo es la credencial que valida el servidor
+          device_pin: pin.trim().toUpperCase(),
           device_id: device.id,
           company_id: device.company_id,
           latitude,

@@ -5,7 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import ClockCompanyNfcPage from "@/pages/ClockCompanyNfc";
 
 vi.mock("@/integrations/supabase/client", () => ({
-  supabase: { rpc: vi.fn() },
+  supabase: { rpc: vi.fn(), functions: { invoke: vi.fn() } },
 }));
 vi.mock("@/lib/kioskSounds", () => ({
   playKioskSound: vi.fn(),
@@ -13,6 +13,17 @@ vi.mock("@/lib/kioskSounds", () => ({
 }));
 
 const rpc = supabase.rpc as unknown as ReturnType<typeof vi.fn>;
+const invoke = supabase.functions.invoke as unknown as ReturnType<typeof vi.fn>;
+
+/** Respuesta de `clock` cuando el servidor rechaza (non-2xx). */
+const serverRejection = (body: Record<string, unknown>) => ({
+  data: null,
+  error: {
+    name: "FunctionsHttpError",
+    message: "Edge Function returned a non-2xx status code",
+    context: new Response(JSON.stringify(body), { headers: { "Content-Type": "application/json" } }),
+  },
+});
 const COMPANY = "686460ff-173e-4090-b75b-72aa8bf78079";
 const CARD = "53:AE:93:AF:A1:00:01";
 
@@ -36,6 +47,7 @@ const tapCard = async (uid: string) => {
 describe("Kiosco NFC por empresa (/clock/:companyId/nfc)", () => {
   beforeEach(() => {
     rpc.mockReset();
+    invoke.mockReset();
     window.localStorage.clear();
     Object.defineProperty(window.navigator, "onLine", { value: true, configurable: true });
     // Comprobación inicial de empresa: uid vacío → empty_uid → pantalla de espera
@@ -62,18 +74,19 @@ describe("Kiosco NFC por empresa (/clock/:companyId/nfc)", () => {
 
   it("primera pasada → entrada con el nombre del trabajador", async () => {
     renderKiosk();
-    rpc.mockResolvedValueOnce({ data: { ok: true, action: "clock_in", nombre_completo: "Ana Pérez" }, error: null });
+    invoke.mockResolvedValueOnce({ data: { success: true, action: "in", employee_name: "Ana Pérez" }, error: null });
     await tapCard(CARD);
     expect(await screen.findByText("Bienvenido, Ana Pérez")).toBeInTheDocument();
-    const call = rpc.mock.calls.find((c) => c[1]?.p_raw_uid === CARD);
-    expect(call).toBeTruthy();
-    expect(call![1].p_company_id).toBe(COMPANY);
-    expect(typeof call![1].p_event_time).toBe("string");
+    // La pasada va por la MISMA función que móvil y kiosco por PIN
+    const [fn, opts] = invoke.mock.calls[0];
+    expect(fn).toBe("clock");
+    expect(opts.body).toMatchObject({ action: "auto", source: "nfc", company_id: COMPANY, card_uid: CARD });
+    expect(typeof opts.body.client_event_time).toBe("string");
   });
 
   it("segunda pasada → salida", async () => {
     renderKiosk();
-    rpc.mockResolvedValueOnce({ data: { ok: true, action: "clock_out", nombre_completo: "Ana Pérez" }, error: null });
+    invoke.mockResolvedValueOnce({ data: { success: true, action: "out", employee_name: "Ana Pérez" }, error: null });
     await tapCard(CARD);
     expect(await screen.findByText("Hasta pronto, Ana Pérez")).toBeInTheDocument();
     expect(screen.getByText("Salida registrada correctamente")).toBeInTheDocument();
@@ -81,7 +94,7 @@ describe("Kiosco NFC por empresa (/clock/:companyId/nfc)", () => {
 
   it("tarjeta desconocida → aviso claro y vuelta a esperar", async () => {
     renderKiosk();
-    rpc.mockResolvedValueOnce({ data: { ok: false, error: "unknown_card" }, error: null });
+    invoke.mockResolvedValueOnce(serverRejection({ error: "CARD_NOT_REGISTERED", message: "Tarjeta no reconocida." }));
     await tapCard("00:11:22:33");
     expect(await screen.findByText("Tarjeta no reconocida")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("Pasa tu tarjeta para fichar")).toBeInTheDocument(), {
@@ -91,13 +104,19 @@ describe("Kiosco NFC por empresa (/clock/:companyId/nfc)", () => {
 
   it("trabajador de baja médica → bloqueo con mensaje", async () => {
     renderKiosk();
-    rpc.mockResolvedValueOnce({
-      data: { ok: false, error: "on_sick_leave", nombre_completo: "Luis", message: "Estás de baja aprobada." },
-      error: null,
-    });
+    invoke.mockResolvedValueOnce(
+      serverRejection({ error: "ON_SICK_LEAVE", message: "Estás de baja aprobada.", employee_name: "Luis" })
+    );
     await tapCard(CARD);
     expect(await screen.findByText("Luis, estás de baja")).toBeInTheDocument();
     expect(screen.getByText("Estás de baja aprobada.")).toBeInTheDocument();
+  });
+
+  it("una regla de la empresa (horario, festivo) bloquea con el texto del servidor", async () => {
+    renderKiosk();
+    invoke.mockResolvedValueOnce(serverRejection({ error: "DAY_POLICY_VIOLATION", message: "Hoy es festivo." }));
+    await tapCard(CARD);
+    expect(await screen.findByText("Hoy es festivo.")).toBeInTheDocument();
   });
 
   it("sin conexión guarda la pasada y lo dice en pantalla", async () => {

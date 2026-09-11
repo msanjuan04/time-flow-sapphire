@@ -129,8 +129,9 @@ const ClockCompanyNfcPage = () => {
       const payload = (result.data || {}) as {
         ok?: boolean;
         error?: string;
-        nombre_completo?: string;
+        nombre_completo?: string | null;
         action?: string;
+        message?: string;
       };
 
       if (payload.error === "company_not_found") {
@@ -145,8 +146,17 @@ const ClockCompanyNfcPage = () => {
         setScreen({
           phase: "sick_leave",
           name: payload.nombre_completo?.trim() || "Trabajador",
-          message: (payload as any).message || "Estás de baja médica aprobada.",
+          message: payload.message || "Estás de baja médica aprobada.",
         });
+        scheduleBackToWaiting();
+        return;
+      }
+
+      // Regla de la empresa (horario, festivo, límite de horas...): el
+      // servidor explica el motivo; lo mostramos tal cual y volvemos a esperar.
+      if (payload.ok === false && payload.error === "server_error") {
+        playKioskSound("error");
+        setScreen({ phase: "error_rpc", message: payload.message || "No se pudo registrar el fichaje." });
         scheduleBackToWaiting();
         return;
       }
@@ -265,11 +275,9 @@ const ClockCompanyNfcPage = () => {
     return kioskShell(
       <div className="text-center max-w-lg space-y-4">
         <p className="text-6xl">⚠️</p>
-        <h1 className="text-2xl sm:text-3xl font-bold text-amber-200">Error</h1>
+        <h1 className="text-2xl sm:text-3xl font-bold text-amber-200">No se ha registrado</h1>
         <p className="text-lg text-slate-300">{screen.message}</p>
-        <p className="text-sm text-slate-500">
-          Si acabas de desplegar la app, aplica la migración SQL `nfc_kiosk_clock` en Supabase y concede EXECUTE a `anon`.
-        </p>
+        <p className="text-sm text-slate-500">Si crees que es un error, avisa a tu responsable.</p>
       </div>
     );
   }

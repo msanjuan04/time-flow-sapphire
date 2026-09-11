@@ -142,6 +142,8 @@ const KioskEmployee = () => {
         payload: {
           action,
           user_id: profile.id,
+          // El PIN del dispositivo es la credencial que valida el servidor
+          device_pin: devicePin,
           device_id: device?.id,
           company_id: companyId,
           source: "kiosk-free",

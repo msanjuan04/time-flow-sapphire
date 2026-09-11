@@ -92,8 +92,16 @@ const NfcClockPage = () => {
       inFlightRef.current = true;
       setDisplay({ kind: "scanning" });
       try {
-        const response = await supabase.functions.invoke("nfc-clock", {
-          body: { card_uid: rawUid, point_id: normalizedPointId },
+        // Misma función de servidor que móvil, web y kioscos: la tarjeta es
+        // la credencial y el punto resuelve la empresa.
+        const response = await supabase.functions.invoke("clock", {
+          body: {
+            action: "auto",
+            source: "nfc",
+            card_uid: rawUid,
+            point_id: normalizedPointId,
+            client_event_time: new Date().toISOString(),
+          },
         });
         if (response.error) {
           const errorResponse = response.response ?? (response.error as any)?.context;
