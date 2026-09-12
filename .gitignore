@@ -29,3 +29,4 @@ CODIGOS-USUARIOS.txt
 
 # Claves VAPID de notificaciones push (nunca subir)
 .vapid.env
+supabase/.temp/

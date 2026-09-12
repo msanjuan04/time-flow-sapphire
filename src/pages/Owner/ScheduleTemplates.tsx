@@ -40,24 +40,7 @@ import {
   type ScheduleTemplate,
 } from "@/lib/scheduleTemplates";
 import ApplyTemplateDialog from "@/components/owner/ApplyTemplateDialog";
-
-interface DayFormState {
-  enabled: boolean;
-  start: string;
-  end: string;
-  splitShift: boolean;
-  morning_end: string;
-  afternoon_start: string;
-}
-
-const emptyDay = (): DayFormState => ({
-  enabled: false,
-  start: "09:00",
-  end: "17:00",
-  splitShift: false,
-  morning_end: "13:00",
-  afternoon_start: "15:00",
-});
+import { PRESETS, emptyDay, presetWeeklyHours, toDaySchedule, type DayFormState } from "@/lib/schedulePresets";
 
 const fromTemplate = (t: ScheduleTemplate | null): Record<DayKey, DayFormState> => {
   const result = {} as Record<DayKey, DayFormState>;
@@ -78,72 +61,6 @@ const fromTemplate = (t: ScheduleTemplate | null): Record<DayKey, DayFormState> 
   }
   return result;
 };
-
-const toDaySchedule = (d: DayFormState): DaySchedule | null => {
-  if (!d.enabled) return null;
-  return {
-    start: d.start,
-    end: d.end,
-    morning_end: d.splitShift ? d.morning_end : null,
-    afternoon_start: d.splitShift ? d.afternoon_start : null,
-  };
-};
-
-const PRESETS: { name: string; description: string; days: Record<DayKey, DayFormState> }[] = [
-  {
-    name: "Turno mañana 40h",
-    description: "Lunes a viernes, jornada continua de 9:00 a 17:00",
-    days: {
-      ...DAY_KEYS.reduce((acc, k) => ({ ...acc, [k]: emptyDay() }), {}),
-      monday:    { enabled: true, start: "09:00", end: "17:00", splitShift: false, morning_end: "13:00", afternoon_start: "15:00" },
-      tuesday:   { enabled: true, start: "09:00", end: "17:00", splitShift: false, morning_end: "13:00", afternoon_start: "15:00" },
-      wednesday: { enabled: true, start: "09:00", end: "17:00", splitShift: false, morning_end: "13:00", afternoon_start: "15:00" },
-      thursday:  { enabled: true, start: "09:00", end: "17:00", splitShift: false, morning_end: "13:00", afternoon_start: "15:00" },
-      friday:    { enabled: true, start: "09:00", end: "17:00", splitShift: false, morning_end: "13:00", afternoon_start: "15:00" },
-      saturday:  emptyDay(),
-      sunday:    emptyDay(),
-    } as Record<DayKey, DayFormState>,
-  },
-  {
-    name: "Jornada partida",
-    description: "L-V con descanso de 13:00 a 15:00",
-    days: {
-      ...DAY_KEYS.reduce((acc, k) => ({ ...acc, [k]: emptyDay() }), {}),
-      monday:    { enabled: true, start: "09:00", end: "18:00", splitShift: true, morning_end: "13:00", afternoon_start: "15:00" },
-      tuesday:   { enabled: true, start: "09:00", end: "18:00", splitShift: true, morning_end: "13:00", afternoon_start: "15:00" },
-      wednesday: { enabled: true, start: "09:00", end: "18:00", splitShift: true, morning_end: "13:00", afternoon_start: "15:00" },
-      thursday:  { enabled: true, start: "09:00", end: "18:00", splitShift: true, morning_end: "13:00", afternoon_start: "15:00" },
-      friday:    { enabled: true, start: "09:00", end: "18:00", splitShift: true, morning_end: "13:00", afternoon_start: "15:00" },
-      saturday:  emptyDay(),
-      sunday:    emptyDay(),
-    } as Record<DayKey, DayFormState>,
-  },
-  {
-    name: "Turno tarde",
-    description: "L-V de 14:00 a 22:00",
-    days: {
-      ...DAY_KEYS.reduce((acc, k) => ({ ...acc, [k]: emptyDay() }), {}),
-      monday:    { enabled: true, start: "14:00", end: "22:00", splitShift: false, morning_end: "13:00", afternoon_start: "15:00" },
-      tuesday:   { enabled: true, start: "14:00", end: "22:00", splitShift: false, morning_end: "13:00", afternoon_start: "15:00" },
-      wednesday: { enabled: true, start: "14:00", end: "22:00", splitShift: false, morning_end: "13:00", afternoon_start: "15:00" },
-      thursday:  { enabled: true, start: "14:00", end: "22:00", splitShift: false, morning_end: "13:00", afternoon_start: "15:00" },
-      friday:    { enabled: true, start: "14:00", end: "22:00", splitShift: false, morning_end: "13:00", afternoon_start: "15:00" },
-      saturday:  emptyDay(),
-      sunday:    emptyDay(),
-    } as Record<DayKey, DayFormState>,
-  },
-  {
-    name: "Hostelería FDS",
-    description: "Jueves a domingo, jornada partida",
-    days: {
-      ...DAY_KEYS.reduce((acc, k) => ({ ...acc, [k]: emptyDay() }), {}),
-      thursday:  { enabled: true, start: "16:00", end: "23:00", splitShift: false, morning_end: "13:00", afternoon_start: "15:00" },
-      friday:    { enabled: true, start: "12:00", end: "23:00", splitShift: true, morning_end: "16:00", afternoon_start: "20:00" },
-      saturday:  { enabled: true, start: "12:00", end: "23:00", splitShift: true, morning_end: "16:00", afternoon_start: "20:00" },
-      sunday:    { enabled: true, start: "12:00", end: "23:00", splitShift: true, morning_end: "16:00", afternoon_start: "20:00" },
-    } as Record<DayKey, DayFormState>,
-  },
-];
 
 const ScheduleTemplatesPage = () => {
   const { user } = useAuth();
@@ -214,8 +131,11 @@ const ScheduleTemplatesPage = () => {
   };
 
   const applyPreset = (preset: typeof PRESETS[number]) => {
+    // Las horas se calculan del propio patrón, para que la descripción
+    // no pueda contradecir al horario si algún día se retoca el ejemplo.
+    const horas = presetWeeklyHours(preset);
     setName(preset.name);
-    setDescription(preset.description);
+    setDescription(`${preset.description} · ${horas.toFixed(1).replace(".0", "")} h/semana`);
     setDays(preset.days);
   };
 

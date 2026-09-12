@@ -39,7 +39,7 @@ const parseFunctionError = async (response: Response | null | undefined) => {
     const text = await clone.text();
     return text || null;
   } catch (err) {
-    console.error("No se pudo leer el error de nfc-clock:", err);
+    console.error("No se pudo leer el error de la función clock:", err);
     return null;
   }
 };
@@ -110,7 +110,7 @@ const NfcClockPage = () => {
             (response.data as any)?.error ||
             parsed ||
             response.error.message ||
-            "Error en nfc-clock";
+            "Error al fichar";
           throw new Error(typeof serverMessage === "string" ? serverMessage : String(serverMessage));
         }
         const data = (response.data || {}) as Record<string, unknown>;
