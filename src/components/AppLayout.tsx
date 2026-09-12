@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
 import {
+  FileSignature,
   Clock,
   Calendar,
   MapPin,
@@ -41,6 +42,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { icon: Calendar,        label: "Calendario",   path: "/manager-calendar" },
     { icon: AlertTriangle,   label: "Incidencias",  path: "/incidents" },
     { icon: MapPin,          label: "Ausencias",    path: "/absences" },
+    { icon: FileSignature,   label: "Cierre mensual", path: "/owner/monthly-close" },
   ],
   admin: [
     { icon: LayoutDashboard, label: "Dashboard",    path: "/dashboard" },
@@ -50,6 +52,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { icon: AlertTriangle,   label: "Incidencias",  path: "/incidents" },
     { icon: MapPin,          label: "Ausencias",    path: "/absences" },
     { icon: Settings,        label: "Ajustes",      path: "/company-settings" },
+    { icon: FileSignature,   label: "Cierre mensual", path: "/owner/monthly-close" },
   ],
   owner: [
     { icon: LayoutDashboard, label: "Dashboard",    path: "/dashboard" },
@@ -62,6 +65,7 @@ const NAV_ITEMS: Record<string, NavItem[]> = {
     { icon: Calendar,        label: "Plantillas",   path: "/owner/schedule-templates" },
     { icon: Settings,        label: "Ajustes",      path: "/company-settings" },
     { icon: FileText,        label: "Documentos",   path: "/owner/legal-documents" },
+    { icon: FileSignature,   label: "Cierre mensual", path: "/owner/monthly-close" },
     { icon: Clock,           label: "Mi ficha",     path: "/me/clock" },
   ],
 };

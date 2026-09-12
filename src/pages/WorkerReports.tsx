@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { motion } from "framer-motion";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { exportCSV } from "@/lib/exports";
+import MonthlySignoffCard from "@/components/MonthlySignoffCard";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import html2pdf from "html2pdf.js";
 import {
@@ -526,6 +527,9 @@ const WorkerReports = () => {
             </div>
           }
         />
+
+        {/* Mi mes: horas extra y firma del registro (art. 35.5 ET) */}
+        {companyId && <MonthlySignoffCard companyId={companyId} />}
         <Card className="glass-card p-4 flex flex-col gap-3">
           <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-3">
             <h3 className="text-sm font-semibold flex items-center gap-2 shrink-0">

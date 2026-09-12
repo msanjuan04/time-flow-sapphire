@@ -1,24 +1,24 @@
+import {
+  localDateKey,
+  workedSecondsByDay,
+  type ClockEventLite,
+} from "../../supabase/functions/_shared/timeMath";
+
 /**
  * Horas trabajadas a partir de los fichajes.
  *
- * Se calcula desde time_events (entrada, pausa, fin de pausa, salida) y no
- * desde work_sessions, porque las sesiones antiguas no guardan las pausas.
- * Cada tramo cuenta para el día en que empezó la sesión: un turno de noche
- * de 22:00 a 06:00 suma al día de la entrada, como la jornada laboral.
+ * El cálculo vive en supabase/functions/_shared/timeMath.ts para que el
+ * servidor y la pantalla den exactamente el mismo número: es el que se
+ * firma en el cierre mensual.
  */
 
-export interface ClockEventLite {
-  event_type: string;
-  event_time: string;
-}
+export { localDateKey, workedSecondsByDay };
+export type { ClockEventLite };
 
 export interface ScheduledDayLite {
   date: string;
   expected_hours: number | string | null;
 }
-
-export const localDateKey = (date: Date): string =>
-  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 
 /** Lunes 00:00 de la semana de la fecha dada, en hora local. */
 export const startOfWeekMonday = (date: Date): Date => {
@@ -28,66 +28,6 @@ export const startOfWeekMonday = (date: Date): Date => {
   d.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
   return d;
 };
-
-/**
- * Segundos trabajados por día local, descontando pausas. Una sesión abierta
- * cuenta hasta `now`. Una entrada sin salida seguida de otra entrada se
- * descarta: no sabemos cuándo terminó y es mejor no inventar horas.
- */
-export function workedSecondsByDay(events: ClockEventLite[], now: Date = new Date()): Record<string, number> {
-  const sorted = events
-    .map((e) => ({ type: e.event_type, t: new Date(e.event_time).getTime() }))
-    .filter((e) => Number.isFinite(e.t))
-    .sort((a, b) => a.t - b.t);
-
-  const totalsMs: Record<string, number> = {};
-  let sessionDay: string | null = null;
-  let segmentStart: number | null = null;
-  let paused = false;
-
-  const addUntil = (end: number) => {
-    if (sessionDay && segmentStart !== null && end > segmentStart) {
-      totalsMs[sessionDay] = (totalsMs[sessionDay] ?? 0) + (end - segmentStart);
-    }
-  };
-
-  for (const e of sorted) {
-    switch (e.type) {
-      case "clock_in":
-        sessionDay = localDateKey(new Date(e.t));
-        segmentStart = e.t;
-        paused = false;
-        break;
-      case "pause_start":
-        if (sessionDay && !paused) {
-          addUntil(e.t);
-          segmentStart = null;
-          paused = true;
-        }
-        break;
-      case "pause_end":
-        if (sessionDay && paused) {
-          segmentStart = e.t;
-          paused = false;
-        }
-        break;
-      case "clock_out":
-        if (sessionDay && !paused) addUntil(e.t);
-        sessionDay = null;
-        segmentStart = null;
-        paused = false;
-        break;
-      default:
-        break;
-    }
-  }
-
-  if (sessionDay && !paused) addUntil(now.getTime());
-
-  const totals: Record<string, number> = {};
-  for (const [day, ms] of Object.entries(totalsMs)) totals[day] = Math.floor(ms / 1000);
-  return totals;
-}
 
 export interface WorkdaySummary {
   todaySeconds: number;
