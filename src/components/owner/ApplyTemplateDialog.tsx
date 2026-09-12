@@ -222,6 +222,7 @@ export function ApplyTemplateDialog({
               <Input
                 id="apt-start"
                 type="date"
+                className="h-11 text-base"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
               />
@@ -231,6 +232,7 @@ export function ApplyTemplateDialog({
               <Input
                 id="apt-end"
                 type="date"
+                className="h-11 text-base"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
               />
@@ -253,7 +255,7 @@ export function ApplyTemplateDialog({
                       setFilterTeam("all");
                     }}
                   >
-                    <SelectTrigger className="w-[150px] h-8 text-xs">
+                    <SelectTrigger className="w-[140px] h-9 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -266,7 +268,7 @@ export function ApplyTemplateDialog({
                 )}
                 {teams.length > 0 && (
                   <Select value={filterTeam} onValueChange={setFilterTeam}>
-                    <SelectTrigger className="w-[150px] h-8 text-xs">
+                    <SelectTrigger className="w-[140px] h-9 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -305,7 +307,7 @@ export function ApplyTemplateDialog({
                   {filtered.map((p) => (
                     <label
                       key={p.id}
-                      className="flex items-center gap-2 px-3 py-2 border-b last:border-0 hover:bg-muted/20 cursor-pointer text-sm"
+                      className="flex items-center gap-3 px-3 py-2.5 border-b last:border-0 hover:bg-muted/20 cursor-pointer text-sm"
                     >
                       <Checkbox
                         checked={selectedIds.has(p.id)}
@@ -344,11 +346,11 @@ export function ApplyTemplateDialog({
           </div>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="sticky bottom-0 -mx-4 px-4 pt-3 pb-1 bg-background border-t border-border/60 sm:static sm:mx-0 sm:px-0 sm:border-0 sm:pt-0">
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={submitting}>
             Cancelar
           </Button>
-          <Button onClick={handleApply} disabled={submitting || selectedIds.size === 0} className="gap-2">
+          <Button onClick={handleApply} disabled={submitting || selectedIds.size === 0} className="gap-2 h-11 sm:h-10">
             {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
             {submitting ? "Aplicando…" : `Aplicar a ${selectedIds.size}`}
           </Button>

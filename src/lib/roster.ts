@@ -151,6 +151,68 @@ export function buildRosterWeek(
   };
 }
 
+/**
+ * Un turno mientras se edita: horas en texto "HH:MM", como las devuelve
+ * un <input type="time"> del móvil.
+ */
+export interface ShiftDraft {
+  start: string;
+  end: string;
+  morningEnd: string;
+  afternoonStart: string;
+}
+
+export const emptyDraft = (): ShiftDraft => ({ start: "", end: "", morningEnd: "", afternoonStart: "" });
+
+export const draftFromSchedule = (schedule: RosterSchedule | null): ShiftDraft => {
+  if (!schedule) return emptyDraft();
+  return {
+    start: hhmm(schedule.start_time) ?? "",
+    end: hhmm(schedule.end_time) ?? "",
+    morningEnd: hhmm(schedule.morning_end_time) ?? "",
+    afternoonStart: hhmm(schedule.afternoon_start_time) ?? "",
+  };
+};
+
+/** Turno partido solo si están los dos extremos del hueco. */
+const draftIsSplit = (draft: ShiftDraft) => Boolean(draft.morningEnd && draft.afternoonStart);
+
+const draftAsSchedule = (draft: ShiftDraft): RosterSchedule => ({
+  user_id: "",
+  date: "",
+  start_time: draft.start || null,
+  end_time: draft.end || null,
+  morning_end_time: draftIsSplit(draft) ? draft.morningEnd : null,
+  afternoon_start_time: draftIsSplit(draft) ? draft.afternoonStart : null,
+  expected_hours: null,
+});
+
+/** Horas que suma el turno que se está editando. */
+export const draftHours = (draft: ShiftDraft): number => cellHours(draftAsSchedule(draft));
+
+export const describeDraft = (draft: ShiftDraft): string => describeShift(draftAsSchedule(draft));
+
+/**
+ * Qué falla en el turno, en una frase para enseñar debajo del campo.
+ * Devuelve null cuando se puede guardar.
+ */
+export const draftProblem = (draft: ShiftDraft): string | null => {
+  if (!draft.start || !draft.end) return "Pon la hora de entrada y la de salida";
+  if (draft.morningEnd && !draft.afternoonStart) return "Falta la hora de volver por la tarde";
+  if (draft.afternoonStart && !draft.morningEnd) return "Falta la hora de salir a mediodía";
+  if (draftIsSplit(draft)) {
+    const start = toMinutes(draft.start)!;
+    const morningEnd = toMinutes(draft.morningEnd)!;
+    const afternoonStart = toMinutes(draft.afternoonStart)!;
+    if (morningEnd <= start) return "La salida a mediodía va después de la entrada";
+    if (afternoonStart < morningEnd) return "La vuelta por la tarde va después de la salida a mediodía";
+  }
+  const hours = draftHours(draft);
+  if (hours <= 0) return "El turno se queda en cero horas";
+  if (hours > 16) return "Son más de 16 horas, revísalo";
+  return null;
+};
+
 export interface SchedulePayload {
   user_id: string;
   company_id: string;
@@ -171,6 +233,51 @@ export interface SchedulePayload {
  * la siguiente, [1,2,3] a las tres siguientes, [0] a la misma semana (se
  * usa al copiar desde la anterior).
  */
+/** El turno editado, listo para guardar en uno o varios días. */
+export function draftPayload(input: {
+  draft: ShiftDraft;
+  dates: string[];
+  userId: string;
+  companyId: string;
+  createdBy: string;
+}): SchedulePayload[] {
+  if (draftProblem(input.draft)) return [];
+  const split = draftIsSplit(input.draft);
+  const hours = draftHours(input.draft);
+  return input.dates.map((date) => ({
+    user_id: input.userId,
+    company_id: input.companyId,
+    date,
+    start_time: input.draft.start,
+    end_time: input.draft.end,
+    morning_end_time: split ? input.draft.morningEnd : null,
+    afternoon_start_time: split ? input.draft.afternoonStart : null,
+    expected_hours: hours,
+    created_by: input.createdBy,
+  }));
+}
+
+/**
+ * Los turnos que más se repiten en el equipo, para ofrecerlos como atajo
+ * en el móvil: en una clínica casi todo el cuadrante son tres o cuatro
+ * turnos que se repiten.
+ */
+export function frequentShifts(schedules: RosterSchedule[], limit = 4): ShiftDraft[] {
+  const counts = new Map<string, { draft: ShiftDraft; count: number }>();
+  for (const schedule of schedules) {
+    const draft = draftFromSchedule(schedule);
+    if (draftProblem(draft)) continue;
+    const key = `${draft.start}|${draft.morningEnd}|${draft.afternoonStart}|${draft.end}`;
+    const entry = counts.get(key);
+    if (entry) entry.count += 1;
+    else counts.set(key, { draft, count: 1 });
+  }
+  return Array.from(counts.values())
+    .sort((a, b) => b.count - a.count || a.draft.start.localeCompare(b.draft.start))
+    .slice(0, limit)
+    .map((entry) => entry.draft);
+}
+
 export function copyWeekPayload(input: {
   sourceSchedules: RosterSchedule[];
   sourceWeekStart: Date;

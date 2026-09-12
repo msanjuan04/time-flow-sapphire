@@ -87,12 +87,12 @@ export function ApplyTemplateButton({
         type="button"
         size={size}
         variant={variant}
-        className={`gap-2 ${className || ""}`}
+        className={`gap-2 min-w-0 ${className || ""}`}
         onClick={() => setPickerOpen(true)}
         disabled={initialUserIds.length === 0}
       >
-        <Sparkles className="w-4 h-4" />
-        {label}
+        <Sparkles className="w-4 h-4 shrink-0" />
+        <span className="truncate">{label}</span>
       </Button>
 
       <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>

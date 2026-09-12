@@ -192,29 +192,35 @@ const MonthlySignoffCard = ({ companyId }: Props) => {
                 Ver el detalle por día
               </summary>
               <div className="mt-3 overflow-x-auto">
-                <table className="w-full text-sm min-w-[420px]">
+                <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-xs text-muted-foreground">
-                      <th className="py-2 pr-3 font-medium">Día</th>
-                      <th className="py-2 pr-3 font-medium">Trabajado</th>
-                      <th className="py-2 pr-3 font-medium">Previsto</th>
-                      <th className="py-2 font-medium">Extra</th>
+                      <th className="py-2 pr-2 font-medium">Día</th>
+                      <th className="py-2 pr-2 font-medium text-right">Trabajado</th>
+                      <th className="py-2 pr-2 font-medium text-right">Previsto</th>
+                      <th className="py-2 font-medium text-right">Extra</th>
                     </tr>
                   </thead>
                   <tbody>
                     {state.summary.days.map((day) => (
                       <tr key={day.date} className="border-t border-border/50">
-                        <td className="py-1.5 pr-3 tabular-nums">
+                        <td className="py-1.5 pr-2 tabular-nums whitespace-nowrap">
                           {new Date(`${day.date}T00:00:00`).toLocaleDateString("es-ES", {
                             weekday: "short",
                             day: "2-digit",
-                            month: "2-digit",
                           })}
                           {day.absence && <span className="text-muted-foreground"> · ausencia</span>}
                         </td>
-                        <td className="py-1.5 pr-3 tabular-nums">{formatHoras(day.worked)}</td>
-                        <td className="py-1.5 pr-3 tabular-nums text-muted-foreground">{formatHoras(day.expected)}</td>
-                        <td className={cn("py-1.5 tabular-nums", day.extra > 0 && "text-amber-600 font-medium")}>
+                        <td className="py-1.5 pr-2 tabular-nums text-right">{formatHoras(day.worked)}</td>
+                        <td className="py-1.5 pr-2 tabular-nums text-right text-muted-foreground">
+                          {formatHoras(day.expected)}
+                        </td>
+                        <td
+                          className={cn(
+                            "py-1.5 tabular-nums text-right",
+                            day.extra > 0 && "text-amber-600 font-medium"
+                          )}
+                        >
                           {day.extra > 0 ? formatHoras(day.extra) : "—"}
                         </td>
                       </tr>

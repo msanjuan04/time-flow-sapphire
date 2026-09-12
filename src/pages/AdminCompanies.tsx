@@ -428,7 +428,7 @@ const AdminCompanies = () => {
 
       {/* Create Company Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-4xl w-full overflow-hidden rounded-3xl border-none bg-white p-0 shadow-2xl">
+        <DialogContent className="max-w-4xl w-full overflow-hidden rounded-3xl border-none bg-white p-0 sm:p-0 shadow-2xl">
           <div className="flex max-h-[90vh] flex-col">
             <DialogHeader className="border-b px-6 py-6">
               <DialogTitle className="text-2xl font-semibold">Nueva empresa</DialogTitle>

@@ -95,20 +95,24 @@ const MonthlyClose = () => {
       <div className="space-y-4">
         <RegistryIntegrityCard />
 
-        <Card className="glass-card p-4 flex flex-wrap items-center justify-between gap-3">
+        <Card className="glass-card p-3 sm:p-4 space-y-2 sm:space-y-0 sm:flex sm:flex-wrap sm:items-center sm:justify-between sm:gap-3">
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="icon"
+              className="shrink-0"
               aria-label="Mes anterior"
               onClick={() => setPeriod(shiftMonth(period.year, period.month, -1))}
             >
               <ChevronLeft className="w-4 h-4" />
             </Button>
-            <p className="font-medium capitalize min-w-[170px] text-center">{monthLabel(period.year, period.month)}</p>
+            <p className="flex-1 sm:flex-none font-medium capitalize text-center sm:min-w-[170px]">
+              {monthLabel(period.year, period.month)}
+            </p>
             <Button
               variant="outline"
               size="icon"
+              className="shrink-0"
               aria-label="Mes siguiente"
               disabled={!canGoForward}
               onClick={() => setPeriod(nextPeriod)}
@@ -117,11 +121,11 @@ const MonthlyClose = () => {
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
+            <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={() => void load()} disabled={loading}>
               <RefreshCw className={cn("w-4 h-4 mr-2", loading && "animate-spin")} />
               Actualizar
             </Button>
-            <Button variant="outline" size="sm" onClick={descargarCsv} disabled={rows.length === 0}>
+            <Button variant="outline" size="sm" className="flex-1 sm:flex-none" onClick={descargarCsv} disabled={rows.length === 0}>
               <Download className="w-4 h-4 mr-2" />
               CSV
             </Button>
@@ -160,8 +164,58 @@ const MonthlyClose = () => {
           {!loading && rows.length === 0 && !error && (
             <p className="text-sm text-muted-foreground p-4">No hay personas en esta empresa.</p>
           )}
+          {/* Móvil: una tarjeta por persona */}
           {rows.length > 0 && (
-            <div className="overflow-x-auto">
+            <ul className="md:hidden divide-y divide-border/50">
+              {rows.map((row) => {
+                const status = row.signoff?.status ?? "pending";
+                const extra = row.totals?.extra ?? 0;
+                return (
+                  <li key={row.user_id} className="p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{row.full_name || row.email}</p>
+                        <p className="text-xs text-muted-foreground">{row.role}</p>
+                      </div>
+                      <span
+                        className={cn(
+                          "text-xs rounded-full border px-2 py-1 shrink-0",
+                          status === "signed" && "border-primary/40 text-primary",
+                          status === "disputed" && "border-amber-500/50 text-amber-600",
+                          status === "pending" && "text-muted-foreground"
+                        )}
+                      >
+                        {SIGNOFF_LABELS[status]}
+                      </span>
+                    </div>
+                    <div className="flex items-baseline gap-4 text-sm tabular-nums">
+                      <span>
+                        <span className="text-xs text-muted-foreground">Trabajadas </span>
+                        {formatHoras(row.totals?.worked ?? 0)}
+                      </span>
+                      <span className="text-muted-foreground">
+                        <span className="text-xs">Previstas </span>
+                        {formatHoras(row.totals?.expected ?? 0)}
+                      </span>
+                      {extra > 0 && (
+                        <span className="text-amber-600 font-medium">
+                          <span className="text-xs font-normal">Extra </span>
+                          {formatHoras(extra)}
+                        </span>
+                      )}
+                    </div>
+                    {row.outdated && <p className="text-[11px] text-amber-600">Corregido tras firmar</p>}
+                    {row.signoff?.signature?.note && (
+                      <p className="text-[11px] text-muted-foreground">{row.signoff.signature.note}</p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+
+          {rows.length > 0 && (
+            <div className="overflow-x-auto hidden md:block">
               <table className="w-full text-sm min-w-[640px]">
                 <thead>
                   <tr className="text-left text-xs text-muted-foreground bg-muted/40">

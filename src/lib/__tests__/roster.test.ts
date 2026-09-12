@@ -5,9 +5,16 @@ import {
   copyWeekPayload,
   dateKey,
   describeShift,
+  draftFromSchedule,
+  draftHours,
+  draftPayload,
+  draftProblem,
+  emptyDraft,
+  frequentShifts,
   weekDays,
   weekStartOf,
   type RosterSchedule,
+  type ShiftDraft,
 } from "@/lib/roster";
 
 const lunes = new Date(2026, 8, 14); // 14 de septiembre de 2026, lunes
@@ -159,5 +166,112 @@ describe("copiar y repetir semanas", () => {
   it("no copia días sin horas", () => {
     const vacio = [turno({ user_id: "ana", date: "2026-09-14", start_time: null, end_time: null, expected_hours: 0 })];
     expect(copyWeekPayload({ ...base, sourceSchedules: vacio, targetOffsets: [1], userIds: ["ana"] })).toEqual([]);
+  });
+});
+
+describe("editar el turno de un día", () => {
+  const draft = (over: Partial<ShiftDraft> = {}): ShiftDraft => ({
+    ...emptyDraft(),
+    start: "09:00",
+    end: "17:00",
+    ...over,
+  });
+
+  it("se leen las horas de un turno ya guardado", () => {
+    expect(
+      draftFromSchedule({
+        user_id: "ana",
+        date: "2026-09-14",
+        start_time: "09:00:00",
+        end_time: "20:00:00",
+        morning_end_time: "14:00:00",
+        afternoon_start_time: "16:00:00",
+        expected_hours: 9,
+      })
+    ).toEqual({ start: "09:00", end: "20:00", morningEnd: "14:00", afternoonStart: "16:00" });
+  });
+
+  it("un día libre empieza con el formulario vacío", () => {
+    expect(draftFromSchedule(null)).toEqual({ start: "", end: "", morningEnd: "", afternoonStart: "" });
+  });
+
+  it("cuenta las horas del turno partido sin el rato de la comida", () => {
+    expect(draftHours(draft({ morningEnd: "14:00", afternoonStart: "16:00", end: "20:00" }))).toBe(9);
+  });
+
+  it("acepta un turno correcto", () => {
+    expect(draftProblem(draft())).toBeNull();
+    expect(draftProblem(draft({ morningEnd: "14:00", afternoonStart: "16:00", end: "20:00" }))).toBeNull();
+  });
+
+  it("avisa de lo que falta o no cuadra", () => {
+    expect(draftProblem(emptyDraft())).toMatch(/entrada/);
+    expect(draftProblem(draft({ morningEnd: "14:00" }))).toMatch(/tarde/);
+    expect(draftProblem(draft({ afternoonStart: "16:00" }))).toMatch(/mediodía/);
+    expect(draftProblem(draft({ morningEnd: "08:00", afternoonStart: "16:00", end: "20:00" }))).toMatch(/mediodía/);
+    expect(draftProblem(draft({ morningEnd: "14:00", afternoonStart: "13:00", end: "20:00" }))).toMatch(/tarde/);
+    expect(draftProblem(draft({ start: "09:00", end: "09:00" }))).toMatch(/cero horas/);
+  });
+
+  it("guarda el mismo turno en los días que se marquen", () => {
+    const payload = draftPayload({
+      draft: draft({ morningEnd: "14:00", afternoonStart: "16:00", end: "20:00" }),
+      dates: ["2026-09-14", "2026-09-16"],
+      userId: "ana",
+      companyId: "c1",
+      createdBy: "jefe",
+    });
+    expect(payload).toHaveLength(2);
+    expect(payload[0]).toEqual({
+      user_id: "ana",
+      company_id: "c1",
+      date: "2026-09-14",
+      start_time: "09:00",
+      end_time: "20:00",
+      morning_end_time: "14:00",
+      afternoon_start_time: "16:00",
+      expected_hours: 9,
+      created_by: "jefe",
+    });
+  });
+
+  it("un turno incompleto no se guarda", () => {
+    expect(
+      draftPayload({ draft: emptyDraft(), dates: ["2026-09-14"], userId: "ana", companyId: "c1", createdBy: "jefe" })
+    ).toEqual([]);
+  });
+});
+
+describe("turnos que se repiten", () => {
+  const s = (start: string, end: string, date: string): RosterSchedule => ({
+    user_id: "ana",
+    date,
+    start_time: start,
+    end_time: end,
+    morning_end_time: null,
+    afternoon_start_time: null,
+    expected_hours: null,
+  });
+
+  it("ofrece primero el turno más usado y no repite ninguno", () => {
+    const atajos = frequentShifts([
+      s("09:00", "17:00", "2026-09-14"),
+      s("09:00", "17:00", "2026-09-15"),
+      s("15:00", "21:00", "2026-09-16"),
+    ]);
+    expect(atajos.map((d) => `${d.start}-${d.end}`)).toEqual(["09:00-17:00", "15:00-21:00"]);
+  });
+
+  it("descarta los horarios incompletos y respeta el máximo", () => {
+    const atajos = frequentShifts(
+      [
+        s("09:00", "17:00", "2026-09-14"),
+        s("10:00", "18:00", "2026-09-15"),
+        s("11:00", "19:00", "2026-09-16"),
+        { ...s("12:00", "20:00", "2026-09-17"), end_time: null },
+      ],
+      2
+    );
+    expect(atajos).toHaveLength(2);
   });
 });

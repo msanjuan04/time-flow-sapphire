@@ -460,6 +460,7 @@ const ScheduleTemplatesPage = () => {
                           <Label className="text-xs">Inicio</Label>
                           <Input
                             type="time"
+                            className="h-11 text-base"
                             value={d.start}
                             onChange={(e) =>
                               setDays({ ...days, [k]: { ...d, start: e.target.value } })
@@ -472,6 +473,7 @@ const ScheduleTemplatesPage = () => {
                               <Label className="text-xs">Fin mañana</Label>
                               <Input
                                 type="time"
+                                className="h-11 text-base"
                                 value={d.morning_end}
                                 onChange={(e) =>
                                   setDays({ ...days, [k]: { ...d, morning_end: e.target.value } })
@@ -482,6 +484,7 @@ const ScheduleTemplatesPage = () => {
                               <Label className="text-xs">Inicio tarde</Label>
                               <Input
                                 type="time"
+                                className="h-11 text-base"
                                 value={d.afternoon_start}
                                 onChange={(e) =>
                                   setDays({ ...days, [k]: { ...d, afternoon_start: e.target.value } })
@@ -494,6 +497,7 @@ const ScheduleTemplatesPage = () => {
                           <Label className="text-xs">Fin</Label>
                           <Input
                             type="time"
+                            className="h-11 text-base"
                             value={d.end}
                             onChange={(e) =>
                               setDays({ ...days, [k]: { ...d, end: e.target.value } })
@@ -518,11 +522,13 @@ const ScheduleTemplatesPage = () => {
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="sticky bottom-0 -mx-4 px-4 pt-3 pb-1 bg-background border-t border-border/60 sm:static sm:mx-0 sm:px-0 sm:border-0 sm:pt-0">
             <Button variant="ghost" onClick={() => setEditorOpen(false)}>
               Cancelar
             </Button>
-            <Button onClick={save}>{editing ? "Guardar" : "Crear plantilla"}</Button>
+            <Button onClick={save} className="h-11 sm:h-10">
+              {editing ? "Guardar" : "Crear plantilla"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

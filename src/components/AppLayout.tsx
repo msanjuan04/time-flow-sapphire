@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { useMembership } from "@/hooks/useMembership";
@@ -16,61 +17,65 @@ import {
   FileText,
   Building2,
   LogOut,
+  MoreHorizontal,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import NotificationBell from "@/components/NotificationBell";
 import { CompanySelector } from "@/components/CompanySelector";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 interface NavItem {
   icon: LucideIcon;
   label: string;
   path: string;
+  /** En el móvil solo caben cuatro; el resto van en "Más". */
+  primary?: boolean;
 }
 
 const NAV_ITEMS: Record<string, NavItem[]> = {
   worker: [
-    { icon: Clock,           label: "Fichar",       path: "/me/clock" },
-    { icon: Calendar,        label: "Calendario",   path: "/calendar" },
-    { icon: MapPin,          label: "Ausencias",    path: "/absences" },
-    { icon: BarChart3,       label: "Informes",     path: "/worker-reports" },
+    { icon: Clock,           label: "Fichar",       path: "/me/clock", primary: true },
+    { icon: Calendar,        label: "Calendario",   path: "/calendar", primary: true },
+    { icon: MapPin,          label: "Ausencias",    path: "/absences", primary: true },
+    { icon: BarChart3,       label: "Informes",     path: "/worker-reports", primary: true },
     { icon: AlertCircle,     label: "Correcciones", path: "/correction-requests" },
   ],
   manager: [
-    { icon: LayoutDashboard, label: "Dashboard",    path: "/dashboard" },
-    { icon: Users,           label: "Empleados",    path: "/people" },
+    { icon: LayoutDashboard, label: "Dashboard",    path: "/dashboard", primary: true },
+    { icon: Users,           label: "Empleados",    path: "/people", primary: true },
+    { icon: CalendarRange,   label: "Cuadrante",    path: "/owner/roster", primary: true },
+    { icon: AlertTriangle,   label: "Incidencias",  path: "/incidents", primary: true },
     { icon: BarChart3,       label: "Reportes",     path: "/reports" },
     { icon: Calendar,        label: "Calendario",   path: "/manager-calendar" },
-    { icon: AlertTriangle,   label: "Incidencias",  path: "/incidents" },
     { icon: MapPin,          label: "Ausencias",    path: "/absences" },
-    { icon: CalendarRange,   label: "Cuadrante",    path: "/owner/roster" },
     { icon: FileSignature,   label: "Cierre mensual", path: "/owner/monthly-close" },
   ],
   admin: [
-    { icon: LayoutDashboard, label: "Dashboard",    path: "/dashboard" },
-    { icon: Users,           label: "Empleados",    path: "/people" },
-    { icon: BarChart3,       label: "Reportes",     path: "/reports" },
+    { icon: LayoutDashboard, label: "Dashboard",    path: "/dashboard", primary: true },
+    { icon: Users,           label: "Empleados",    path: "/people", primary: true },
+    { icon: CalendarRange,   label: "Cuadrante",    path: "/owner/roster", primary: true },
+    { icon: BarChart3,       label: "Reportes",     path: "/reports", primary: true },
     { icon: Calendar,        label: "Calendario",   path: "/manager-calendar" },
     { icon: AlertTriangle,   label: "Incidencias",  path: "/incidents" },
     { icon: MapPin,          label: "Ausencias",    path: "/absences" },
     { icon: Settings,        label: "Ajustes",      path: "/company-settings" },
-    { icon: CalendarRange,   label: "Cuadrante",    path: "/owner/roster" },
     { icon: FileSignature,   label: "Cierre mensual", path: "/owner/monthly-close" },
   ],
   owner: [
-    { icon: LayoutDashboard, label: "Dashboard",    path: "/dashboard" },
-    { icon: Users,           label: "Empleados",    path: "/people" },
+    { icon: LayoutDashboard, label: "Dashboard",    path: "/dashboard", primary: true },
+    { icon: Users,           label: "Empleados",    path: "/people", primary: true },
+    { icon: CalendarRange,   label: "Cuadrante",    path: "/owner/roster", primary: true },
+    { icon: Clock,           label: "Mi ficha",     path: "/me/clock", primary: true },
     { icon: BarChart3,       label: "Reportes",     path: "/reports" },
     { icon: Calendar,        label: "Calendario",   path: "/manager-calendar" },
     { icon: AlertTriangle,   label: "Incidencias",  path: "/incidents" },
     { icon: MapPin,          label: "Ausencias",    path: "/absences" },
-    { icon: Building2,       label: "Organización", path: "/owner/organization" },
-    { icon: Calendar,        label: "Plantillas",   path: "/owner/schedule-templates" },
-    { icon: Settings,        label: "Ajustes",      path: "/company-settings" },
-    { icon: FileText,        label: "Documentos",   path: "/owner/legal-documents" },
-    { icon: CalendarRange,   label: "Cuadrante",    path: "/owner/roster" },
     { icon: FileSignature,   label: "Cierre mensual", path: "/owner/monthly-close" },
-    { icon: Clock,           label: "Mi ficha",     path: "/me/clock" },
+    { icon: Calendar,        label: "Plantillas",   path: "/owner/schedule-templates" },
+    { icon: Building2,       label: "Organización", path: "/owner/organization" },
+    { icon: FileText,        label: "Documentos",   path: "/owner/legal-documents" },
+    { icon: Settings,        label: "Ajustes",      path: "/company-settings" },
   ],
 };
 
@@ -80,6 +85,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const [moreOpen, setMoreOpen] = useState(false);
+
   const role = membership?.role ?? "worker";
   const navItems = NAV_ITEMS[role] ?? NAV_ITEMS.worker;
   const companyName = membership?.company?.name ?? "GTiQ";
@@ -87,6 +94,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const isActive = (path: string) =>
     location.pathname === path ||
     (path !== "/" && location.pathname.startsWith(path));
+
+  // En el móvil caben cuatro secciones; las demás viven detrás de "Más".
+  const primaryItems = navItems.filter((item) => item.primary).slice(0, 4);
+  const restItems = navItems.filter((item) => !primaryItems.includes(item));
+  const moreIsActive = restItems.some((item) => isActive(item.path));
+
+  const goTo = (path: string) => {
+    setMoreOpen(false);
+    navigate(path);
+  };
 
   return (
     <div className="h-screen bg-gradient-to-br from-primary/5 via-background to-primary/10 flex relative overflow-hidden">
@@ -162,21 +179,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* ── Contenido ───────────────────────────────────────── */}
-      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden pb-[68px] lg:pb-0 px-3 sm:px-4">
+      <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden pb-[calc(68px+env(safe-area-inset-bottom))] lg:pb-0 px-3 sm:px-4">
         {children}
       </main>
 
       {/* ── Bottom nav móvil ────────────────────────────────── */}
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-50 h-[60px] bg-background/90 backdrop-blur-xl border-t border-border/50">
-        <div className="flex w-full h-full overflow-x-auto scrollbar-none">
-          {navItems.map((item) => {
+      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-50 bg-background/90 backdrop-blur-xl border-t border-border/50 pb-[env(safe-area-inset-bottom)]">
+        <div className="flex w-full h-[60px]">
+          {primaryItems.map((item) => {
             const active = isActive(item.path);
             return (
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
                 className={cn(
-                  "flex flex-col items-center justify-center gap-[3px] min-w-[64px] flex-1 px-1 transition-all duration-200 relative",
+                  "flex flex-col items-center justify-center gap-[3px] flex-1 min-w-0 px-1 transition-all duration-200 relative",
                   active ? "text-primary" : "text-muted-foreground active:text-foreground"
                 )}
               >
@@ -193,14 +210,78 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     active && "scale-110"
                   )}
                 />
-                <span className="text-[10px] font-medium leading-none whitespace-nowrap">
+                <span className="text-[10px] font-medium leading-none truncate max-w-full">
                   {item.label}
                 </span>
               </button>
             );
           })}
+
+          {restItems.length > 0 && (
+            <button
+              onClick={() => setMoreOpen(true)}
+              aria-label="Más secciones"
+              className={cn(
+                "flex flex-col items-center justify-center gap-[3px] flex-1 min-w-0 px-1 transition-all duration-200 relative",
+                moreIsActive ? "text-primary" : "text-muted-foreground active:text-foreground"
+              )}
+            >
+              <span
+                className={cn(
+                  "absolute top-0 left-1/2 -translate-x-1/2 h-[3px] rounded-b-full bg-primary transition-all duration-300",
+                  moreIsActive ? "w-6 opacity-100" : "w-0 opacity-0"
+                )}
+              />
+              <MoreHorizontal className="w-[22px] h-[22px]" />
+              <span className="text-[10px] font-medium leading-none">Más</span>
+            </button>
+          )}
         </div>
       </nav>
+
+      {/* ── Resto de secciones, cuenta y salir ──────────────── */}
+      <Sheet open={moreOpen} onOpenChange={setMoreOpen}>
+        <SheetContent
+          side="bottom"
+          className="lg:hidden rounded-t-2xl p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] max-h-[85dvh] overflow-y-auto"
+        >
+          <SheetHeader className="text-left">
+            <SheetTitle className="truncate">{companyName}</SheetTitle>
+          </SheetHeader>
+
+          <div className="grid grid-cols-2 gap-2 mt-4">
+            {restItems.map((item) => (
+              <button
+                key={item.path}
+                onClick={() => goTo(item.path)}
+                className={cn(
+                  "flex items-center gap-3 rounded-xl border p-3 text-sm font-medium text-left transition-colors",
+                  isActive(item.path)
+                    ? "border-primary/50 bg-primary/10 text-primary"
+                    : "border-border/60 active:bg-muted/60"
+                )}
+              >
+                <item.icon className="w-[18px] h-[18px] shrink-0" />
+                <span className="truncate">{item.label}</span>
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-border/60 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <NotificationBell />
+              {hasMultipleCompanies && <CompanySelector />}
+            </div>
+            <button
+              onClick={signOut}
+              className="flex items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-medium text-muted-foreground active:bg-muted/60"
+            >
+              <LogOut className="w-[18px] h-[18px]" />
+              Cerrar sesión
+            </button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

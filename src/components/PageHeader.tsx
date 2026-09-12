@@ -23,8 +23,10 @@ export function PageHeader({
   className,
 }: PageHeaderProps) {
   return (
-    <div className={cn("flex items-start justify-between gap-4", className)}>
-      <div className="flex items-center gap-3 min-w-0">
+    // En el móvil las acciones bajan a su propia fila: arriba a la derecha
+    // flota el botón de tema y se taparían.
+    <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4", className)}>
+      <div className="flex items-center gap-3 min-w-0 pr-12 sm:pr-0">
         {Icon && (
           <div
             className={cn(
@@ -43,7 +45,7 @@ export function PageHeader({
             {title}
           </h1>
           {description && (
-            <p className="text-sm text-muted-foreground mt-0.5 truncate">
+            <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2 sm:truncate">
               {description}
             </p>
           )}
@@ -51,7 +53,7 @@ export function PageHeader({
       </div>
 
       {actions && (
-        <div className="flex items-center gap-2 shrink-0">{actions}</div>
+        <div className="flex items-center gap-2 flex-wrap sm:shrink-0">{actions}</div>
       )}
     </div>
   );
