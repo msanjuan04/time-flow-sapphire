@@ -83,6 +83,14 @@ REVOKE ALL ON TABLE public.reports_sanitized           FROM anon, authenticated;
 GRANT SELECT ON TABLE public.workers_on_sick_leave_today TO authenticated;
 GRANT SELECT ON TABLE public.reports_sanitized           TO authenticated;
 
+-- ─────────────────────────────────────────────────────
+-- 5. Funciones con permisos elevados sin ruta de búsqueda fijada
+-- ─────────────────────────────────────────────────────
+-- Endurecimiento: sin search_path fijo, una función SECURITY DEFINER puede
+-- acabar resolviendo tablas distintas de las previstas.
+ALTER FUNCTION public.delete_time_event_with_reason(uuid, text) SET search_path = public;
+ALTER FUNCTION public.verify_auth_code(text, text) SET search_path = public;
+
 COMMIT;
 
 -- Comprobación posterior (debe devolver 0 filas):
