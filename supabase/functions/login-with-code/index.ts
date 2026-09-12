@@ -11,6 +11,50 @@ function cleanCode(raw: unknown): string {
   return "";
 }
 
+// ─────────────────────────────────────────────────────
+// Límite de intentos
+// ─────────────────────────────────────────────────────
+// El código es de 6 dígitos y es la única credencial. Sin límite, probar
+// combinaciones hasta acertar es cuestión de minutos. Se cuentan los fallos
+// recientes por IP y por código (guardado como hash, nunca en claro).
+const ATTEMPT_WINDOW_MINUTES = 15;
+const MAX_FAILURES_PER_IP = 10;
+const MAX_FAILURES_PER_CODE = 5;
+
+const sha256Hex = async (value: string): Promise<string> => {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+};
+
+const countRecentFailures = async (db: unknown, column: string, value: string): Promise<number> => {
+  if (!value) return 0;
+  const since = new Date(Date.now() - ATTEMPT_WINDOW_MINUTES * 60 * 1000).toISOString();
+  const { count, error } = await (db as any)
+    .from("login_attempts")
+    .select("id", { count: "exact", head: true })
+    .eq(column, value)
+    .eq("success", false)
+    .gte("created_at", since);
+  if (error) {
+    // Si la tabla aún no existe, no bloqueamos el login de nadie.
+    console.error("login_attempts count failed:", error.message);
+    return 0;
+  }
+  return count ?? 0;
+};
+
+const recordAttempt = async (db: unknown, ip: string | null, codeHash: string, success: boolean) => {
+  try {
+    await (db as any).from("login_attempts").insert({ ip, code_hash: codeHash, success });
+  } catch (err) {
+    console.error("login_attempts insert failed:", err);
+  }
+};
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return handleCorsOptions();
 
@@ -23,7 +67,8 @@ serve(async (req) => {
 
     const normalized = cleanCode(rawCode);
 
-    console.log("Login attempt with code:", normalized);
+    // Nunca se escribe el código en los registros: es la credencial.
+    console.log("Login attempt received");
 
     if (!/^\d{6}$/.test(normalized)) {
       console.log("Invalid code format");
@@ -54,6 +99,27 @@ serve(async (req) => {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
+    // Límite de intentos antes de tocar la tabla de perfiles, para que no
+    // se pueda usar el tiempo de respuesta para adivinar códigos válidos.
+    const { ip: attemptIp } = extractRequestMetadata(req);
+    const codeHash = await sha256Hex(normalized);
+    const [failuresByIp, failuresByCode] = await Promise.all([
+      countRecentFailures(db, "ip", attemptIp ?? ""),
+      countRecentFailures(db, "code_hash", codeHash),
+    ]);
+
+    if (failuresByIp >= MAX_FAILURES_PER_IP || failuresByCode >= MAX_FAILURES_PER_CODE) {
+      console.warn("Login blocked by rate limit", { failuresByIp, failuresByCode });
+      return createJsonResponse(
+        {
+          success: false,
+          error: "TOO_MANY_ATTEMPTS",
+          message: `Demasiados intentos fallidos. Espera ${ATTEMPT_WINDOW_MINUTES} minutos e inténtalo de nuevo.`,
+        },
+        429,
+      );
+    }
+
     const { data: profile } = await db
       .from("profiles")
       .select("id, email, full_name, is_superadmin")
@@ -61,11 +127,13 @@ serve(async (req) => {
       .maybeSingle();
 
     if (!profile) {
-      console.log("No profile found with code:", normalized);
+      await recordAttempt(db, attemptIp, codeHash, false);
+      await wait(300);
       return createJsonResponse({ success: false, error: "INVALID_CODE" }, 401);
     }
 
-    console.log("Profile found:", profile.id, profile.email);
+    await recordAttempt(db, attemptIp, codeHash, true);
+    console.log("Profile found:", profile.id);
 
     // Ensure the user exists in auth.users
     const { data: authUser, error: authError } = await db.auth.admin.getUserById(profile.id);
