@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Download, Loader2, RefreshCw } from "lucide-react";
 import { AppLayout } from "@/components/AppLayout";
 import { PageHeader } from "@/components/PageHeader";
+import RegistryIntegrityCard from "@/components/RegistryIntegrityCard";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useMembership } from "@/hooks/useMembership";
@@ -92,6 +93,8 @@ const MonthlyClose = () => {
       <PageHeader title="Cierre mensual" description="Horas del mes, horas extra y firma de cada persona" />
 
       <div className="space-y-4">
+        <RegistryIntegrityCard />
+
         <Card className="glass-card p-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <Button
