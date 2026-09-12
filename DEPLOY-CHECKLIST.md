@@ -27,6 +27,7 @@ Configúralas en el panel del hosting (Environment Variables). Sin estas, la app
 | `VITE_PUBLIC_SITE_URL` | URL pública de la app (QR, enlaces, redirects) | `https://gneraitiq.com` |
 | `VITE_MAPBOX_PUBLIC_TOKEN` | Token de Mapbox para mapas (reportes de ubicación) | `pk.eyJ1...` |
 | `VITE_SENTRY_DSN` | Monitorización de errores en producción (Sentry). Sin esta variable no se envía nada. | `https://xxxx@o0.ingest.sentry.io/0` |
+| `VITE_VAPID_PUBLIC_KEY` | Clave pública de los avisos de fichaje. Sin ella, la tarjeta de avisos no aparece. | `BFIe6EzY...` |
 | `VITE_APP_VERSION` | Versión mostrada en Sentry para saber qué build falló (ej. el hash de git) | `3ce5aa8` |
 
 Si no pones `VITE_PUBLIC_SITE_URL`, la URL del sitio puede fallar en dispositivos/QR. Si no pones `VITE_MAPBOX_PUBLIC_TOKEN`, los mapas en reportes de ubicación no cargarán.

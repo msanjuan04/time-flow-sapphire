@@ -4,9 +4,18 @@ import App from "./App.tsx";
 import "./index.css";
 import { ThemeProvider } from "next-themes";
 import { initMonitoring } from "./lib/monitoring";
+import { captureInstallPrompt, registerServiceWorker } from "./lib/pwa";
 
 // Errores de producción → Sentry (solo si VITE_SENTRY_DSN está definido)
 initMonitoring();
+
+// App instalable y avisos de fichaje
+captureInstallPrompt();
+if (import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    void registerServiceWorker();
+  });
+}
 
 // Prevent noisy Vite ping requests when running a production build
 // outside of the dev server (e.g., in hosted previews).

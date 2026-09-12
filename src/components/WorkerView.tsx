@@ -22,6 +22,7 @@ import MyDocumentsCard from "@/components/MyDocumentsCard";
 import { OfflineClockIndicator } from "@/components/OfflineClockIndicator";
 import { invokeClockWithQueue } from "@/lib/offlineClockQueue";
 import WorkdaySummaryCard from "@/components/WorkdaySummaryCard";
+import PushSetupCard from "@/components/PushSetupCard";
 
 type WorkerStatus = "out" | "in" | "on_break";
 type TimeEventType = "clock_in" | "clock_out" | "pause_start" | "pause_end";
@@ -1231,6 +1232,10 @@ const WorkerView = () => {
               )}
             </div>
           </Card>
+
+          <div className="mt-4">
+            <PushSetupCard companyId={companyId} />
+          </div>
 
           {/* Horas de hoy y de la semana */}
           {companyId && user?.id && (

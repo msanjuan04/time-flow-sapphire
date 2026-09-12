@@ -26,3 +26,6 @@ dist-ssr
 
 # Credenciales y códigos de acceso (nunca subir)
 CODIGOS-USUARIOS.txt
+
+# Claves VAPID de notificaciones push (nunca subir)
+.vapid.env
