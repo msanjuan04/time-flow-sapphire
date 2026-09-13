@@ -6,6 +6,12 @@ import {
   minutesInTimeZone,
   type DaySchedule,
 } from '../_shared/scheduleWindow.ts'
+import {
+  cardUserId,
+  findCardForUid,
+  normalizeUid,
+  type NfcCardRow,
+} from '../_shared/nfcCards.ts'
 // Geofence helpers inlined to avoid missing _shared bundle in dashboard deploys
 const GEOFENCE_RADIUS_METERS = 200;
 const calculateDistanceMeters = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -130,10 +136,6 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     const slowDown = () => new Promise((resolve) => setTimeout(resolve, 300));
-    const normalizeUid = (raw: string) => raw.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-    // Algunos lectores USB entregan el UID con los bytes en orden inverso.
-    const reverseBytes = (hex: string) =>
-      hex.length % 2 === 0 ? (hex.match(/.{2}/g) || []).reverse().join('') : hex;
 
     // -------------------------------------------------------------------
     // Identidad. Tres vías, todas verificadas en servidor:
@@ -167,24 +169,18 @@ Deno.serve(async (req) => {
       if (!cardCompanyId) {
         return jsonError(400, 'COMPANY_REQUIRED', { message: 'Falta la empresa o el punto del kiosco.' });
       }
-      const norm = normalizeUid(card_uid);
-      if (!norm) return jsonError(400, 'CARD_INVALID', { message: 'UID de tarjeta vacío.' });
-      const rev = reverseBytes(norm);
+      if (!normalizeUid(card_uid)) return jsonError(400, 'CARD_INVALID', { message: 'UID de tarjeta vacío.' });
       const { data: cards } = await supabaseAdmin
         .from('nfc_cards')
         .select('user_id, empleado_id, uid, card_uid, card_uid_normalized, active')
         .eq('company_id', cardCompanyId);
-      const card = (cards || []).find((c: any) => {
-        if (c.active === false) return false;
-        const stored = normalizeUid(String(c.uid || c.card_uid || c.card_uid_normalized || ''));
-        return stored !== '' && (stored === norm || stored === rev);
-      });
-      const cardUserId: string | null = card?.user_id || card?.empleado_id || null;
-      if (!cardUserId) {
+      const card = findCardForUid((cards || []) as NfcCardRow[], card_uid);
+      const cardOwnerId = cardUserId(card);
+      if (!cardOwnerId) {
         await slowDown();
         return jsonError(404, 'CARD_NOT_REGISTERED', { message: 'Tarjeta no reconocida.' });
       }
-      currentUserId = cardUserId;
+      currentUserId = cardOwnerId;
       kioskCompanyId = cardCompanyId;
     } else if (typeof device_pin === 'string' && device_pin.trim() && user_id) {
       const { data: device } = await supabaseAdmin
