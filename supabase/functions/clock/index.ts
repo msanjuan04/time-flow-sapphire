@@ -177,8 +177,18 @@ Deno.serve(async (req) => {
       const card = findCardForUid((cards || []) as NfcCardRow[], card_uid);
       const cardOwnerId = cardUserId(card);
       if (!cardOwnerId) {
+        // El UID leído va en la respuesta: sin él, "tarjeta no reconocida"
+        // no se puede diagnosticar sin acceso a la base de datos, y quien
+        // está delante del lector no sabe qué dar de alta.
+        const leido = normalizeUid(card_uid);
+        console.log(
+          `CARD_NOT_REGISTERED empresa=${cardCompanyId} uid_leido=${leido} tarjetas_en_empresa=${(cards || []).length}`
+        );
         await slowDown();
-        return jsonError(404, 'CARD_NOT_REGISTERED', { message: 'Tarjeta no reconocida.' });
+        return jsonError(404, 'CARD_NOT_REGISTERED', {
+          message: `Tarjeta no reconocida (leída ${leido}). Dala de alta en esta empresa.`,
+          uid_leido: leido,
+        });
       }
       currentUserId = cardOwnerId;
       kioskCompanyId = cardCompanyId;
