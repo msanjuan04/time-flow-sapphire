@@ -106,9 +106,12 @@ const mapServerError = (code: string | undefined): string => {
   switch (code) {
     case "CARD_NOT_REGISTERED":
     case "CARD_INVALID":
+      return "unknown_card";
+    // Dado de baja no es lo mismo que tarjeta desconocida: quien está
+    // delante tiene que saber a quién preguntar.
     case "EMPLOYEE_INACTIVE":
     case "Usuario sin empresa asignada":
-      return "unknown_card";
+      return "employee_inactive";
     case "ON_SICK_LEAVE":
       return "on_sick_leave";
     case "COMPANY_REQUIRED":

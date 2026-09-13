@@ -19,7 +19,10 @@ type ScreenState =
   | { phase: "success"; name: string; action: "clock_in" | "clock_out" }
   | { phase: "queued" }
   | { phase: "sick_leave"; name: string; message: string }
-  | { phase: "error_unknown" }
+  // Cada rechazo dice qué ha pasado de verdad: el cartel genérico de
+  // "tarjeta no reconocida" tapaba desde un trabajador de baja hasta un
+  // error del servidor, y sin el UID leído no hay forma de darla de alta.
+  | { phase: "rejected"; title: string; detail?: string }
   | { phase: "error_rpc"; message: string };
 
 const RESULT_MS = 3000;
@@ -141,6 +144,30 @@ const ClockCompanyNfcPage = () => {
         return;
       }
 
+      if (payload.error === "unknown_card") {
+        playKioskSound("error");
+        setScreen({
+          phase: "rejected",
+          title: "Tarjeta no reconocida",
+          detail: payload.message || "No está dada de alta en esta empresa.",
+        });
+        scheduleBackToWaiting();
+        busyRef.current = false;
+        return;
+      }
+
+      if (payload.error === "employee_inactive") {
+        playKioskSound("error");
+        setScreen({
+          phase: "rejected",
+          title: "Trabajador dado de baja",
+          detail: payload.message || "Avisa a tu responsable.",
+        });
+        scheduleBackToWaiting();
+        busyRef.current = false;
+        return;
+      }
+
       if (payload.error === "on_sick_leave") {
         playKioskSound("error");
         setScreen({
@@ -174,7 +201,11 @@ const ClockCompanyNfcPage = () => {
       }
 
       playKioskSound("error");
-      setScreen({ phase: "error_unknown" });
+      setScreen({
+        phase: "rejected",
+        title: "No se ha podido fichar",
+        detail: payload.message || payload.error || "Respuesta inesperada del servidor.",
+      });
       scheduleBackToWaiting();
     },
     [companyId, companyIdValid, scheduleBackToWaiting]
@@ -353,10 +384,13 @@ const ClockCompanyNfcPage = () => {
         </>
       )}
 
-      {screen.phase === "error_unknown" && (
+      {screen.phase === "rejected" && (
         <>
           <p className="text-7xl sm:text-8xl">❌</p>
-          <p className="text-2xl sm:text-4xl font-bold text-rose-400">Tarjeta no reconocida</p>
+          <p className="text-2xl sm:text-4xl font-bold text-rose-400">{screen.title}</p>
+          {screen.detail && (
+            <p className="text-base sm:text-xl text-slate-300 max-w-2xl px-4">{screen.detail}</p>
+          )}
         </>
       )}
     </div>

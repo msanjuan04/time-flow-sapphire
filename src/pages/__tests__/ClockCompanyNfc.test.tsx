@@ -92,14 +92,48 @@ describe("Kiosco NFC por empresa (/clock/:companyId/nfc)", () => {
     expect(screen.getByText("Salida registrada correctamente")).toBeInTheDocument();
   });
 
-  it("tarjeta desconocida → aviso claro y vuelta a esperar", async () => {
+  it("tarjeta desconocida → dice el UID leído, para poder darla de alta", async () => {
     renderKiosk();
-    invoke.mockResolvedValueOnce(serverRejection({ error: "CARD_NOT_REGISTERED", message: "Tarjeta no reconocida." }));
+    invoke.mockResolvedValueOnce(
+      serverRejection({
+        error: "CARD_NOT_REGISTERED",
+        message: "Tarjeta no reconocida (leída 00112233). Dala de alta en esta empresa.",
+      })
+    );
     await tapCard("00:11:22:33");
     expect(await screen.findByText("Tarjeta no reconocida")).toBeInTheDocument();
+    // Sin el UID en pantalla nadie puede arreglar el alta desde el kiosco.
+    expect(screen.getByText(/leída 00112233/)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByText("Pasa tu tarjeta para fichar")).toBeInTheDocument(), {
       timeout: 5000,
     });
+  });
+
+  it("trabajador dado de baja no se confunde con tarjeta desconocida", async () => {
+    renderKiosk();
+    invoke.mockResolvedValueOnce(
+      serverRejection({ error: "EMPLOYEE_INACTIVE", message: "Este empleado está dado de baja." })
+    );
+    await tapCard(CARD);
+    expect(await screen.findByText("Trabajador dado de baja")).toBeInTheDocument();
+    expect(screen.queryByText("Tarjeta no reconocida")).not.toBeInTheDocument();
+  });
+
+  it("un error con código desconocido enseña lo que dice el servidor", async () => {
+    renderKiosk();
+    invoke.mockResolvedValueOnce(serverRejection({ error: "ALGO_RARO", message: "Fallo interno." }));
+    await tapCard(CARD);
+    expect(await screen.findByText("No se ha registrado")).toBeInTheDocument();
+    expect(screen.getByText("Fallo interno.")).toBeInTheDocument();
+    expect(screen.queryByText("Tarjeta no reconocida")).not.toBeInTheDocument();
+  });
+
+  it("una respuesta sin sentido tampoco se disfraza de tarjeta desconocida", async () => {
+    renderKiosk();
+    invoke.mockResolvedValueOnce({ data: { success: false }, error: null });
+    await tapCard(CARD);
+    expect(await screen.findByText("No se ha registrado")).toBeInTheDocument();
+    expect(screen.queryByText("Tarjeta no reconocida")).not.toBeInTheDocument();
   });
 
   it("trabajador de baja médica → bloqueo con mensaje", async () => {
