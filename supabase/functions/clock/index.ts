@@ -12,6 +12,7 @@ import {
   normalizeUid,
   type NfcCardRow,
 } from '../_shared/nfcCards.ts'
+import { chooseCredential } from '../_shared/clockIdentity.ts'
 // Geofence helpers inlined to avoid missing _shared bundle in dashboard deploys
 const GEOFENCE_RADIUS_METERS = 200;
 const calculateDistanceMeters = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
@@ -151,9 +152,17 @@ Deno.serve(async (req) => {
       data: { user },
     } = await supabase.auth.getUser();
 
-    if (user) {
-      currentUserId = user.id;
-    } else if (typeof card_uid === 'string' && card_uid.trim()) {
+    // La tarjeta y el PIN mandan sobre la sesión del navegador: en el
+    // ordenador del kiosco puede haber alguien identificado, y su sesión
+    // viaja en cada llamada.
+    const credencial = chooseCredential({
+      hasSession: Boolean(user),
+      cardUid: card_uid,
+      devicePin: device_pin,
+      userId: user_id,
+    });
+
+    if (credencial === 'card') {
       let cardCompanyId = typeof company_id === 'string' && isUuid(company_id) ? company_id : null;
       if (!cardCompanyId && pointIdForEvent) {
         const { data: point } = await supabaseAdmin
@@ -192,7 +201,7 @@ Deno.serve(async (req) => {
       }
       currentUserId = cardOwnerId;
       kioskCompanyId = cardCompanyId;
-    } else if (typeof device_pin === 'string' && device_pin.trim() && user_id) {
+    } else if (credencial === 'device_pin') {
       const { data: device } = await supabaseAdmin
         .from('devices')
         .select('id, company_id')
@@ -208,6 +217,8 @@ Deno.serve(async (req) => {
       }
       currentUserId = user_id;
       kioskCompanyId = device.company_id;
+    } else if (credencial === 'session' && user) {
+      currentUserId = user.id;
     } else {
       return jsonError(401, 'KIOSK_AUTH_REQUIRED', {
         message: 'Se requiere sesión iniciada, PIN de dispositivo o tarjeta NFC.',
