@@ -41,7 +41,8 @@ export const cardMatchesUid = (card: NfcCardRow, rawUid: string): boolean => {
   return storedUids(card).some((stored) => buscados.has(stored));
 };
 
-export const findCardForUid = (cards: NfcCardRow[], rawUid: string): NfcCardRow | null =>
+/** Genérica a propósito: quien llama conserva el tipo de sus filas. */
+export const findCardForUid = <T extends NfcCardRow>(cards: T[], rawUid: string): T | null =>
   cards.find((card) => cardMatchesUid(card, rawUid)) ?? null;
 
 /** A quién pertenece la tarjeta, se llame como se llame la columna. */

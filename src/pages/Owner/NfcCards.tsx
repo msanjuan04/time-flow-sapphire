@@ -16,17 +16,28 @@ import { Loader2, Plus, Trash2, Wifi, QrCode, Link as LinkIcon } from "lucide-re
 import { supabase } from "@/integrations/supabase/client";
 import { BackButton } from "@/components/BackButton";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+import { cardMatchesUid, findCardForUid, normalizeUid } from "../../../supabase/functions/_shared/nfcCards";
 
 const NFC_BASE_URL = "https://gneraitiq.com/nfc/";
 
-const normalizeNfcUid = (raw: string) => raw.replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+// La normalización y la comparación son las MISMAS que usa el servidor al
+// fichar: si esta pantalla dice que una tarjeta está bien, el kiosco la
+// tiene que reconocer igual.
+const normalizeNfcUid = normalizeUid;
 
 type ProfileRow = { id: string; full_name: string | null; email: string | null };
+
+type Comprobacion =
+  | { estado: "reconocida"; cardId: string; nombre: string; etiqueta: string | null; uid: string }
+  | { estado: "desconocida"; uid: string }
+  | { estado: "inactiva"; nombre: string; uid: string };
 
 type NfcCardRow = {
   id: string;
   user_id: string;
   card_uid: string;
+  card_uid_normalized?: string | null;
+  uid?: string | null;
   label: string | null;
   active: boolean;
   profile?: { full_name: string | null; email: string | null };
@@ -65,7 +76,7 @@ const loadEmployees = async (companyId: string): Promise<ProfileRow[]> => {
 const loadNfcCards = async (companyId: string): Promise<NfcCardRow[]> => {
   const { data: rows, error } = await supabase
     .from("nfc_cards")
-    .select("id, user_id, card_uid, label, active")
+    .select("id, user_id, card_uid, card_uid_normalized, uid, label, active")
     .eq("company_id", companyId)
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -98,6 +109,13 @@ const NfcCardsPage = () => {
   const [uidRaw, setUidRaw] = useState("");
   const [label, setLabel] = useState("");
   const [listeningNfc, setListeningNfc] = useState(false);
+  // Comprobación de tarjetas: el jefe las pasa todas seguidas y ve de
+  // quién es cada una. No llama al servidor ni registra ningún fichaje.
+  const [comprobando, setComprobando] = useState(false);
+  const [ultima, setUltima] = useState<Comprobacion | null>(null);
+  const [comprobadas, setComprobadas] = useState<Set<string>>(new Set());
+  const [desconocidas, setDesconocidas] = useState<string[]>([]);
+  const comprobarBufferRef = useRef("");
   const enrollBufferRef = useRef("");
 
   const [qrOpen, setQrOpen] = useState(false);
@@ -129,6 +147,58 @@ const NfcCardsPage = () => {
   useEffect(() => {
     void refreshAll();
   }, [refreshAll]);
+
+  // El lector USB escribe como un teclado: se escucha en toda la página,
+  // así no hay que acertar con el foco de ningún campo.
+  useEffect(() => {
+    if (!comprobando) {
+      comprobarBufferRef.current = "";
+      return;
+    }
+
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopPropagation();
+        const leido = comprobarBufferRef.current.trim();
+        comprobarBufferRef.current = "";
+        if (!leido) return;
+
+        const uid = normalizeUid(leido);
+        const card = findCardForUid(cards, leido);
+        if (card) {
+          const nombre = card.profile?.full_name?.trim() || card.profile?.email || "Sin nombre";
+          setUltima({ estado: "reconocida", cardId: card.id, nombre, etiqueta: card.label, uid });
+          setComprobadas((prev) => new Set(prev).add(card.id));
+          return;
+        }
+
+        // Puede estar dada de alta pero desactivada: findCardForUid la
+        // descarta, y conviene decirlo en vez de "desconocida".
+        const inactiva = cards.find((c) => cardMatchesUid({ ...c, active: true }, leido));
+        if (inactiva) {
+          setUltima({
+            estado: "inactiva",
+            nombre: inactiva.profile?.full_name?.trim() || inactiva.profile?.email || "Sin nombre",
+            uid,
+          });
+          return;
+        }
+
+        setUltima({ estado: "desconocida", uid });
+        setDesconocidas((prev) => (prev.includes(uid) ? prev : [...prev, uid]));
+        return;
+      }
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        comprobarBufferRef.current += e.key;
+      }
+    };
+
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, [comprobando, cards]);
 
   useEffect(() => {
     if (!dialogOpen || !listeningNfc) {
@@ -281,13 +351,107 @@ const NfcCardsPage = () => {
               </div>
             </div>
           </div>
-          <Button onClick={openCreate} className="gap-2 w-full sm:w-auto">
-            <Plus className="w-4 h-4" />
-            Añadir tarjeta
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <Button
+              variant={comprobando ? "default" : "outline"}
+              onClick={() => {
+                setComprobando((v) => !v);
+                setUltima(null);
+                setComprobadas(new Set());
+                setDesconocidas([]);
+              }}
+              className="gap-2 w-full sm:w-auto"
+            >
+              <Wifi className="w-4 h-4" />
+              {comprobando ? "Terminar comprobación" : "Comprobar tarjetas"}
+            </Button>
+            <Button onClick={openCreate} className="gap-2 w-full sm:w-auto">
+              <Plus className="w-4 h-4" />
+              Añadir tarjeta
+            </Button>
+          </div>
         </div>
         <OwnerQuickNav />
       </div>
+
+      {comprobando && (
+        <Card className="p-4 sm:p-6 space-y-4 border-primary/50 bg-primary/5">
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <h2 className="text-lg font-semibold">Comprobando tarjetas</h2>
+              <p className="text-sm text-muted-foreground">
+                Pásalas una a una por el lector. <strong>No se registra ningún fichaje</strong>, solo se
+                comprueba de quién es cada tarjeta.
+              </p>
+            </div>
+            <p className="text-sm font-medium tabular-nums">
+              {comprobadas.size} de {cards.filter((c) => c.active).length} comprobadas
+            </p>
+          </div>
+
+          <div className="rounded-xl border bg-background p-4 sm:p-6 text-center min-h-[120px] flex flex-col items-center justify-center gap-1">
+            {!ultima && (
+              <p className="text-muted-foreground">Esperando tarjeta…</p>
+            )}
+            {ultima?.estado === "reconocida" && (
+              <>
+                <p className="text-4xl">✅</p>
+                <p className="text-xl sm:text-2xl font-bold">{ultima.nombre}</p>
+                <p className="text-sm text-muted-foreground">{ultima.etiqueta || "sin etiqueta"}</p>
+              </>
+            )}
+            {ultima?.estado === "inactiva" && (
+              <>
+                <p className="text-4xl">⚠️</p>
+                <p className="text-xl font-bold text-amber-600">Tarjeta desactivada</p>
+                <p className="text-sm text-muted-foreground">
+                  Es de {ultima.nombre}. Actívala abajo o no podrá fichar con ella.
+                </p>
+              </>
+            )}
+            {ultima?.estado === "desconocida" && (
+              <>
+                <p className="text-4xl">❌</p>
+                <p className="text-xl font-bold text-destructive">Tarjeta sin dar de alta</p>
+                <p className="text-sm text-muted-foreground">
+                  Nadie la tiene asignada en esta empresa.
+                </p>
+              </>
+            )}
+            {ultima && (
+              <code className="text-xs bg-muted px-2 py-1 rounded mt-1">{ultima.uid}</code>
+            )}
+          </div>
+
+          {desconocidas.length > 0 && (
+            <div className="text-sm">
+              <p className="font-medium mb-1">Sin dar de alta ({desconocidas.length})</p>
+              <div className="flex flex-wrap gap-2">
+                {desconocidas.map((uid) => (
+                  <code key={uid} className="text-xs bg-destructive/10 text-destructive px-2 py-1 rounded">
+                    {uid}
+                  </code>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {cards.filter((c) => c.active && !comprobadas.has(c.id)).length > 0 && (
+            <div className="text-sm">
+              <p className="font-medium mb-1">Aún sin pasar</p>
+              <div className="flex flex-wrap gap-2">
+                {cards
+                  .filter((c) => c.active && !comprobadas.has(c.id))
+                  .map((c) => (
+                    <span key={c.id} className="text-xs border border-border/60 rounded-full px-2 py-1">
+                      {c.label || c.profile?.full_name?.trim() || c.profile?.email || c.card_uid}
+                    </span>
+                  ))}
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
 
       <Card className="p-4 sm:p-6">
         <h2 className="text-lg font-semibold mb-4">Tarjetas registradas</h2>
