@@ -39,6 +39,11 @@ const renderKiosk = (companyId = COMPANY) =>
 /** Simula el lector USB: escribe el UID en el input oculto y pulsa Enter. */
 const tapCard = async (uid: string) => {
   await screen.findByText("Pasa tu tarjeta para fichar");
+  tapNow(uid);
+};
+
+/** Pasada seca, sin esperar a nada: así las encadena el jefe. */
+const tapNow = (uid: string) => {
   const input = document.querySelector("input") as HTMLInputElement;
   fireEvent.change(input, { target: { value: uid } });
   fireEvent.keyDown(input, { key: "Enter" });
@@ -162,5 +167,57 @@ describe("Kiosco NFC por empresa (/clock/:companyId/nfc)", () => {
     const queue = JSON.parse(window.localStorage.getItem("offline_nfc_queue_v1") || "[]");
     expect(queue).toHaveLength(1);
     expect(queue[0].rawUid).toBe(CARD);
+  });
+
+  /**
+   * El jefe de Santa Marta pasa las tarjetas de todo el equipo seguidas y
+   * no mira la pantalla. Antes, el kiosco descartaba en silencio todo lo
+   * que llegara durante los tres segundos del resultado anterior.
+   */
+  it("varias tarjetas seguidas, sin esperar: no se pierde ninguna", async () => {
+    renderKiosk();
+    await screen.findByText("Pasa tu tarjeta para fichar");
+
+    invoke
+      .mockResolvedValueOnce({ data: { success: true, action: "in", employee_name: "Ana" }, error: null })
+      .mockResolvedValueOnce({ data: { success: true, action: "in", employee_name: "Luis" }, error: null })
+      .mockResolvedValueOnce({ data: { success: true, action: "in", employee_name: "Eva" }, error: null });
+
+    tapNow("53:AE:93:AF:A1:00:01");
+    tapNow("53:CC:AD:AC:A1:00:01");
+    tapNow("53:30:48:AB:A1:00:01");
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(3), { timeout: 5000 });
+    const pasadas = invoke.mock.calls.map((c) => (c[1] as { body: { card_uid: string } }).body.card_uid);
+    expect(pasadas).toEqual([
+      "53:AE:93:AF:A1:00:01",
+      "53:CC:AD:AC:A1:00:01",
+      "53:30:48:AB:A1:00:01",
+    ]);
+  });
+
+  it("la misma tarjeta dos veces en un instante es un rebote del lector", async () => {
+    renderKiosk();
+    await screen.findByText("Pasa tu tarjeta para fichar");
+    invoke.mockResolvedValue({ data: { success: true, action: "in", employee_name: "Ana" }, error: null });
+
+    tapNow(CARD);
+    tapNow(CARD);
+    tapNow(CARD.toLowerCase().replace(/:/g, ""));
+
+    await waitFor(() => expect(invoke).toHaveBeenCalledTimes(1), { timeout: 5000 });
+  });
+
+  it("deja a la vista los últimos fichajes, para repasarlos de un vistazo", async () => {
+    renderKiosk();
+    invoke.mockResolvedValueOnce({ data: { success: true, action: "in", employee_name: "Ana Pérez" }, error: null });
+    await tapCard(CARD);
+    expect(await screen.findByText("Bienvenido, Ana Pérez")).toBeInTheDocument();
+    // Al volver a la pantalla de espera, la ronda queda repasable.
+    await waitFor(() => expect(screen.getByText("Pasa tu tarjeta para fichar")).toBeInTheDocument(), {
+      timeout: 5000,
+    });
+    expect(screen.getByText("Últimos fichajes")).toBeInTheDocument();
+    expect(screen.getByText(/Ana Pérez/)).toBeInTheDocument();
   });
 });

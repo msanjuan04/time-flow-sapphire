@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { invokeNfcWithQueue } from "@/lib/offlineNfcQueue";
 import { useOfflineNfcSync } from "@/hooks/useOfflineNfcSync";
 import { playKioskSound, primeKioskAudio } from "@/lib/kioskSounds";
+import { normalizeUid } from "../../supabase/functions/_shared/nfcCards";
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -26,6 +27,16 @@ type ScreenState =
   | { phase: "error_rpc"; message: string };
 
 const RESULT_MS = 3000;
+/**
+ * Dos lecturas de la MISMA tarjeta seguidas son un rebote del lector, no
+ * una entrada y una salida. Sin esto salen pares entrada/salida en el
+ * mismo minuto, como pasó el 15/09 en Santa Marta.
+ */
+const MISMA_TARJETA_MS = 5000;
+/** Últimos fichajes en pantalla, para poder mirar de reojo al terminar. */
+const MAX_RECIENTES = 8;
+
+type Reciente = { id: number; nombre: string; accion: "clock_in" | "clock_out"; hora: string };
 
 const ClockCompanyNfcPage = () => {
   useDocumentTitle("Fichaje NFC");
@@ -36,8 +47,14 @@ const ClockCompanyNfcPage = () => {
   const [screen, setScreen] = useState<ScreenState>({ phase: "loading" });
   const screenRef = useRef<ScreenState>(screen);
   const inputRef = useRef<HTMLInputElement>(null);
-  const busyRef = useRef(false);
+  // Una petición cada vez, pero sin perder ninguna pasada: las que
+  // llegan mientras tanto esperan en la cola. El jefe pasa las tarjetas
+  // de todo el equipo seguidas y no mira la pantalla.
+  const enVueloRef = useRef(false);
+  const colaRef = useRef<string[]>([]);
+  const ultimaLecturaRef = useRef<Map<string, number>>(new Map());
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [recientes, setRecientes] = useState<Reciente[]>([]);
 
   const { pending, online, flushing, flushNow } = useOfflineNfcSync();
 
@@ -51,7 +68,6 @@ const ClockCompanyNfcPage = () => {
   const scheduleBackToWaiting = useCallback(() => {
     clearResetTimer();
     resetTimerRef.current = setTimeout(() => {
-      busyRef.current = false;
       setScreen({ phase: "waiting" });
       resetTimerRef.current = null;
       queueMicrotask(() => inputRef.current?.focus());
@@ -101,11 +117,11 @@ const ClockCompanyNfcPage = () => {
 
   const submitUid = useCallback(
     async (raw: string) => {
-      if (!companyIdValid || busyRef.current) return;
+      if (!companyIdValid) return;
       const trimmed = raw.trim();
       if (!trimmed) return;
 
-      busyRef.current = true;
+      clearResetTimer();
       setScreen({ phase: "processing" });
 
       const result = await invokeNfcWithQueue(companyId, trimmed);
@@ -123,7 +139,6 @@ const ClockCompanyNfcPage = () => {
         const msg =
           (result.error as any)?.message ||
           String(result.error || "Error de conexión.");
-        busyRef.current = false;
         playKioskSound("error");
         setScreen({ phase: "error_rpc", message: msg });
         return;
@@ -139,7 +154,6 @@ const ClockCompanyNfcPage = () => {
 
       if (payload.error === "company_not_found") {
         setScreen({ phase: "invalid_company" });
-        busyRef.current = false;
         playKioskSound("error");
         return;
       }
@@ -152,7 +166,6 @@ const ClockCompanyNfcPage = () => {
           detail: payload.message || "No está dada de alta en esta empresa.",
         });
         scheduleBackToWaiting();
-        busyRef.current = false;
         return;
       }
 
@@ -164,7 +177,6 @@ const ClockCompanyNfcPage = () => {
           detail: payload.message || "Avisa a tu responsable.",
         });
         scheduleBackToWaiting();
-        busyRef.current = false;
         return;
       }
 
@@ -189,13 +201,21 @@ const ClockCompanyNfcPage = () => {
       }
 
       if (payload.ok === true) {
-        const action = payload.action === "clock_out" ? "clock_out" : "clock_in";
+        const action: "clock_in" | "clock_out" = payload.action === "clock_out" ? "clock_out" : "clock_in";
+        const nombre = payload.nombre_completo?.trim() || "Trabajador";
         playKioskSound(action === "clock_out" ? "success_out" : "success_in");
-        setScreen({
-          phase: "success",
-          name: payload.nombre_completo?.trim() || "Trabajador",
-          action,
-        });
+        setScreen({ phase: "success", name: nombre, action });
+        setRecientes((prev) =>
+          [
+            {
+              id: Date.now() + Math.random(),
+              nombre,
+              accion: action,
+              hora: new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" }),
+            },
+            ...prev,
+          ].slice(0, MAX_RECIENTES)
+        );
         scheduleBackToWaiting();
         return;
       }
@@ -211,11 +231,46 @@ const ClockCompanyNfcPage = () => {
     [companyId, companyIdValid, scheduleBackToWaiting]
   );
 
+  /**
+   * Acepta la pasada pase lo que pase haya en pantalla. Si hay una
+   * petición en curso, espera turno: antes se descartaban las tarjetas
+   * que llegaban durante los tres segundos del resultado anterior.
+   */
+  const encolar = useCallback(
+    (raw: string) => {
+      const trimmed = raw.trim();
+      if (!trimmed) return;
+
+      const uid = normalizeUid(trimmed);
+      const ahora = Date.now();
+      const anterior = ultimaLecturaRef.current.get(uid);
+      if (anterior && ahora - anterior < MISMA_TARJETA_MS) {
+        // Rebote del lector: la misma tarjeta dos veces en un instante.
+        return;
+      }
+      ultimaLecturaRef.current.set(uid, ahora);
+
+      colaRef.current.push(trimmed);
+      if (enVueloRef.current) return;
+
+      void (async () => {
+        enVueloRef.current = true;
+        try {
+          while (colaRef.current.length > 0) {
+            const siguiente = colaRef.current.shift();
+            if (siguiente) await submitUid(siguiente);
+          }
+        } finally {
+          enVueloRef.current = false;
+        }
+      })();
+    },
+    [submitUid]
+  );
+
   const keepFocus = useCallback(() => {
-    if (screen.phase === "waiting" || screen.phase === "loading") {
-      inputRef.current?.focus();
-    }
-  }, [screen.phase]);
+    inputRef.current?.focus();
+  }, []);
 
   useEffect(() => {
     const id = window.setInterval(keepFocus, 800);
@@ -227,9 +282,7 @@ const ClockCompanyNfcPage = () => {
     e.preventDefault();
     const raw = e.currentTarget.value;
     e.currentTarget.value = "";
-    if (screenRef.current.phase === "waiting" && raw.trim()) {
-      void submitUid(raw);
-    }
+    encolar(raw);
   };
 
   const pendingCount = pending.length;
@@ -266,7 +319,9 @@ const ClockCompanyNfcPage = () => {
       )}
 
       {children}
-      {(screen.phase === "waiting" || screen.phase === "loading") && (
+      {/* Siempre montado: el lector escribe como un teclado y si el campo
+          desaparece mientras se ve un resultado, esa pasada se pierde. */}
+      {screen.phase !== "invalid_company" && screen.phase !== "invalid_uuid" && (
         <input
           ref={inputRef}
           type="text"
@@ -382,6 +437,30 @@ const ClockCompanyNfcPage = () => {
             Se sincronizará automáticamente cuando vuelva internet.
           </p>
         </>
+      )}
+
+      {recientes.length > 0 && (screen.phase === "waiting" || screen.phase === "processing") && (
+        <div className="absolute bottom-4 inset-x-0 px-4">
+          <p className="text-center text-xs uppercase tracking-widest text-slate-500 mb-2">
+            Últimos fichajes
+          </p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {recientes.map((r) => (
+              <span
+                key={r.id}
+                className={cn(
+                  "text-xs sm:text-sm rounded-full border px-3 py-1",
+                  r.accion === "clock_in"
+                    ? "border-emerald-500/40 text-emerald-300"
+                    : "border-slate-500/40 text-slate-300"
+                )}
+              >
+                {r.accion === "clock_in" ? "↓" : "↑"} {r.nombre}
+                <span className="text-slate-500 ml-1.5 tabular-nums">{r.hora}</span>
+              </span>
+            ))}
+          </div>
+        </div>
       )}
 
       {screen.phase === "rejected" && (
